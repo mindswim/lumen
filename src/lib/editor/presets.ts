@@ -251,14 +251,14 @@ export const PRESETS: BuiltInPreset[] = [
     },
   },
 
-  // ============ VSCO A-SERIES ============
-  // Reverse-engineered from actual VSCO presets using calibration images
+  // ============ ANALOG ============
+  // Classic analog-inspired color grades
   {
-    id: 'vsco-a1',
-    name: 'A1',
-    category: 'VSCO',
+    id: 'analog-dawn',
+    name: 'Dawn',
+    category: 'Analog',
     editState: {
-      // A1: Classic balanced split tone - cyan shadows, warm highlights
+      // Classic balanced split tone - cyan shadows, warm highlights
       fade: 2,
       curve: {
         rgb: [
@@ -305,11 +305,11 @@ export const PRESETS: BuiltInPreset[] = [
     },
   },
   {
-    id: 'vsco-a2',
-    name: 'A2',
-    category: 'VSCO',
+    id: 'analog-arctic',
+    name: 'Arctic',
+    category: 'Analog',
     editState: {
-      // A2: Cool/blue throughout - strong blue shadows and highlights
+      // Cool/blue throughout - strong blue shadows and highlights
       fade: 4,
       curve: {
         rgb: [
@@ -356,11 +356,11 @@ export const PRESETS: BuiltInPreset[] = [
     },
   },
   {
-    id: 'vsco-a3',
-    name: 'A3',
-    category: 'VSCO',
+    id: 'analog-cream',
+    name: 'Cream',
+    category: 'Analog',
     editState: {
-      // A3: Classic film - teal shadows, very warm cream highlights
+      // Classic film - teal shadows, very warm cream highlights
       fade: 2,
       curve: {
         rgb: [
@@ -407,11 +407,11 @@ export const PRESETS: BuiltInPreset[] = [
     },
   },
   {
-    id: 'vsco-a4',
-    name: 'A4',
-    category: 'VSCO',
+    id: 'analog-ember',
+    name: 'Ember',
+    category: 'Analog',
     editState: {
-      // A4: Inverted - warm sepia shadows, cooler highlights
+      // Inverted - warm sepia shadows, cooler highlights
       fade: 2,
       curve: {
         rgb: [
@@ -458,11 +458,11 @@ export const PRESETS: BuiltInPreset[] = [
     },
   },
   {
-    id: 'vsco-a5',
-    name: 'A5',
-    category: 'VSCO',
+    id: 'analog-dusk',
+    name: 'Dusk',
+    category: 'Analog',
     editState: {
-      // A5: Heavy fade, deep blue - moody preset
+      // Heavy fade, deep blue - moody preset
       fade: 8,
       curve: {
         rgb: [
@@ -509,11 +509,11 @@ export const PRESETS: BuiltInPreset[] = [
     },
   },
   {
-    id: 'vsco-a6',
-    name: 'A6',
-    category: 'VSCO',
+    id: 'analog-mist',
+    name: 'Mist',
+    category: 'Analog',
     editState: {
-      // A6: Most neutral/clean - subtle fade, minimal toning
+      // Most neutral/clean - subtle fade, minimal toning
       fade: 4,
       curve: {
         rgb: [
