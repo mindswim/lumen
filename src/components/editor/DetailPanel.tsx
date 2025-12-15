@@ -8,12 +8,10 @@ import {
   PanelDivider,
   PanelHint,
 } from '@/components/ui/panel-section';
-import { DEFAULT_SHARPENING, DEFAULT_NOISE_REDUCTION } from '@/types/editor';
 
 export function DetailPanel() {
   const sharpening = useEditorStore((state) => state.editState.sharpening);
   const noiseReduction = useEditorStore((state) => state.editState.noiseReduction);
-  const updateEditState = useEditorStore((state) => state.updateEditState);
 
   const handleSharpeningUpdate = (key: keyof typeof sharpening, value: number) => {
     useEditorStore.setState((state) => ({
@@ -33,17 +31,9 @@ export function DetailPanel() {
     }));
   };
 
-  const resetSharpening = () => {
-    updateEditState({ sharpening: { ...DEFAULT_SHARPENING } });
-  };
-
-  const resetNoiseReduction = () => {
-    updateEditState({ noiseReduction: { ...DEFAULT_NOISE_REDUCTION } });
-  };
-
   return (
     <PanelContainer>
-      <PanelSection title="Sharpening" onReset={resetSharpening}>
+      <PanelSection title="Sharpening" collapsible>
         <AdjustmentSlider
           label="Amount"
           value={sharpening.amount}
@@ -74,7 +64,7 @@ export function DetailPanel() {
 
       <PanelDivider />
 
-      <PanelSection title="Noise Reduction" onReset={resetNoiseReduction}>
+      <PanelSection title="Noise Reduction" collapsible>
         <AdjustmentSlider
           label="Luminance"
           value={noiseReduction.luminance}
@@ -103,7 +93,6 @@ export function DetailPanel() {
 
       <PanelHint>
         Sharpening enhances edge definition. Noise reduction smooths out grain and artifacts.
-        Higher detail values preserve more texture.
       </PanelHint>
     </PanelContainer>
   );

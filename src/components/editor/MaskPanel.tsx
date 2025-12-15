@@ -230,7 +230,7 @@ export function MaskPanel() {
       {selectedMask && (
         <>
           <PanelDivider />
-          <PanelSection title="Mask Adjustments" onReset={resetMaskAdjustments}>
+          <PanelSection title="Mask Adjustments">
             <AdjustmentSlider
               label="Exposure"
               value={selectedMask.adjustments.exposure}

@@ -163,7 +163,7 @@ export function TransformPanel() {
       <PanelDivider />
 
       {/* Rotation Section */}
-      <PanelSection title="Rotation" onReset={() => updateEditState({ rotation: 0 })}>
+      <PanelSection title="Rotation">
         <AdjustmentSlider
           label="Angle"
           value={editState.rotation}

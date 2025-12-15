@@ -7,8 +7,6 @@ import { PanelSection, PanelContainer, PanelDivider } from '@/components/ui/pane
 export function EffectsPanel() {
   const grain = useEditorStore((state) => state.editState.grain);
   const vignette = useEditorStore((state) => state.editState.vignette);
-  const setGrain = useEditorStore((state) => state.setGrain);
-  const setVignette = useEditorStore((state) => state.setVignette);
 
   const handleGrainUpdate = (key: keyof typeof grain, value: number) => {
     useEditorStore.setState((state) => ({
@@ -28,17 +26,9 @@ export function EffectsPanel() {
     }));
   };
 
-  const resetGrain = () => {
-    setGrain({ amount: 0, size: 25, roughness: 50 });
-  };
-
-  const resetVignette = () => {
-    setVignette({ amount: 0, midpoint: 50, roundness: 0, feather: 50 });
-  };
-
   return (
     <PanelContainer>
-      <PanelSection title="Grain" onReset={resetGrain}>
+      <PanelSection title="Grain" collapsible>
         <AdjustmentSlider
           label="Amount"
           value={grain.amount}
@@ -67,7 +57,7 @@ export function EffectsPanel() {
 
       <PanelDivider />
 
-      <PanelSection title="Vignette" onReset={resetVignette}>
+      <PanelSection title="Vignette" collapsible>
         <AdjustmentSlider
           label="Amount"
           value={vignette.amount}
