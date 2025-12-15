@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { EditState, createDefaultEditState } from '@/types/editor';
 
 export interface GalleryImage {
@@ -88,13 +89,15 @@ function loadImageFromFile(file: File): Promise<HTMLImageElement> {
   });
 }
 
-export const useGalleryStore = create<GalleryStore>()((set, get) => ({
-  images: [],
-  selectedIds: [],
-  activeImageId: null,
-  gridColumns: 5, // Default to 5 columns
-  isIsolated: false,
-  isolatedIds: [],
+export const useGalleryStore = create<GalleryStore>()(
+  persist(
+    (set, get) => ({
+      images: [],
+      selectedIds: [],
+      activeImageId: null,
+      gridColumns: 5, // Default to 5 columns
+      isIsolated: false,
+      isolatedIds: [],
 
   addImages: async (files: File[]) => {
     const newImages: GalleryImage[] = [];
@@ -210,4 +213,13 @@ export const useGalleryStore = create<GalleryStore>()((set, get) => ({
     }
     return images;
   },
-}));
+    }),
+    {
+      name: 'lumen-ui-preferences',
+      // Only persist UI preferences, not images or selection state
+      partialize: (state) => ({
+        gridColumns: state.gridColumns,
+      }),
+    }
+  )
+);
