@@ -8,7 +8,6 @@ import { MaskOverlay } from './MaskOverlay';
 import { CropOverlay } from './CropOverlay';
 import { ComparisonOverlay } from './ComparisonOverlay';
 import { computeHistogram } from '@/lib/histogram';
-import { PRESET_LUTS } from '@/lib/webgl/lut-loader';
 
 interface CanvasProps {
   className?: string;
@@ -20,7 +19,7 @@ export function Canvas({ className }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const transformRef = useRef<{ setTransform: (x: number, y: number, scale: number) => void } | null>(null);
-  const { initRenderer, setImage, render, setLut, clearLut } = useWebGL();
+  const { initRenderer, setImage, render } = useWebGL();
   const { image, editState } = useEditorStore();
   const selectedMaskId = useEditorStore((state) => state.selectedMaskId);
   const isCropping = useEditorStore((state) => state.isCropping);
@@ -78,24 +77,6 @@ export function Canvas({ className }: CanvasProps) {
       setImage(image.preview);
     }
   }, [image, setImage]);
-
-  // Load LUT when lutId changes
-  useEffect(() => {
-    if (!editState.lutId) {
-      clearLut();
-      return;
-    }
-
-    // Check if this is a preset LUT
-    const lutGenerator = PRESET_LUTS[editState.lutId as keyof typeof PRESET_LUTS];
-    if (lutGenerator) {
-      const lutData = lutGenerator();
-      setLut(lutData.data, lutData.size);
-    } else {
-      // If not a preset LUT, clear it (or could load from URL in the future)
-      clearLut();
-    }
-  }, [editState.lutId, setLut, clearLut]);
 
   // Re-render when edit state changes
   useEffect(() => {

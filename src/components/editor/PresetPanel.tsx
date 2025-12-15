@@ -4,7 +4,6 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { useEditorStore } from '@/lib/editor/state';
 import { useGalleryStore } from '@/lib/gallery/store';
 import { PRESETS, applyPreset } from '@/lib/editor/presets';
-import { Slider } from '@/components/ui/slider';
 import { createDefaultEditState } from '@/types/editor';
 import {
   loadUserPresets,
@@ -20,12 +19,15 @@ import { SavePresetDialog } from './SavePresetDialog';
 // Category colors - distinct color for each preset category
 const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
   Basic: { bg: 'bg-neutral-500', text: 'text-white' },
-  Film: { bg: 'bg-orange-500', text: 'text-black' },
+  VSCO: { bg: 'bg-teal-500', text: 'text-white' },
+  Film: { bg: 'bg-amber-600', text: 'text-white' },
+  Portrait: { bg: 'bg-pink-400', text: 'text-black' },
+  Moody: { bg: 'bg-indigo-600', text: 'text-white' },
+  Vibrant: { bg: 'bg-rose-500', text: 'text-white' },
+  Cinematic: { bg: 'bg-cyan-600', text: 'text-white' },
   'B&W': { bg: 'bg-neutral-700', text: 'text-white' },
-  Warm: { bg: 'bg-amber-500', text: 'text-black' },
-  Bold: { bg: 'bg-rose-500', text: 'text-white' },
-  Light: { bg: 'bg-sky-400', text: 'text-black' },
-  Dark: { bg: 'bg-indigo-600', text: 'text-white' },
+  Vintage: { bg: 'bg-orange-500', text: 'text-black' },
+  Clean: { bg: 'bg-sky-400', text: 'text-black' },
 };
 
 // Preset pill component - compact single row
@@ -107,7 +109,7 @@ export function PresetPanel() {
   // Editor store (single image mode)
   const image = useEditorStore((state) => state.image);
   const editState = useEditorStore((state) => state.editState);
-  const updateEditState = useEditorStore((state) => state.updateEditState);
+  const setEditState = useEditorStore((state) => state.setEditState);
   const pushHistory = useEditorStore((state) => state.pushHistory);
   const showToast = useEditorStore((state) => state.showToast);
 
@@ -122,6 +124,7 @@ export function PresetPanel() {
 
   const [userPresets, setUserPresets] = useState<UserPreset[]>([]);
   const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
+  const [activePresetId, setActivePresetId] = useState<string | null>(null);
   const [activeUserPresetId, setActiveUserPresetId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -140,7 +143,26 @@ export function PresetPanel() {
         } else {
           const presetState = applyPreset(preset);
           const defaultState = createDefaultEditState();
-          newEditState = { ...defaultState, ...presetState };
+          // Deep merge: start with defaults, overlay preset values
+          newEditState = {
+            ...defaultState,
+            ...presetState,
+            // Ensure nested objects are properly merged
+            curve: { ...defaultState.curve, ...presetState.curve },
+            hsl: { ...defaultState.hsl, ...presetState.hsl },
+            grain: { ...defaultState.grain, ...presetState.grain },
+            vignette: { ...defaultState.vignette, ...presetState.vignette },
+            splitTone: { ...defaultState.splitTone, ...presetState.splitTone },
+            blur: { ...defaultState.blur, ...presetState.blur },
+            border: { ...defaultState.border, ...presetState.border },
+            bloom: { ...defaultState.bloom, ...presetState.bloom },
+            halation: { ...defaultState.halation, ...presetState.halation },
+            skinTone: { ...defaultState.skinTone, ...presetState.skinTone },
+            calibration: { ...defaultState.calibration, ...presetState.calibration },
+            grayMixer: { ...defaultState.grayMixer, ...presetState.grayMixer },
+            sharpening: { ...defaultState.sharpening, ...presetState.sharpening },
+            noiseReduction: { ...defaultState.noiseReduction, ...presetState.noiseReduction },
+          };
         }
         updateImageEditState(galleryImg.id, newEditState);
       });
@@ -148,15 +170,35 @@ export function PresetPanel() {
     } else {
       // Single image mode
       pushHistory();
+      setActivePresetId(preset.id);
       setActiveUserPresetId(null);
 
       if (preset.id === 'original') {
-        const defaultState = createDefaultEditState();
-        updateEditState(defaultState);
+        setEditState(createDefaultEditState());
       } else {
         const presetState = applyPreset(preset);
         const defaultState = createDefaultEditState();
-        updateEditState({ ...defaultState, ...presetState });
+        // Deep merge: start with defaults, overlay preset values
+        // Use setEditState for full replacement (not merge)
+        setEditState({
+          ...defaultState,
+          ...presetState,
+          // Ensure nested objects are properly merged
+          curve: { ...defaultState.curve, ...presetState.curve },
+          hsl: { ...defaultState.hsl, ...presetState.hsl },
+          grain: { ...defaultState.grain, ...presetState.grain },
+          vignette: { ...defaultState.vignette, ...presetState.vignette },
+          splitTone: { ...defaultState.splitTone, ...presetState.splitTone },
+          blur: { ...defaultState.blur, ...presetState.blur },
+          border: { ...defaultState.border, ...presetState.border },
+          bloom: { ...defaultState.bloom, ...presetState.bloom },
+          halation: { ...defaultState.halation, ...presetState.halation },
+          skinTone: { ...defaultState.skinTone, ...presetState.skinTone },
+          calibration: { ...defaultState.calibration, ...presetState.calibration },
+          grayMixer: { ...defaultState.grayMixer, ...presetState.grayMixer },
+          sharpening: { ...defaultState.sharpening, ...presetState.sharpening },
+          noiseReduction: { ...defaultState.noiseReduction, ...presetState.noiseReduction },
+        });
       }
     }
   };
@@ -171,9 +213,10 @@ export function PresetPanel() {
       showToast(`Applied to ${selectedGalleryImages.length} photo${selectedGalleryImages.length > 1 ? 's' : ''}`);
     } else {
       pushHistory();
+      setActivePresetId(null);
       setActiveUserPresetId(preset.id);
       const newState = applyUserPreset(preset, createDefaultEditState());
-      updateEditState(newState);
+      setEditState(newState);
     }
   };
 
@@ -210,11 +253,6 @@ export function PresetPanel() {
     }
   };
 
-  const handleStrengthChange = (value: number) => {
-    useEditorStore.setState((state) => ({
-      editState: { ...state.editState, lutIntensity: value },
-    }));
-  };
 
   // Group presets by category
   const presetsByCategory = useMemo(() => {
@@ -228,29 +266,6 @@ export function PresetPanel() {
     return grouped;
   }, []);
 
-  // Generate short codes for presets
-  const getPresetCode = (preset: (typeof PRESETS)[number], index: number) => {
-    if (preset.id === 'original') return 'OG';
-    const categoryPrefix = preset.category[0].toUpperCase();
-    return `${categoryPrefix}${index + 1}`;
-  };
-
-  // Inline strength slider component
-  const StrengthSlider = () => (
-    <div className="px-4 py-2 ml-2 border-l border-neutral-700">
-      <div className="flex justify-between text-xs mb-1.5">
-        <span className="text-neutral-500">Strength</span>
-        <span className="text-neutral-300 tabular-nums underline">{editState.lutIntensity}</span>
-      </div>
-      <Slider
-        value={[editState.lutIntensity]}
-        min={0}
-        max={100}
-        step={1}
-        onValueChange={([v]) => handleStrengthChange(v)}
-      />
-    </div>
-  );
 
   return (
     <div className="py-2">
@@ -280,15 +295,13 @@ export function PresetPanel() {
             {userPresets.map((preset) => {
               const isActive = activeUserPresetId === preset.id;
               return (
-                <div key={preset.id}>
-                  <UserPresetPill
-                    preset={preset}
-                    isActive={isActive}
-                    onClick={() => handleUserPresetClick(preset)}
-                    onDelete={() => handleDeleteUserPreset(preset.id)}
-                  />
-                  {isActive && !isGalleryMode && <StrengthSlider />}
-                </div>
+                <UserPresetPill
+                  key={preset.id}
+                  preset={preset}
+                  isActive={isActive}
+                  onClick={() => handleUserPresetClick(preset)}
+                  onDelete={() => handleDeleteUserPreset(preset.id)}
+                />
               );
             })}
           </div>
@@ -312,23 +325,19 @@ export function PresetPanel() {
             {category}
           </span>
           <div className="space-y-0.5">
-            {presets.map((preset, index) => {
+            {presets.map((preset) => {
               const isActive =
                 !isGalleryMode &&
                 activeUserPresetId === null &&
-                (preset.id === 'original'
-                  ? !editState.lutId
-                  : editState.lutId === preset.lutFile);
+                activePresetId === preset.id;
               return (
-                <div key={preset.id}>
-                  <PresetPill
-                    code={getPresetCode(preset, index)}
-                    category={category}
-                    isActive={isActive}
-                    onClick={() => handlePresetClick(preset)}
-                  />
-                  {isActive && preset.id !== 'original' && <StrengthSlider />}
-                </div>
+                <PresetPill
+                  key={preset.id}
+                  code={preset.name}
+                  category={category}
+                  isActive={isActive}
+                  onClick={() => handlePresetClick(preset)}
+                />
               );
             })}
           </div>

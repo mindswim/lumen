@@ -83,6 +83,28 @@ export interface SkinToneSettings {
   luminance: number;  // -100 to 100 (skin brightness)
 }
 
+// Camera Calibration - shifts RGB primaries (like Lightroom's Camera Calibration panel)
+export interface CameraCalibrationSettings {
+  redHue: number;         // -100 to 100 (shifts red primary hue)
+  redSaturation: number;  // -100 to 100 (red saturation)
+  greenHue: number;       // -100 to 100 (shifts green primary hue)
+  greenSaturation: number; // -100 to 100 (green saturation)
+  blueHue: number;        // -100 to 100 (shifts blue primary hue)
+  blueSaturation: number; // -100 to 100 (blue saturation)
+}
+
+// Gray Mixer - controls how colors convert to B&W
+export interface GrayMixerSettings {
+  red: number;      // -100 to 100
+  orange: number;   // -100 to 100
+  yellow: number;   // -100 to 100
+  green: number;    // -100 to 100
+  aqua: number;     // -100 to 100
+  blue: number;     // -100 to 100
+  purple: number;   // -100 to 100
+  magenta: number;  // -100 to 100
+}
+
 export interface CropRect {
   top: number;
   left: number;
@@ -184,6 +206,11 @@ export interface EditState {
 
   // Color
   skinTone: SkinToneSettings;
+  calibration: CameraCalibrationSettings;
+
+  // B&W
+  convertToGrayscale: boolean;
+  grayMixer: GrayMixerSettings;
 
   // Detail
   sharpening: SharpeningSettings;
@@ -284,6 +311,26 @@ export const DEFAULT_SKIN_TONE: SkinToneSettings = {
   luminance: 0,
 };
 
+export const DEFAULT_CALIBRATION: CameraCalibrationSettings = {
+  redHue: 0,
+  redSaturation: 0,
+  greenHue: 0,
+  greenSaturation: 0,
+  blueHue: 0,
+  blueSaturation: 0,
+};
+
+export const DEFAULT_GRAY_MIXER: GrayMixerSettings = {
+  red: 0,
+  orange: 0,
+  yellow: 0,
+  green: 0,
+  aqua: 0,
+  blue: 0,
+  purple: 0,
+  magenta: 0,
+};
+
 export const DEFAULT_SHARPENING: SharpeningSettings = {
   amount: 0,
   radius: 1,
@@ -341,6 +388,9 @@ export function createDefaultEditState(): EditState {
     bloom: { ...DEFAULT_BLOOM },
     halation: { ...DEFAULT_HALATION },
     skinTone: { ...DEFAULT_SKIN_TONE },
+    calibration: { ...DEFAULT_CALIBRATION },
+    convertToGrayscale: false,
+    grayMixer: { ...DEFAULT_GRAY_MIXER },
     sharpening: { ...DEFAULT_SHARPENING },
     noiseReduction: { ...DEFAULT_NOISE_REDUCTION },
     lutId: null,
