@@ -91,8 +91,19 @@ export function Gallery() {
   const router = useRouter();
   const [isDragging, setIsDragging] = useState(false);
 
-  const { images, selectedIds, addImages, selectImage, deselectAll, setActiveImage, gridColumns } =
-    useGalleryStore();
+  const {
+    images,
+    selectedIds,
+    addImages,
+    selectImage,
+    deselectAll,
+    setActiveImage,
+    gridColumns,
+    getVisibleImages,
+  } = useGalleryStore();
+
+  // Get visible images (filtered if in isolate mode)
+  const visibleImages = getVisibleImages();
   const setEditorImage = useEditorStore((state) => state.setImage);
   const setEditState = useEditorStore((state) => state.setEditState);
 
@@ -201,7 +212,7 @@ export function Gallery() {
               className="space-y-4"
               style={{ columnCount: gridColumns, columnGap: '1rem' }}
             >
-              {images.map((image) => (
+              {visibleImages.map((image) => (
                 <PhotoThumbnail
                   key={image.id}
                   image={image}

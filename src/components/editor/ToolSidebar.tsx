@@ -138,6 +138,13 @@ const MultiColumnIcon = () => (
   </svg>
 );
 
+const IsolateIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <rect x="7" y="7" width="10" height="10" rx="1" />
+  </svg>
+);
+
 interface ToolSidebarProps {
   mode: 'gallery' | 'editor';
   onExport?: () => void;
@@ -164,7 +171,17 @@ export function ToolSidebar({ mode, onExport, onAddPhotos }: ToolSidebarProps) {
   const setEditorImage = useEditorStore((state) => state.setImage);
 
   // Gallery store
-  const { selectedIds, removeImages, addImages, activeImageId, updateImageEditState, gridColumns, setGridColumns } = useGalleryStore();
+  const {
+    selectedIds,
+    removeImages,
+    addImages,
+    activeImageId,
+    updateImageEditState,
+    gridColumns,
+    setGridColumns,
+    isIsolated,
+    toggleIsolate,
+  } = useGalleryStore();
 
   const toggleComparison = () => {
     if (comparisonMode === 'off') {
@@ -299,6 +316,13 @@ export function ToolSidebar({ mode, onExport, onAddPhotos }: ToolSidebarProps) {
         <>
           {/* Gallery tools */}
           <div className="flex flex-col items-center gap-1">
+            <ToolButton
+              icon={<IsolateIcon />}
+              label={isIsolated ? "Exit Isolate" : "Isolate Selected"}
+              onClick={toggleIsolate}
+              active={isIsolated}
+              disabled={!isIsolated && selectedIds.length === 0}
+            />
             <ToolButton
               icon={<CopyIcon />}
               label="Copy Settings"

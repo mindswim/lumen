@@ -18,6 +18,8 @@ interface GalleryStore {
   selectedIds: string[];
   activeImageId: string | null;
   gridColumns: number; // 1-8 columns
+  isIsolated: boolean; // Isolate mode - show only isolated images
+  isolatedIds: string[]; // IDs of images being isolated
 
   // Actions
   addImages: (files: File[]) => Promise<void>;
@@ -28,6 +30,11 @@ interface GalleryStore {
   updateImageEditState: (id: string, editState: EditState) => void;
   getImage: (id: string) => GalleryImage | undefined;
   setGridColumns: (columns: number) => void;
+  toggleIsolate: () => void; // Enter/exit isolate mode
+  exitIsolate: () => void; // Exit isolate mode
+
+  // Computed
+  getVisibleImages: () => GalleryImage[]; // Returns isolated images if in isolate mode
 }
 
 // Generate unique ID
@@ -86,6 +93,8 @@ export const useGalleryStore = create<GalleryStore>()((set, get) => ({
   selectedIds: [],
   activeImageId: null,
   gridColumns: 5, // Default to 5 columns
+  isIsolated: false,
+  isolatedIds: [],
 
   addImages: async (files: File[]) => {
     const newImages: GalleryImage[] = [];
@@ -175,5 +184,30 @@ export const useGalleryStore = create<GalleryStore>()((set, get) => ({
 
   setGridColumns: (columns: number) => {
     set({ gridColumns: Math.max(1, Math.min(8, columns)) });
+  },
+
+  toggleIsolate: () => {
+    const { isIsolated, selectedIds } = get();
+    if (isIsolated) {
+      // Exit isolate mode
+      set({ isIsolated: false, isolatedIds: [] });
+    } else {
+      // Enter isolate mode with currently selected images
+      if (selectedIds.length > 0) {
+        set({ isIsolated: true, isolatedIds: [...selectedIds] });
+      }
+    }
+  },
+
+  exitIsolate: () => {
+    set({ isIsolated: false, isolatedIds: [] });
+  },
+
+  getVisibleImages: () => {
+    const { images, isIsolated, isolatedIds } = get();
+    if (isIsolated && isolatedIds.length > 0) {
+      return images.filter((img) => isolatedIds.includes(img.id));
+    }
+    return images;
   },
 }));
