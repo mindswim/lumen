@@ -1,0 +1,347 @@
+'use client';
+
+import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
+import { TransformWrapper, TransformComponent, useControls } from 'react-zoom-pan-pinch';
+import { useWebGL } from '@/hooks/useWebGL';
+import { useEditorStore } from '@/lib/editor/state';
+import { MaskOverlay } from './MaskOverlay';
+import { CropOverlay } from './CropOverlay';
+import { ComparisonOverlay } from './ComparisonOverlay';
+import { computeHistogram } from '@/lib/histogram';
+import { PRESET_LUTS } from '@/lib/webgl/lut-loader';
+
+interface CanvasProps {
+  className?: string;
+}
+
+// Zoom controls component
+function ZoomControls({ scale }: { scale: number }) {
+  const { zoomIn, zoomOut, resetTransform } = useControls();
+  const percentage = Math.round(scale * 100);
+
+  return (
+    <div className="absolute bottom-4 left-4 flex items-center gap-1 bg-black/60 rounded-lg p-1 z-10">
+      <button
+        onClick={() => zoomOut()}
+        className="w-7 h-7 flex items-center justify-center text-white hover:bg-white/10 rounded transition-colors"
+        title="Zoom out"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M5 12h14" />
+        </svg>
+      </button>
+      <button
+        onClick={() => resetTransform()}
+        className="px-2 h-7 text-xs text-white hover:bg-white/10 rounded transition-colors min-w-[48px]"
+        title="Reset zoom"
+      >
+        {percentage}%
+      </button>
+      <button
+        onClick={() => zoomIn()}
+        className="w-7 h-7 flex items-center justify-center text-white hover:bg-white/10 rounded transition-colors"
+        title="Zoom in"
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M12 5v14M5 12h14" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
+export function Canvas({ className }: CanvasProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const { initRenderer, setImage, render, setLut, clearLut } = useWebGL();
+  const { image, editState } = useEditorStore();
+  const selectedMaskId = useEditorStore((state) => state.selectedMaskId);
+  const isCropping = useEditorStore((state) => state.isCropping);
+  const comparisonMode = useEditorStore((state) => state.comparisonMode);
+  const splitPosition = useEditorStore((state) => state.comparisonSplitPosition);
+  const isHoldingOriginal = useEditorStore((state) => state.isHoldingOriginal);
+  const setIsHoldingOriginal = useEditorStore((state) => state.setIsHoldingOriginal);
+  const showHistogram = useEditorStore((state) => state.showHistogram);
+  const setHistogramData = useEditorStore((state) => state.setHistogramData);
+
+  const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
+  const [currentScale, setCurrentScale] = useState(1);
+  const histogramTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Handle spacebar hold for comparison
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && comparisonMode === 'hold' && !e.repeat) {
+        e.preventDefault();
+        setIsHoldingOriginal(true);
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && comparisonMode === 'hold') {
+        e.preventDefault();
+        setIsHoldingOriginal(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [comparisonMode, setIsHoldingOriginal]);
+
+  // Initialize renderer when canvas mounts
+  useEffect(() => {
+    if (canvasRef.current) {
+      initRenderer(canvasRef.current);
+    }
+  }, [initRenderer]);
+
+  // Set image when it changes
+  useEffect(() => {
+    if (image?.preview) {
+      setImage(image.preview);
+    }
+  }, [image, setImage]);
+
+  // Load LUT when lutId changes
+  useEffect(() => {
+    if (!editState.lutId) {
+      clearLut();
+      return;
+    }
+
+    // Check if this is a preset LUT
+    const lutGenerator = PRESET_LUTS[editState.lutId as keyof typeof PRESET_LUTS];
+    if (lutGenerator) {
+      const lutData = lutGenerator();
+      setLut(lutData.data, lutData.size);
+    } else {
+      // If not a preset LUT, clear it (or could load from URL in the future)
+      clearLut();
+    }
+  }, [editState.lutId, setLut, clearLut]);
+
+  // Re-render when edit state changes
+  useEffect(() => {
+    if (image) {
+      render(editState);
+    }
+  }, [editState, image, render]);
+
+  // Compute histogram after render (throttled)
+  useEffect(() => {
+    if (!canvasRef.current || !image || !showHistogram) return;
+
+    if (histogramTimeoutRef.current) {
+      clearTimeout(histogramTimeoutRef.current);
+    }
+
+    histogramTimeoutRef.current = setTimeout(() => {
+      if (canvasRef.current) {
+        const data = computeHistogram(canvasRef.current);
+        setHistogramData(data);
+      }
+    }, 100);
+
+    return () => {
+      if (histogramTimeoutRef.current) {
+        clearTimeout(histogramTimeoutRef.current);
+      }
+    };
+  }, [editState, image, showHistogram, setHistogramData]);
+
+  // Calculate transform styles for rotation and flip
+  const transformStyle = useMemo(() => {
+    const transforms: string[] = [];
+
+    if (editState.rotation !== 0) {
+      transforms.push(`rotate(${editState.rotation}deg)`);
+    }
+
+    if (editState.flipH) {
+      transforms.push('scaleX(-1)');
+    }
+
+    if (editState.flipV) {
+      transforms.push('scaleY(-1)');
+    }
+
+    return transforms.length > 0 ? transforms.join(' ') : undefined;
+  }, [editState.rotation, editState.flipH, editState.flipV]);
+
+  // Calculate initial scale to fit image in viewport with padding
+  const initialScale = useMemo(() => {
+    if (!image || containerSize.width === 0 || containerSize.height === 0) return 1;
+
+    const padding = 48; // 24px on each side
+    const availableWidth = containerSize.width - padding;
+    const availableHeight = containerSize.height - padding;
+
+    const scaleX = availableWidth / image.width;
+    const scaleY = availableHeight / image.height;
+
+    return Math.min(scaleX, scaleY, 1); // Don't scale up beyond 100%
+  }, [image, containerSize]);
+
+  // Track container size
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const updateSize = () => {
+      if (containerRef.current) {
+        setContainerSize({
+          width: containerRef.current.clientWidth,
+          height: containerRef.current.clientHeight,
+        });
+      }
+    };
+
+    updateSize();
+    const resizeObserver = new ResizeObserver(updateSize);
+    resizeObserver.observe(containerRef.current);
+
+    return () => resizeObserver.disconnect();
+  }, []);
+
+  // Reset scale when initialScale changes
+  useEffect(() => {
+    setCurrentScale(initialScale);
+  }, [initialScale]);
+
+  return (
+    <div
+      ref={containerRef}
+      className={`relative overflow-hidden bg-neutral-950 ${className || ''}`}
+    >
+      {image ? (
+        <TransformWrapper
+          initialScale={initialScale}
+          minScale={0.1}
+          maxScale={4}
+          centerOnInit
+          limitToBounds={false}
+          panning={{
+            velocityDisabled: true,
+            excluded: ['input', 'textarea', 'button'],
+          }}
+          doubleClick={{ mode: 'reset' }}
+          onTransformed={(_, state) => {
+            setCurrentScale(state.scale);
+          }}
+        >
+          {() => (
+            <>
+              <ZoomControls scale={currentScale} />
+              <TransformComponent
+                wrapperStyle={{
+                  width: '100%',
+                  height: '100%',
+                }}
+                contentStyle={{
+                  width: image.width,
+                  height: image.height,
+                }}
+              >
+                <div
+                  ref={wrapperRef}
+                  className="relative"
+                  style={{
+                    width: image.width,
+                    height: image.height,
+                    transform: transformStyle,
+                  }}
+                >
+                  {/* Original image layer (shown for comparison modes) */}
+                  {(comparisonMode === 'hold' && isHoldingOriginal) && (
+                    <img
+                      src={image.preview.src}
+                      alt="Original"
+                      className="absolute inset-0 shadow-2xl"
+                      style={{ width: image.width, height: image.height }}
+                    />
+                  )}
+
+                  {/* Split mode: Original on left */}
+                  {comparisonMode === 'split' && (
+                    <img
+                      src={image.preview.src}
+                      alt="Original"
+                      className="absolute inset-0 shadow-2xl"
+                      style={{ width: image.width, height: image.height }}
+                    />
+                  )}
+
+                  {/* Edited canvas */}
+                  <canvas
+                    ref={canvasRef}
+                    className="shadow-2xl"
+                    style={{
+                      width: image.width,
+                      height: image.height,
+                      opacity: (comparisonMode === 'hold' && isHoldingOriginal) ? 0 : 1,
+                      clipPath: comparisonMode === 'split'
+                        ? `inset(0 0 0 ${splitPosition * 100}%)`
+                        : undefined,
+                    }}
+                  />
+
+                  {/* Comparison overlay for split mode */}
+                  {comparisonMode === 'split' && (
+                    <ComparisonOverlay
+                      canvasWidth={image.width}
+                      canvasHeight={image.height}
+                    />
+                  )}
+
+                  {/* Hold mode hint */}
+                  {comparisonMode === 'hold' && !isHoldingOriginal && (
+                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-black/60 text-white text-xs rounded">
+                      Hold Space for original
+                    </div>
+                  )}
+
+                  {/* Showing original indicator */}
+                  {comparisonMode === 'hold' && isHoldingOriginal && (
+                    <div className="absolute top-4 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-black/60 text-white text-xs rounded">
+                      Original
+                    </div>
+                  )}
+
+                  {/* Crop overlay when in crop mode */}
+                  {isCropping && (
+                    <CropOverlay
+                      canvasWidth={image.width}
+                      canvasHeight={image.height}
+                      imageWidth={image.width}
+                      imageHeight={image.height}
+                    />
+                  )}
+
+                  {/* Mask overlay for interactive mask editing */}
+                  {selectedMaskId && !isCropping && (
+                    <MaskOverlay
+                      canvasWidth={image.width}
+                      canvasHeight={image.height}
+                    />
+                  )}
+                </div>
+              </TransformComponent>
+            </>
+          )}
+        </TransformWrapper>
+      ) : (
+        <div className="flex-1 flex items-center justify-center h-full text-neutral-600 text-center">
+          <div>
+            <p className="text-lg">No image loaded</p>
+            <p className="text-sm mt-2 text-neutral-700">Upload an image to start editing</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
