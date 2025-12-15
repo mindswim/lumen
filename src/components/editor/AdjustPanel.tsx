@@ -3,9 +3,20 @@
 import { useEditorStore, batchedUpdate } from '@/lib/editor/state';
 import { AdjustmentSlider, sliderPresets } from '@/components/ui/adjustment-slider';
 import { PanelSection, PanelContainer, PanelDivider } from '@/components/ui/panel-section';
+import { SkinToneSettings } from '@/types/editor';
 
 export function AdjustPanel() {
   const editState = useEditorStore((state) => state.editState);
+  const skinTone = editState.skinTone;
+
+  const handleSkinToneUpdate = <K extends keyof SkinToneSettings>(key: K, value: SkinToneSettings[K]) => {
+    useEditorStore.setState((state) => ({
+      editState: {
+        ...state.editState,
+        skinTone: { ...state.editState.skinTone, [key]: value },
+      },
+    }));
+  };
 
   return (
     <PanelContainer>
@@ -78,6 +89,36 @@ export function AdjustPanel() {
           {...sliderPresets.tint}
           gradient="tint"
           onChange={(v) => batchedUpdate('tint', v)}
+        />
+      </PanelSection>
+
+      <PanelDivider />
+
+      {/* Skin Tone Section */}
+      <PanelSection title="Skin Tone" collapsible>
+        <AdjustmentSlider
+          label="Hue"
+          value={skinTone.hue}
+          min={-100}
+          max={100}
+          defaultValue={0}
+          onChange={(v) => handleSkinToneUpdate('hue', v)}
+        />
+        <AdjustmentSlider
+          label="Saturation"
+          value={skinTone.saturation}
+          min={-100}
+          max={100}
+          defaultValue={0}
+          onChange={(v) => handleSkinToneUpdate('saturation', v)}
+        />
+        <AdjustmentSlider
+          label="Luminance"
+          value={skinTone.luminance}
+          min={-100}
+          max={100}
+          defaultValue={0}
+          onChange={(v) => handleSkinToneUpdate('luminance', v)}
         />
       </PanelSection>
 

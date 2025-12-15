@@ -63,6 +63,51 @@ uniform bool u_hasLut;
 // Curve bypass flag (true = identity curve, skip processing)
 uniform bool u_curveIsIdentity;
 
+// Fade (lifts blacks)
+uniform float u_fade;
+
+// Split Tone
+uniform float u_splitHighlightHue;
+uniform float u_splitHighlightSat;
+uniform float u_splitShadowHue;
+uniform float u_splitShadowSat;
+uniform float u_splitBalance;
+
+// Blur
+uniform float u_blurAmount;
+uniform int u_blurType; // 0 = gaussian, 1 = lens
+uniform vec2 u_resolution;
+
+// Border
+uniform float u_borderSize;
+uniform vec3 u_borderColor;
+uniform float u_borderOpacity;
+
+// Bloom (simplified single-pass glow)
+uniform float u_bloomAmount;
+uniform float u_bloomThreshold;
+uniform float u_bloomRadius;
+
+// Halation (film red glow effect)
+uniform float u_halationAmount;
+uniform float u_halationThreshold;
+uniform float u_halationHue;
+
+// Skin Tone
+uniform float u_skinHue;
+uniform float u_skinSaturation;
+uniform float u_skinLuminance;
+
+// Sharpening
+uniform float u_sharpeningAmount;
+uniform float u_sharpeningRadius;
+uniform float u_sharpeningDetail;
+
+// Noise Reduction
+uniform float u_noiseReductionLuminance;
+uniform float u_noiseReductionColor;
+uniform float u_noiseReductionDetail;
+
 vec3 srgbToLinear(vec3 srgb) {
   return mix(srgb / 12.92, pow((srgb + 0.055) / 1.055, vec3(2.4)), step(0.04045, srgb));
 }
@@ -283,6 +328,295 @@ vec3 applyGrain(vec3 color, vec2 uv) {
   return color + grain;
 }
 
+vec3 applyFade(vec3 color) {
+  if (u_fade == 0.0) return color;
+  // Fade lifts the black point, creating a matte/faded look
+  float fadeAmount = u_fade / 100.0 * 0.3;
+  return color + fadeAmount * (1.0 - color);
+}
+
+vec3 hueToRgb(float hue) {
+  // Convert hue (0-360) to RGB for split tone
+  float h = mod(hue, 360.0) / 60.0;
+  float x = 1.0 - abs(mod(h, 2.0) - 1.0);
+  vec3 rgb;
+  if (h < 1.0) rgb = vec3(1.0, x, 0.0);
+  else if (h < 2.0) rgb = vec3(x, 1.0, 0.0);
+  else if (h < 3.0) rgb = vec3(0.0, 1.0, x);
+  else if (h < 4.0) rgb = vec3(0.0, x, 1.0);
+  else if (h < 5.0) rgb = vec3(x, 0.0, 1.0);
+  else rgb = vec3(1.0, 0.0, x);
+  return rgb;
+}
+
+vec3 applySplitTone(vec3 color) {
+  if (u_splitHighlightSat == 0.0 && u_splitShadowSat == 0.0) return color;
+
+  float lum = dot(color, vec3(0.2126, 0.7152, 0.0722));
+
+  // Balance shifts the crossover point (-100 to 100 maps to 0.2-0.8)
+  float balance = 0.5 + (u_splitBalance / 100.0) * 0.3;
+
+  // Calculate shadow and highlight masks
+  float shadowMask = 1.0 - smoothstep(0.0, balance, lum);
+  float highlightMask = smoothstep(balance, 1.0, lum);
+
+  // Get tint colors from hue
+  vec3 shadowTint = hueToRgb(u_splitShadowHue);
+  vec3 highlightTint = hueToRgb(u_splitHighlightHue);
+
+  // Apply tints based on saturation and masks
+  float shadowStrength = (u_splitShadowSat / 100.0) * shadowMask * 0.3;
+  float highlightStrength = (u_splitHighlightSat / 100.0) * highlightMask * 0.3;
+
+  color = mix(color, shadowTint * lum + color * (1.0 - lum), shadowStrength);
+  color = mix(color, highlightTint * lum + color * (1.0 - lum), highlightStrength);
+
+  return color;
+}
+
+vec3 applyBlur(vec3 color, vec2 uv) {
+  if (u_blurAmount == 0.0) return color;
+
+  // Single-pass blur approximation using 9 samples
+  float blurRadius = u_blurAmount / 100.0 * 0.02;
+  vec2 texelSize = 1.0 / u_resolution;
+
+  vec3 result = vec3(0.0);
+  float totalWeight = 0.0;
+
+  // 3x3 kernel with gaussian-like weights
+  float weights[9] = float[](
+    1.0, 2.0, 1.0,
+    2.0, 4.0, 2.0,
+    1.0, 2.0, 1.0
+  );
+
+  vec2 offsets[9] = vec2[](
+    vec2(-1, -1), vec2(0, -1), vec2(1, -1),
+    vec2(-1,  0), vec2(0,  0), vec2(1,  0),
+    vec2(-1,  1), vec2(0,  1), vec2(1,  1)
+  );
+
+  for (int i = 0; i < 9; i++) {
+    vec2 sampleUV = uv + offsets[i] * texelSize * blurRadius * 50.0;
+    result += texture(u_image, sampleUV).rgb * weights[i];
+    totalWeight += weights[i];
+  }
+
+  vec3 blurred = result / totalWeight;
+
+  // Mix original and blurred based on amount
+  return mix(color, blurred, u_blurAmount / 100.0);
+}
+
+vec3 applyBorder(vec3 color, vec2 uv) {
+  if (u_borderSize == 0.0) return color;
+
+  float borderWidth = u_borderSize / 100.0 * 0.2; // Max 20% border
+
+  // Calculate distance from edges
+  float distFromEdge = min(
+    min(uv.x, 1.0 - uv.x),
+    min(uv.y, 1.0 - uv.y)
+  );
+
+  // Create border mask with soft edge
+  float borderMask = 1.0 - smoothstep(0.0, borderWidth, distFromEdge);
+
+  // Apply border color with opacity
+  return mix(color, u_borderColor, borderMask * (u_borderOpacity / 100.0));
+}
+
+// Simplified bloom - extracts bright areas and adds glow
+// NOTE: Professional version needs multi-pass with framebuffers
+vec3 applyBloom(vec3 color, vec2 uv) {
+  if (u_bloomAmount == 0.0) return color;
+
+  float threshold = u_bloomThreshold / 100.0;
+  float radius = u_bloomRadius / 100.0 * 0.03;
+  vec2 texelSize = 1.0 / u_resolution;
+
+  // Sample surrounding pixels for glow
+  vec3 bloom = vec3(0.0);
+  float totalWeight = 0.0;
+
+  for (int x = -2; x <= 2; x++) {
+    for (int y = -2; y <= 2; y++) {
+      vec2 offset = vec2(float(x), float(y)) * texelSize * radius * 50.0;
+      vec3 sample_color = texture(u_image, uv + offset).rgb;
+      float lum = dot(sample_color, vec3(0.2126, 0.7152, 0.0722));
+
+      // Only include bright pixels above threshold
+      float brightPass = max(0.0, lum - threshold) / (1.0 - threshold + 0.001);
+      float weight = exp(-float(x*x + y*y) / 4.0);
+
+      bloom += sample_color * brightPass * weight;
+      totalWeight += weight;
+    }
+  }
+
+  bloom /= totalWeight;
+
+  // Add bloom to original (additive blend)
+  return color + bloom * (u_bloomAmount / 100.0);
+}
+
+// Simplified halation - red/orange glow around bright areas (film effect)
+// NOTE: Professional version needs multi-pass with framebuffers
+vec3 applyHalation(vec3 color, vec2 uv) {
+  if (u_halationAmount == 0.0) return color;
+
+  float threshold = u_halationThreshold / 100.0;
+  vec2 texelSize = 1.0 / u_resolution;
+
+  // Sample surrounding pixels for halation glow
+  vec3 halation = vec3(0.0);
+  float totalWeight = 0.0;
+
+  for (int x = -3; x <= 3; x++) {
+    for (int y = -3; y <= 3; y++) {
+      vec2 offset = vec2(float(x), float(y)) * texelSize * 15.0;
+      vec3 sample_color = texture(u_image, uv + offset).rgb;
+      float lum = dot(sample_color, vec3(0.2126, 0.7152, 0.0722));
+
+      // Only include very bright pixels
+      float brightPass = max(0.0, lum - threshold) / (1.0 - threshold + 0.001);
+      float weight = exp(-float(x*x + y*y) / 8.0);
+
+      halation += sample_color * brightPass * weight;
+      totalWeight += weight;
+    }
+  }
+
+  halation /= totalWeight;
+
+  // Tint the halation with the specified hue (typically red-orange)
+  vec3 halationTint = hueToRgb(u_halationHue);
+
+  // Apply halation as colored glow
+  return color + halation * halationTint * (u_halationAmount / 100.0) * 0.5;
+}
+
+// Skin tone adjustment - targets skin color range (orange-red hues)
+vec3 applySkinTone(vec3 color) {
+  if (u_skinHue == 0.0 && u_skinSaturation == 0.0 && u_skinLuminance == 0.0) return color;
+
+  vec3 hsl = rgbToHsl(color);
+
+  // Skin tones are typically in the orange-red range (hue ~0.02-0.08, roughly 7-30 degrees)
+  // With moderate saturation (0.3-0.7)
+  float skinHueCenter = 0.05; // ~18 degrees (orange-pink)
+  float skinHueWidth = 0.06;
+
+  // Calculate how much this pixel matches skin tone
+  float hueDist = abs(hsl.x - skinHueCenter);
+  hueDist = min(hueDist, 1.0 - hueDist); // Handle wrap-around
+
+  float skinWeight = smoothstep(skinHueWidth, 0.0, hueDist);
+
+  // Also weight by saturation - skin has moderate saturation
+  skinWeight *= smoothstep(0.15, 0.35, hsl.y) * smoothstep(0.85, 0.65, hsl.y);
+
+  // Apply adjustments weighted by skin detection
+  hsl.x += (u_skinHue / 100.0) * 0.05 * skinWeight;
+  hsl.y *= 1.0 + (u_skinSaturation / 100.0) * skinWeight;
+  hsl.z += (u_skinLuminance / 100.0) * 0.2 * skinWeight;
+
+  hsl.x = mod(hsl.x, 1.0);
+  hsl.y = clamp(hsl.y, 0.0, 1.0);
+  hsl.z = clamp(hsl.z, 0.0, 1.0);
+
+  return hslToRgb(hsl);
+}
+
+// Sharpening using unsharp mask technique
+// NOTE: Simplified single-pass version. Professional needs multi-pass with larger kernels
+vec3 applySharpening(vec3 color, vec2 uv) {
+  if (u_sharpeningAmount == 0.0) return color;
+
+  vec2 texelSize = 1.0 / u_resolution;
+  float radius = u_sharpeningRadius;
+
+  // Sample surrounding pixels for blur (unsharp mask base)
+  vec3 blurred = vec3(0.0);
+  float totalWeight = 0.0;
+
+  // Use a 5x5 kernel scaled by radius
+  for (int x = -2; x <= 2; x++) {
+    for (int y = -2; y <= 2; y++) {
+      vec2 offset = vec2(float(x), float(y)) * texelSize * radius;
+      float weight = exp(-float(x*x + y*y) / (2.0 * radius * radius));
+      blurred += texture(u_image, uv + offset).rgb * weight;
+      totalWeight += weight;
+    }
+  }
+  blurred /= totalWeight;
+
+  // Calculate the mask (difference between original and blurred)
+  vec3 mask = color - blurred;
+
+  // Detail preservation: reduce sharpening in low-contrast areas
+  float maskStrength = length(mask);
+  float detailThreshold = (100.0 - u_sharpeningDetail) / 100.0 * 0.1;
+  float detailFactor = smoothstep(0.0, detailThreshold, maskStrength);
+
+  // Apply sharpening
+  float amount = u_sharpeningAmount / 100.0 * 2.0;
+  return color + mask * amount * detailFactor;
+}
+
+// Noise reduction using bilateral filter approximation
+// NOTE: Simplified single-pass version. Professional needs edge-aware bilateral filtering
+vec3 applyNoiseReduction(vec3 color, vec2 uv) {
+  if (u_noiseReductionLuminance == 0.0 && u_noiseReductionColor == 0.0) return color;
+
+  vec2 texelSize = 1.0 / u_resolution;
+  float lumStrength = u_noiseReductionLuminance / 100.0;
+  float colorStrength = u_noiseReductionColor / 100.0;
+  float detailPreserve = u_noiseReductionDetail / 100.0;
+
+  // Convert to YCbCr-like space for separate luminance/chroma processing
+  float lum = dot(color, vec3(0.2126, 0.7152, 0.0722));
+  vec3 chroma = color - lum;
+
+  // Blur for noise reduction (5x5 kernel)
+  float lumBlurred = 0.0;
+  vec3 chromaBlurred = vec3(0.0);
+  float totalWeight = 0.0;
+
+  for (int x = -2; x <= 2; x++) {
+    for (int y = -2; y <= 2; y++) {
+      vec2 offset = vec2(float(x), float(y)) * texelSize * 1.5;
+      vec3 sampleColor = texture(u_image, uv + offset).rgb;
+      float sampleLum = dot(sampleColor, vec3(0.2126, 0.7152, 0.0722));
+      vec3 sampleChroma = sampleColor - sampleLum;
+
+      // Spatial weight (Gaussian)
+      float spatialWeight = exp(-float(x*x + y*y) / 8.0);
+
+      // Range weight (bilateral - preserve edges)
+      float lumDiff = abs(sampleLum - lum);
+      float rangeWeight = exp(-lumDiff * lumDiff / (0.1 * (1.0 - detailPreserve * 0.9) + 0.01));
+
+      float weight = spatialWeight * rangeWeight;
+
+      lumBlurred += sampleLum * weight;
+      chromaBlurred += sampleChroma * weight;
+      totalWeight += weight;
+    }
+  }
+
+  lumBlurred /= totalWeight;
+  chromaBlurred /= totalWeight;
+
+  // Blend original and blurred based on strength
+  float finalLum = mix(lum, lumBlurred, lumStrength);
+  vec3 finalChroma = mix(chroma, chromaBlurred, colorStrength);
+
+  return finalLum + finalChroma;
+}
+
 void main() {
   vec4 texColor = texture(u_image, v_texCoord);
   vec3 color = texColor.rgb;
@@ -325,12 +659,37 @@ void main() {
     color = applySaturation(color, u_saturation);
   }
 
+  // Skin tone (selective color adjustment)
+  color = applySkinTone(color);
+
+  // Detail adjustments (apply before color grading effects)
+  color = applyNoiseReduction(color, v_texCoord);
+  color = applySharpening(color, v_texCoord);
+
   // LUT (already has internal check)
   color = applyLUT(color);
+
+  // Split tone (color grading for highlights/shadows)
+  color = applySplitTone(color);
+
+  // Fade (lifts blacks for matte look)
+  color = applyFade(color);
+
+  // Bloom (glow on bright areas)
+  color = applyBloom(color, v_texCoord);
+
+  // Halation (film red glow effect)
+  color = applyHalation(color, v_texCoord);
 
   // Effects (already have internal checks)
   color = applyVignette(color, v_texCoord);
   color = applyGrain(color, v_texCoord);
+
+  // Blur (single-pass approximation)
+  color = applyBlur(color, v_texCoord);
+
+  // Border (applied last, over everything)
+  color = applyBorder(color, v_texCoord);
 
   fragColor = vec4(clamp(color, 0.0, 1.0), texColor.a);
 }`;
@@ -471,6 +830,33 @@ export class WebGLRenderer {
       'u_lutIntensity',
       'u_hasLut',
       'u_curveIsIdentity',
+      'u_fade',
+      'u_splitHighlightHue',
+      'u_splitHighlightSat',
+      'u_splitShadowHue',
+      'u_splitShadowSat',
+      'u_splitBalance',
+      'u_blurAmount',
+      'u_blurType',
+      'u_resolution',
+      'u_borderSize',
+      'u_borderColor',
+      'u_borderOpacity',
+      'u_bloomAmount',
+      'u_bloomThreshold',
+      'u_bloomRadius',
+      'u_halationAmount',
+      'u_halationThreshold',
+      'u_halationHue',
+      'u_skinHue',
+      'u_skinSaturation',
+      'u_skinLuminance',
+      'u_sharpeningAmount',
+      'u_sharpeningRadius',
+      'u_sharpeningDetail',
+      'u_noiseReductionLuminance',
+      'u_noiseReductionColor',
+      'u_noiseReductionDetail',
     ];
 
     for (const name of uniforms) {
@@ -745,8 +1131,66 @@ export class WebGLRenderer {
     const curveIsIdentity = this.isCurveIdentity(editState.curve);
     gl.uniform1i(this.getUniform('u_curveIsIdentity'), curveIsIdentity ? 1 : 0);
 
+    // Fade
+    gl.uniform1f(this.getUniform('u_fade'), editState.fade);
+
+    // Split Tone
+    gl.uniform1f(this.getUniform('u_splitHighlightHue'), editState.splitTone.highlightHue);
+    gl.uniform1f(this.getUniform('u_splitHighlightSat'), editState.splitTone.highlightSaturation);
+    gl.uniform1f(this.getUniform('u_splitShadowHue'), editState.splitTone.shadowHue);
+    gl.uniform1f(this.getUniform('u_splitShadowSat'), editState.splitTone.shadowSaturation);
+    gl.uniform1f(this.getUniform('u_splitBalance'), editState.splitTone.balance);
+
+    // Blur
+    gl.uniform1f(this.getUniform('u_blurAmount'), editState.blur.amount);
+    gl.uniform1i(this.getUniform('u_blurType'), editState.blur.type === 'gaussian' ? 0 : 1);
+    gl.uniform2f(this.getUniform('u_resolution'), this.canvas.width, this.canvas.height);
+
+    // Border
+    gl.uniform1f(this.getUniform('u_borderSize'), editState.border.size);
+    // Parse hex color to RGB
+    const borderColor = this.hexToRgb(editState.border.color);
+    gl.uniform3f(this.getUniform('u_borderColor'), borderColor.r, borderColor.g, borderColor.b);
+    gl.uniform1f(this.getUniform('u_borderOpacity'), editState.border.opacity);
+
+    // Bloom
+    gl.uniform1f(this.getUniform('u_bloomAmount'), editState.bloom.amount);
+    gl.uniform1f(this.getUniform('u_bloomThreshold'), editState.bloom.threshold);
+    gl.uniform1f(this.getUniform('u_bloomRadius'), editState.bloom.radius);
+
+    // Halation
+    gl.uniform1f(this.getUniform('u_halationAmount'), editState.halation.amount);
+    gl.uniform1f(this.getUniform('u_halationThreshold'), editState.halation.threshold);
+    gl.uniform1f(this.getUniform('u_halationHue'), editState.halation.hue);
+
+    // Skin Tone
+    gl.uniform1f(this.getUniform('u_skinHue'), editState.skinTone.hue);
+    gl.uniform1f(this.getUniform('u_skinSaturation'), editState.skinTone.saturation);
+    gl.uniform1f(this.getUniform('u_skinLuminance'), editState.skinTone.luminance);
+
+    // Sharpening
+    gl.uniform1f(this.getUniform('u_sharpeningAmount'), editState.sharpening.amount);
+    gl.uniform1f(this.getUniform('u_sharpeningRadius'), editState.sharpening.radius);
+    gl.uniform1f(this.getUniform('u_sharpeningDetail'), editState.sharpening.detail);
+
+    // Noise Reduction
+    gl.uniform1f(this.getUniform('u_noiseReductionLuminance'), editState.noiseReduction.luminance);
+    gl.uniform1f(this.getUniform('u_noiseReductionColor'), editState.noiseReduction.color);
+    gl.uniform1f(this.getUniform('u_noiseReductionDetail'), editState.noiseReduction.detail);
+
     // Draw
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  }
+
+  private hexToRgb(hex: string): { r: number; g: number; b: number } {
+    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+    return result
+      ? {
+          r: parseInt(result[1], 16) / 255,
+          g: parseInt(result[2], 16) / 255,
+          b: parseInt(result[3], 16) / 255,
+        }
+      : { r: 1, g: 1, b: 1 };
   }
 
   private isCurveIdentity(curve: EditState['curve']): boolean {

@@ -46,6 +46,13 @@ function MaskItem({
     linear: 'Linear',
   };
 
+  // Use custom label if present, otherwise fall back to type label
+  const displayLabel = mask.label || typeLabels[mask.type];
+
+  // Color coding for dodge/burn
+  const isDodge = mask.label === 'Dodge';
+  const isBurn = mask.label === 'Burn';
+
   return (
     <div
       className={`
@@ -66,8 +73,8 @@ function MaskItem({
               : 'bg-transparent border-neutral-600'
           }`}
         />
-        <span className="text-sm text-white">
-          {typeLabels[mask.type]}
+        <span className={`text-sm ${isDodge ? 'text-yellow-400' : isBurn ? 'text-orange-400' : 'text-white'}`}>
+          {displayLabel}
         </span>
       </div>
       <button
@@ -95,7 +102,7 @@ export function MaskPanel() {
   const selectedMask = masks.find((m) => m.id === selectedMaskId);
 
   const createMask = useCallback(
-    (type: MaskType) => {
+    (type: MaskType, label?: string, adjustmentOverrides?: Partial<LocalAdjustments>) => {
       let data: RadialMaskData | LinearMaskData | BrushMaskData;
 
       if (type === 'radial') {
@@ -125,9 +132,10 @@ export function MaskPanel() {
         id: generateId(),
         type,
         data,
-        adjustments: { ...DEFAULT_LOCAL_ADJUSTMENTS },
+        adjustments: { ...DEFAULT_LOCAL_ADJUSTMENTS, ...adjustmentOverrides },
         opacity: 100,
         visible: true,
+        label,
       };
 
       addMask(newMask);
@@ -135,6 +143,16 @@ export function MaskPanel() {
     },
     [addMask, setSelectedMaskId]
   );
+
+  const createDodge = useCallback(() => {
+    // Dodge = lighten (positive exposure)
+    createMask('brush', 'Dodge', { exposure: 1.0 });
+  }, [createMask]);
+
+  const createBurn = useCallback(() => {
+    // Burn = darken (negative exposure)
+    createMask('brush', 'Burn', { exposure: -1.0 });
+  }, [createMask]);
 
   const handleAdjustmentChange = useCallback(
     (key: keyof LocalAdjustments, value: number) => {
@@ -167,7 +185,35 @@ export function MaskPanel() {
 
   return (
     <PanelContainer>
-      <PanelSection title="Add Mask" collapsible={false}>
+      {/* Dodge & Burn Quick Access */}
+      <PanelSection title="Dodge & Burn" collapsible={false}>
+        <div className="grid grid-cols-2 gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={createDodge}
+            className="text-xs bg-neutral-800 border-neutral-700 hover:bg-yellow-900/50 hover:border-yellow-600 text-yellow-400"
+          >
+            Dodge (Lighten)
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={createBurn}
+            className="text-xs bg-neutral-800 border-neutral-700 hover:bg-orange-900/50 hover:border-orange-600 text-orange-400"
+          >
+            Burn (Darken)
+          </Button>
+        </div>
+        <p className="text-xs text-neutral-500 mt-2">
+          Quick brush masks with preset exposure. Paint on image to apply.
+        </p>
+      </PanelSection>
+
+      <PanelDivider />
+
+      {/* Advanced Masks */}
+      <PanelSection title="Advanced Masks" collapsible>
         <div className="grid grid-cols-3 gap-2">
           <Button
             variant="outline"

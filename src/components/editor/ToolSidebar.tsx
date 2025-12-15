@@ -72,6 +72,13 @@ const CopyIcon = () => (
   </svg>
 );
 
+const PasteIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+    <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+    <rect x="8" y="2" width="8" height="4" rx="1" />
+  </svg>
+);
+
 const CompareIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -93,7 +100,7 @@ interface ToolSidebarProps {
 
 export function ToolSidebar({ onExport }: ToolSidebarProps) {
   const router = useRouter();
-  const { undo, redo, canUndo, canRedo, resetEditState } = useEditorStore();
+  const { undo, redo, canUndo, canRedo, resetEditState, copySettings, pasteSettings, hasCopiedSettings, historyIndex, history } = useEditorStore();
   const isCropping = useEditorStore((state) => state.isCropping);
   const setIsCropping = useEditorStore((state) => state.setIsCropping);
   const comparisonMode = useEditorStore((state) => state.comparisonMode);
@@ -126,7 +133,7 @@ export function ToolSidebar({ onExport }: ToolSidebarProps) {
       <div className="flex flex-col items-center gap-1">
         <ToolButton
           icon={<UndoIcon />}
-          label="Undo (Cmd+Z)"
+          label={`Undo (Cmd+Z)${history.length > 0 ? ` - ${historyIndex + 1}/${history.length}` : ''}`}
           onClick={undo}
           disabled={!canUndo()}
         />
@@ -156,8 +163,15 @@ export function ToolSidebar({ onExport }: ToolSidebarProps) {
         />
         <ToolButton
           icon={<CopyIcon />}
-          label="Copy Settings"
-          onClick={() => {/* TODO: copy settings */}}
+          label="Copy Settings (Cmd+C)"
+          onClick={copySettings}
+          disabled={!image}
+        />
+        <ToolButton
+          icon={<PasteIcon />}
+          label="Paste Settings (Cmd+V)"
+          onClick={pasteSettings}
+          disabled={!image || !hasCopiedSettings()}
         />
         <ToolButton
           icon={<CompareIcon />}

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { useEditorStore } from '@/lib/editor/state';
 import { PRESETS, applyPreset } from '@/lib/editor/presets';
 import { Slider } from '@/components/ui/slider';
-import { createDefaultEditState } from '@/types/editor';
+import { createDefaultEditState, Preset } from '@/types/editor';
 import {
   loadUserPresets,
   addUserPreset,
@@ -27,7 +27,41 @@ const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
   Dark: { bg: 'bg-indigo-600', text: 'text-white' },
 };
 
-// Preset pill component - VSCO style
+// Generate CSS filter approximation for preset thumbnail
+function getPresetFilter(preset: Preset): string {
+  const filters: string[] = [];
+  const adj = preset.baseAdjustments;
+
+  // Exposure -> brightness (100% = normal)
+  if (adj?.exposure) {
+    filters.push(`brightness(${100 + adj.exposure * 50}%)`);
+  }
+
+  // Contrast (100% = normal)
+  if (adj?.contrast) {
+    filters.push(`contrast(${100 + adj.contrast}%)`);
+  }
+
+  // Saturation (100% = normal)
+  if (adj?.saturation) {
+    filters.push(`saturate(${100 + adj.saturation * 2}%)`);
+  }
+
+  // Temperature -> sepia + hue-rotate approximation
+  if (adj?.temperature && adj.temperature > 0) {
+    filters.push(`sepia(${adj.temperature * 2}%)`);
+  }
+
+  // B&W presets use grayscale
+  if (preset.category === 'B&W') {
+    filters.push('grayscale(100%)');
+    filters.push(`contrast(${100 + (adj?.contrast || 15)}%)`);
+  }
+
+  return filters.length > 0 ? filters.join(' ') : 'none';
+}
+
+// Preset pill component - VSCO style with thumbnail
 interface PresetPillProps {
   code: string;
   name: string;
@@ -35,9 +69,11 @@ interface PresetPillProps {
   onClick: () => void;
   category: string;
   locked?: boolean;
+  thumbnailSrc?: string;
+  filter?: string;
 }
 
-function PresetPill({ code, name, isActive, onClick, category, locked }: PresetPillProps) {
+function PresetPill({ code, name, isActive, onClick, category, locked, thumbnailSrc, filter }: PresetPillProps) {
   const colors = CATEGORY_COLORS[category] || CATEGORY_COLORS.Basic;
 
   return (
@@ -50,18 +86,38 @@ function PresetPill({ code, name, isActive, onClick, category, locked }: PresetP
         ${locked ? 'opacity-50 cursor-not-allowed' : ''}
       `}
     >
-      <span
-        className={`
-          px-2.5 py-1 rounded-md text-xs font-medium min-w-[48px] text-center
-          ${colors.bg} ${colors.text}
-          ${isActive ? 'opacity-100' : 'opacity-80'}
-        `}
-      >
-        {code}
-      </span>
-      <span className={`text-sm flex-1 text-left ${isActive ? 'text-white' : 'text-neutral-300'}`}>
-        {name}
-      </span>
+      {/* Thumbnail preview */}
+      {thumbnailSrc ? (
+        <div
+          className={`
+            w-12 h-12 rounded-md overflow-hidden flex-shrink-0
+            ${isActive ? 'ring-2 ring-white' : 'ring-1 ring-neutral-700'}
+          `}
+        >
+          <img
+            src={thumbnailSrc}
+            alt={name}
+            className="w-full h-full object-cover"
+            style={{ filter: filter || 'none' }}
+          />
+        </div>
+      ) : (
+        <span
+          className={`
+            px-2.5 py-1 rounded-md text-xs font-medium min-w-[48px] text-center
+            ${colors.bg} ${colors.text}
+            ${isActive ? 'opacity-100' : 'opacity-80'}
+          `}
+        >
+          {code}
+        </span>
+      )}
+      <div className="flex-1 text-left">
+        <span className={`text-sm block ${isActive ? 'text-white' : 'text-neutral-300'}`}>
+          {name}
+        </span>
+        <span className="text-xs text-neutral-500">{code}</span>
+      </div>
       {locked && (
         <svg
           width="14"
@@ -317,6 +373,8 @@ export function PresetPanel() {
                     : editState.lutId === preset.lutFile)
                 }
                 onClick={() => handlePresetClick(preset)}
+                thumbnailSrc={image?.preview.src}
+                filter={getPresetFilter(preset)}
               />
             ))}
           </div>

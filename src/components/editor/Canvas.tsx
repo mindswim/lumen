@@ -155,14 +155,21 @@ export function Canvas({ className }: CanvasProps) {
     };
   }, [editState, image, showHistogram, setHistogramData]);
 
-  // Calculate transform styles for rotation and flip
+  // Calculate transform styles for rotation, flip, and perspective
   const transformStyle = useMemo(() => {
     const transforms: string[] = [];
 
+    // 90-degree rotations
     if (editState.rotation !== 0) {
       transforms.push(`rotate(${editState.rotation}deg)`);
     }
 
+    // Fine straighten angle
+    if (editState.straighten !== 0) {
+      transforms.push(`rotate(${editState.straighten}deg)`);
+    }
+
+    // Flip
     if (editState.flipH) {
       transforms.push('scaleX(-1)');
     }
@@ -171,8 +178,17 @@ export function Canvas({ className }: CanvasProps) {
       transforms.push('scaleY(-1)');
     }
 
+    // Perspective/Skew (convert -100 to 100 range to degrees)
+    if (editState.perspectiveX !== 0 || editState.perspectiveY !== 0) {
+      // Use skew transform for simple perspective correction
+      const skewX = editState.perspectiveX * 0.15; // Max 15 degrees
+      const skewY = editState.perspectiveY * 0.15;
+      if (skewX !== 0) transforms.push(`skewX(${skewX}deg)`);
+      if (skewY !== 0) transforms.push(`skewY(${skewY}deg)`);
+    }
+
     return transforms.length > 0 ? transforms.join(' ') : undefined;
-  }, [editState.rotation, editState.flipH, editState.flipV]);
+  }, [editState.rotation, editState.straighten, editState.perspectiveX, editState.perspectiveY, editState.flipH, editState.flipV]);
 
   // Calculate initial scale to fit image in viewport with padding
   const initialScale = useMemo(() => {

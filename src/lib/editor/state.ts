@@ -93,6 +93,16 @@ interface EditorStore {
   setHistogramData: (data: HistogramData) => void;
   showHistogram: boolean;
   setShowHistogram: (show: boolean) => void;
+
+  // Copy/Paste settings
+  copiedSettings: EditState | null;
+  copySettings: () => void;
+  pasteSettings: () => void;
+  hasCopiedSettings: () => boolean;
+
+  // Toast notifications
+  toast: { message: string; id: number } | null;
+  showToast: (message: string) => void;
 }
 
 const MAX_HISTORY = 50;
@@ -336,6 +346,50 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   setHistogramData: (data) => set({ histogramData: data }),
   showHistogram: false,
   setShowHistogram: (show) => set({ showHistogram: show }),
+
+  // Copy/Paste settings
+  copiedSettings: null,
+  copySettings: () => {
+    const { editState, showToast } = get();
+    // Copy without masks and crop (those are image-specific)
+    const settingsToCopy = {
+      ...editState,
+      crop: null,
+      masks: [],
+    };
+    set({ copiedSettings: JSON.parse(JSON.stringify(settingsToCopy)) });
+    showToast('Settings copied');
+  },
+  pasteSettings: () => {
+    const { copiedSettings, pushHistory, showToast } = get();
+    if (copiedSettings) {
+      pushHistory();
+      set((state) => ({
+        editState: {
+          ...copiedSettings,
+          // Preserve image-specific settings
+          crop: state.editState.crop,
+          masks: state.editState.masks,
+        },
+      }));
+      showToast('Settings applied');
+    }
+  },
+  hasCopiedSettings: () => get().copiedSettings !== null,
+
+  // Toast notifications
+  toast: null,
+  showToast: (message) => {
+    const id = Date.now();
+    set({ toast: { message, id } });
+    // Auto-hide after 2 seconds
+    setTimeout(() => {
+      const currentToast = get().toast;
+      if (currentToast?.id === id) {
+        set({ toast: null });
+      }
+    }, 2000);
+  },
 }));
 
 // Helper to batch updates without creating history entries for every slider tick

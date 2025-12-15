@@ -46,6 +46,43 @@ export interface NoiseReductionSettings {
   detail: number;     // 0 to 100 (detail preservation)
 }
 
+export interface SplitToneSettings {
+  highlightHue: number;        // 0 to 360 (color wheel)
+  highlightSaturation: number; // 0 to 100
+  shadowHue: number;           // 0 to 360 (color wheel)
+  shadowSaturation: number;    // 0 to 100
+  balance: number;             // -100 to 100 (negative = more shadows, positive = more highlights)
+}
+
+export interface BlurSettings {
+  amount: number;     // 0 to 100
+  type: 'gaussian' | 'lens';  // blur type
+}
+
+export interface BorderSettings {
+  size: number;       // 0 to 100 (percentage of image)
+  color: string;      // hex color
+  opacity: number;    // 0 to 100
+}
+
+export interface BloomSettings {
+  amount: number;     // 0 to 100 (glow intensity)
+  threshold: number;  // 0 to 100 (brightness threshold for bloom)
+  radius: number;     // 0 to 100 (size of glow)
+}
+
+export interface HalationSettings {
+  amount: number;     // 0 to 100 (effect intensity)
+  threshold: number;  // 0 to 100 (brightness threshold)
+  hue: number;        // 0 to 360 (color of halation, typically red-orange ~15)
+}
+
+export interface SkinToneSettings {
+  hue: number;        // -100 to 100 (shift skin hue)
+  saturation: number; // -100 to 100 (skin saturation)
+  luminance: number;  // -100 to 100 (skin brightness)
+}
+
 export interface CropRect {
   top: number;
   left: number;
@@ -108,6 +145,7 @@ export interface Mask {
   adjustments: LocalAdjustments;
   opacity: number;
   visible: boolean;
+  label?: string;  // Optional custom label (e.g., "Dodge", "Burn")
 }
 
 export interface EditState {
@@ -135,8 +173,17 @@ export interface EditState {
   hsl: Record<ColorRange, HSLAdjustment>;
 
   // Effects
+  fade: number;                // 0 to 100 (lifts blacks)
   grain: GrainSettings;
   vignette: VignetteSettings;
+  splitTone: SplitToneSettings;
+  blur: BlurSettings;
+  border: BorderSettings;
+  bloom: BloomSettings;
+  halation: HalationSettings;
+
+  // Color
+  skinTone: SkinToneSettings;
 
   // Detail
   sharpening: SharpeningSettings;
@@ -148,7 +195,10 @@ export interface EditState {
 
   // Transform
   crop: CropRect | null;
-  rotation: number;      // degrees
+  rotation: number;      // degrees (-180 to 180, for 90-degree rotations)
+  straighten: number;    // degrees (-45 to 45, fine angle adjustment)
+  perspectiveX: number;  // -100 to 100 (horizontal keystone correction)
+  perspectiveY: number;  // -100 to 100 (vertical keystone correction)
   flipH: boolean;
   flipV: boolean;
 
@@ -195,6 +245,43 @@ export const DEFAULT_VIGNETTE: VignetteSettings = {
   midpoint: 50,
   roundness: 0,
   feather: 50,
+};
+
+export const DEFAULT_SPLIT_TONE: SplitToneSettings = {
+  highlightHue: 45,         // warm yellow-orange
+  highlightSaturation: 0,
+  shadowHue: 220,           // cool blue
+  shadowSaturation: 0,
+  balance: 0,
+};
+
+export const DEFAULT_BLUR: BlurSettings = {
+  amount: 0,
+  type: 'gaussian',
+};
+
+export const DEFAULT_BORDER: BorderSettings = {
+  size: 0,
+  color: '#ffffff',
+  opacity: 100,
+};
+
+export const DEFAULT_BLOOM: BloomSettings = {
+  amount: 0,
+  threshold: 70,    // Only affect bright areas
+  radius: 50,
+};
+
+export const DEFAULT_HALATION: HalationSettings = {
+  amount: 0,
+  threshold: 80,    // Only affect very bright areas
+  hue: 15,          // Red-orange, typical film halation color
+};
+
+export const DEFAULT_SKIN_TONE: SkinToneSettings = {
+  hue: 0,
+  saturation: 0,
+  luminance: 0,
 };
 
 export const DEFAULT_SHARPENING: SharpeningSettings = {
@@ -245,14 +332,24 @@ export function createDefaultEditState(): EditState {
       purple: { ...DEFAULT_HSL_ADJUSTMENT },
       magenta: { ...DEFAULT_HSL_ADJUSTMENT },
     },
+    fade: 0,
     grain: { ...DEFAULT_GRAIN },
     vignette: { ...DEFAULT_VIGNETTE },
+    splitTone: { ...DEFAULT_SPLIT_TONE },
+    blur: { ...DEFAULT_BLUR },
+    border: { ...DEFAULT_BORDER },
+    bloom: { ...DEFAULT_BLOOM },
+    halation: { ...DEFAULT_HALATION },
+    skinTone: { ...DEFAULT_SKIN_TONE },
     sharpening: { ...DEFAULT_SHARPENING },
     noiseReduction: { ...DEFAULT_NOISE_REDUCTION },
     lutId: null,
     lutIntensity: 100,
     crop: null,
     rotation: 0,
+    straighten: 0,
+    perspectiveX: 0,
+    perspectiveY: 0,
     flipH: false,
     flipV: false,
     masks: [],

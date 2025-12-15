@@ -34,10 +34,6 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
     setIsExporting(true);
 
     try {
-      // Get the canvas element
-      const canvas = document.querySelector('canvas');
-      if (!canvas) throw new Error('Canvas not found');
-
       // Determine MIME type
       const mimeTypes: Record<ExportFormat, string> = {
         jpeg: 'image/jpeg',
@@ -48,9 +44,74 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
       const mimeType = mimeTypes[format];
       const qualityValue = format === 'png' ? undefined : quality / 100;
 
-      // Export from canvas
+      // Calculate crop dimensions (use full image if no crop)
+      const crop = editState.crop;
+      const sourceX = crop ? Math.round(crop.left * image.width) : 0;
+      const sourceY = crop ? Math.round(crop.top * image.height) : 0;
+      const sourceWidth = crop ? Math.round(crop.width * image.width) : image.width;
+      const sourceHeight = crop ? Math.round(crop.height * image.height) : image.height;
+
+      // Get the edited canvas (preview resolution with effects)
+      const editedCanvas = document.querySelector('canvas');
+      if (!editedCanvas) throw new Error('Canvas not found');
+
+      // Create output canvas at full resolution for the cropped area
+      const outputCanvas = document.createElement('canvas');
+
+      // Apply rotation to determine output dimensions
+      const rotation = editState.rotation || 0;
+      const isRotated90 = Math.abs(rotation) === 90 || Math.abs(rotation) === 270;
+
+      if (isRotated90) {
+        outputCanvas.width = sourceHeight;
+        outputCanvas.height = sourceWidth;
+      } else {
+        outputCanvas.width = sourceWidth;
+        outputCanvas.height = sourceHeight;
+      }
+
+      const ctx = outputCanvas.getContext('2d');
+      if (!ctx) throw new Error('Failed to get canvas context');
+
+      // Apply transforms (rotation, flip)
+      ctx.save();
+      ctx.translate(outputCanvas.width / 2, outputCanvas.height / 2);
+
+      if (rotation !== 0) {
+        ctx.rotate((rotation * Math.PI) / 180);
+      }
+      if (editState.flipH) {
+        ctx.scale(-1, 1);
+      }
+      if (editState.flipV) {
+        ctx.scale(1, -1);
+      }
+
+      // Draw from the edited canvas, scaling from preview to crop region
+      // Since we're exporting preview resolution (with effects), we scale appropriately
+      const scaleX = editedCanvas.width / image.width;
+      const scaleY = editedCanvas.height / image.height;
+
+      const drawWidth = isRotated90 ? sourceHeight : sourceWidth;
+      const drawHeight = isRotated90 ? sourceWidth : sourceHeight;
+
+      ctx.drawImage(
+        editedCanvas,
+        sourceX * scaleX,
+        sourceY * scaleY,
+        sourceWidth * scaleX,
+        sourceHeight * scaleY,
+        -drawWidth / 2,
+        -drawHeight / 2,
+        drawWidth,
+        drawHeight
+      );
+
+      ctx.restore();
+
+      // Export the final canvas
       const blob = await new Promise<Blob>((resolve, reject) => {
-        canvas.toBlob(
+        outputCanvas.toBlob(
           (blob) => {
             if (blob) resolve(blob);
             else reject(new Error('Failed to create blob'));
@@ -77,13 +138,18 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
     } finally {
       setIsExporting(false);
     }
-  }, [image, format, quality, onOpenChange]);
+  }, [image, editState, format, quality, onOpenChange]);
 
   const formatSizeEstimate = useCallback(() => {
     if (!image) return 'N/A';
 
+    // Use cropped dimensions if available
+    const crop = editState.crop;
+    const width = crop ? Math.round(crop.width * image.width) : image.width;
+    const height = crop ? Math.round(crop.height * image.height) : image.height;
+
     // Rough estimate based on dimensions and format
-    const pixels = image.width * image.height;
+    const pixels = width * height;
     let bytesPerPixel: number;
 
     if (format === 'png') {
@@ -99,7 +165,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
     if (bytes < 1024) return `~${Math.round(bytes)} B`;
     if (bytes < 1024 * 1024) return `~${Math.round(bytes / 1024)} KB`;
     return `~${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }, [image, format, quality]);
+  }, [image, editState.crop, format, quality]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -114,10 +180,16 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
         <div className="space-y-6 py-4">
           {/* Image info */}
           {image && (
-            <div className="text-sm text-neutral-400">
+            <div className="text-sm text-neutral-400 space-y-1">
               <p>
                 Original: {image.width} x {image.height} px
               </p>
+              {editState.crop && (
+                <p>
+                  Cropped: {Math.round(editState.crop.width * image.width)} x{' '}
+                  {Math.round(editState.crop.height * image.height)} px
+                </p>
+              )}
             </div>
           )}
 
