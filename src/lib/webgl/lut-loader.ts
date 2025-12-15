@@ -146,7 +146,7 @@ function adjustSaturation(r: number, g: number, b: number, amount: number): [num
   ];
 }
 
-// Preset LUT generators - VSCO-inspired film looks
+// Preset LUT generators - analog film-inspired looks
 export const PRESET_LUTS = {
   // ============ A SERIES - Analog Film ============
 

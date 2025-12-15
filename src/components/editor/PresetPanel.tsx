@@ -19,7 +19,7 @@ import { SavePresetDialog } from './SavePresetDialog';
 // Category colors - distinct color for each preset category
 const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
   Basic: { bg: 'bg-neutral-500', text: 'text-white' },
-  VSCO: { bg: 'bg-teal-500', text: 'text-white' },
+  Analog: { bg: 'bg-teal-500', text: 'text-white' },
   Film: { bg: 'bg-amber-600', text: 'text-white' },
   Portrait: { bg: 'bg-pink-400', text: 'text-black' },
   Moody: { bg: 'bg-indigo-600', text: 'text-white' },

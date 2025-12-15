@@ -1,5 +1,5 @@
 /**
- * Design Tokens for VSCO Editor
+ * Design Tokens for Lumen Photo Editor
  *
  * Centralized design system for consistent styling across the application.
  * These tokens are also exported as CSS variables in globals.css
