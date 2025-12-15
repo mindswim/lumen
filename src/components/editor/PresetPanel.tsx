@@ -5,7 +5,7 @@ import { useEditorStore } from '@/lib/editor/state';
 import { useGalleryStore } from '@/lib/gallery/store';
 import { PRESETS, applyPreset } from '@/lib/editor/presets';
 import { Slider } from '@/components/ui/slider';
-import { createDefaultEditState, Preset } from '@/types/editor';
+import { createDefaultEditState } from '@/types/editor';
 import {
   loadUserPresets,
   addUserPreset,
@@ -28,116 +28,41 @@ const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
   Dark: { bg: 'bg-indigo-600', text: 'text-white' },
 };
 
-// Generate CSS filter approximation for preset thumbnail
-function getPresetFilter(preset: Preset): string {
-  const filters: string[] = [];
-  const adj = preset.baseAdjustments;
-
-  // Exposure -> brightness (100% = normal)
-  if (adj?.exposure) {
-    filters.push(`brightness(${100 + adj.exposure * 50}%)`);
-  }
-
-  // Contrast (100% = normal)
-  if (adj?.contrast) {
-    filters.push(`contrast(${100 + adj.contrast}%)`);
-  }
-
-  // Saturation (100% = normal)
-  if (adj?.saturation) {
-    filters.push(`saturate(${100 + adj.saturation * 2}%)`);
-  }
-
-  // Temperature -> sepia + hue-rotate approximation
-  if (adj?.temperature && adj.temperature > 0) {
-    filters.push(`sepia(${adj.temperature * 2}%)`);
-  }
-
-  // B&W presets use grayscale
-  if (preset.category === 'B&W') {
-    filters.push('grayscale(100%)');
-    filters.push(`contrast(${100 + (adj?.contrast || 15)}%)`);
-  }
-
-  return filters.length > 0 ? filters.join(' ') : 'none';
-}
-
-// Preset pill component - VSCO style with thumbnail
+// Preset pill component - compact single row
 interface PresetPillProps {
   code: string;
-  name: string;
+  category: string;
   isActive: boolean;
   onClick: () => void;
-  category: string;
-  locked?: boolean;
-  thumbnailSrc?: string;
-  filter?: string;
 }
 
-function PresetPill({ code, name, isActive, onClick, category, locked, thumbnailSrc, filter }: PresetPillProps) {
+function PresetPill({ code, category, isActive, onClick }: PresetPillProps) {
   const colors = CATEGORY_COLORS[category] || CATEGORY_COLORS.Basic;
 
   return (
     <button
       onClick={onClick}
-      disabled={locked}
       className={`
-        w-full flex items-center gap-3 px-2 py-2 rounded-lg transition-colors
+        w-full flex items-center gap-3 px-2 py-1.5 rounded-lg transition-colors
         ${isActive ? 'bg-white/10' : 'hover:bg-white/5'}
-        ${locked ? 'opacity-50 cursor-not-allowed' : ''}
       `}
     >
-      {/* Thumbnail preview */}
-      {thumbnailSrc ? (
-        <div
-          className={`
-            w-12 h-12 rounded-md overflow-hidden flex-shrink-0
-            ${isActive ? 'ring-2 ring-white' : 'ring-1 ring-neutral-700'}
-          `}
-        >
-          <img
-            src={thumbnailSrc}
-            alt={name}
-            className="w-full h-full object-cover"
-            style={{ filter: filter || 'none' }}
-          />
-        </div>
-      ) : (
-        <span
-          className={`
-            px-2.5 py-1 rounded-md text-xs font-medium min-w-[48px] text-center
-            ${colors.bg} ${colors.text}
-            ${isActive ? 'opacity-100' : 'opacity-80'}
-          `}
-        >
-          {code}
-        </span>
-      )}
-      <div className="flex-1 text-left">
-        <span className={`text-sm block ${isActive ? 'text-white' : 'text-neutral-300'}`}>
-          {name}
-        </span>
-        <span className="text-xs text-neutral-500">{code}</span>
-      </div>
-      {locked && (
-        <svg
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          className="text-neutral-500"
-        >
-          <rect x="3" y="11" width="18" height="11" rx="2" />
-          <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-        </svg>
-      )}
+      <span
+        className={`
+          px-3 py-1 rounded text-xs font-medium min-w-[60px] text-center
+          ${colors.bg} ${colors.text}
+        `}
+      >
+        {code}
+      </span>
+      <span className={`text-sm ${isActive ? 'text-white font-medium' : 'text-neutral-400'}`}>
+        {category}
+      </span>
     </button>
   );
 }
 
-// User preset pill - slightly different styling
+// User preset pill - compact styling
 interface UserPresetPillProps {
   preset: UserPreset;
   isActive: boolean;
@@ -151,19 +76,14 @@ function UserPresetPill({ preset, isActive, onClick, onDelete }: UserPresetPillP
       <button
         onClick={onClick}
         className={`
-          w-full flex items-center gap-3 px-2 py-2 rounded-lg transition-colors
+          w-full flex items-center gap-3 px-2 py-1.5 rounded-lg transition-colors
           ${isActive ? 'bg-white/10' : 'hover:bg-white/5'}
         `}
       >
-        <span
-          className={`
-            px-2.5 py-1 rounded-md text-xs font-medium min-w-[48px] text-center
-            bg-neutral-600 text-white
-          `}
-        >
+        <span className="px-3 py-1 rounded text-xs font-medium min-w-[60px] text-center bg-emerald-600 text-white">
           {preset.name.substring(0, 3).toUpperCase()}
         </span>
-        <span className={`text-sm flex-1 text-left ${isActive ? 'text-white' : 'text-neutral-300'}`}>
+        <span className={`text-sm flex-1 text-left ${isActive ? 'text-white font-medium' : 'text-neutral-400'}`}>
           {preset.name}
         </span>
       </button>
@@ -296,17 +216,6 @@ export function PresetPanel() {
     }));
   };
 
-  // Get active preset info
-  const activePreset = useMemo(() => {
-    if (activeUserPresetId) {
-      return userPresets.find((p) => p.id === activeUserPresetId);
-    }
-    if (editState.lutId) {
-      return PRESETS.find((p) => p.lutFile === editState.lutId);
-    }
-    return null;
-  }, [editState.lutId, activeUserPresetId, userPresets]);
-
   // Group presets by category
   const presetsByCategory = useMemo(() => {
     const grouped: Record<string, typeof PRESETS> = {};
@@ -326,25 +235,25 @@ export function PresetPanel() {
     return `${categoryPrefix}${index + 1}`;
   };
 
+  // Inline strength slider component
+  const StrengthSlider = () => (
+    <div className="px-4 py-2 ml-2 border-l border-neutral-700">
+      <div className="flex justify-between text-xs mb-1.5">
+        <span className="text-neutral-500">Strength</span>
+        <span className="text-neutral-300 tabular-nums underline">{editState.lutIntensity}</span>
+      </div>
+      <Slider
+        value={[editState.lutIntensity]}
+        min={0}
+        max={100}
+        step={1}
+        onValueChange={([v]) => handleStrengthChange(v)}
+      />
+    </div>
+  );
+
   return (
     <div className="py-2">
-      {/* Strength slider (when a preset is active) */}
-      {activePreset && !isGalleryMode && (
-        <div className="px-4 py-3 border-b border-neutral-800">
-          <div className="flex justify-between text-sm mb-2">
-            <span className="text-neutral-400">Strength</span>
-            <span className="text-white tabular-nums">{editState.lutIntensity}</span>
-          </div>
-          <Slider
-            value={[editState.lutIntensity]}
-            min={0}
-            max={100}
-            step={1}
-            onValueChange={([v]) => handleStrengthChange(v)}
-          />
-        </div>
-      )}
-
       {/* User presets section */}
       {userPresets.length > 0 && (
         <div className="px-2 py-2">
@@ -368,15 +277,20 @@ export function PresetPanel() {
             </div>
           </div>
           <div className="space-y-0.5">
-            {userPresets.map((preset) => (
-              <UserPresetPill
-                key={preset.id}
-                preset={preset}
-                isActive={activeUserPresetId === preset.id}
-                onClick={() => handleUserPresetClick(preset)}
-                onDelete={() => handleDeleteUserPreset(preset.id)}
-              />
-            ))}
+            {userPresets.map((preset) => {
+              const isActive = activeUserPresetId === preset.id;
+              return (
+                <div key={preset.id}>
+                  <UserPresetPill
+                    preset={preset}
+                    isActive={isActive}
+                    onClick={() => handleUserPresetClick(preset)}
+                    onDelete={() => handleDeleteUserPreset(preset.id)}
+                  />
+                  {isActive && !isGalleryMode && <StrengthSlider />}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -398,24 +312,25 @@ export function PresetPanel() {
             {category}
           </span>
           <div className="space-y-0.5">
-            {presets.map((preset, index) => (
-              <PresetPill
-                key={preset.id}
-                code={getPresetCode(preset, index)}
-                name={preset.name}
-                category={preset.category}
-                isActive={
-                  !isGalleryMode &&
-                  activeUserPresetId === null &&
-                  (preset.id === 'original'
-                    ? !editState.lutId
-                    : editState.lutId === preset.lutFile)
-                }
-                onClick={() => handlePresetClick(preset)}
-                thumbnailSrc={isGalleryMode ? selectedGalleryImages[0]?.thumbnailUrl : image?.preview.src}
-                filter={getPresetFilter(preset)}
-              />
-            ))}
+            {presets.map((preset, index) => {
+              const isActive =
+                !isGalleryMode &&
+                activeUserPresetId === null &&
+                (preset.id === 'original'
+                  ? !editState.lutId
+                  : editState.lutId === preset.lutFile);
+              return (
+                <div key={preset.id}>
+                  <PresetPill
+                    code={getPresetCode(preset, index)}
+                    category={category}
+                    isActive={isActive}
+                    onClick={() => handlePresetClick(preset)}
+                  />
+                  {isActive && preset.id !== 'original' && <StrengthSlider />}
+                </div>
+              );
+            })}
           </div>
         </div>
       ))}
