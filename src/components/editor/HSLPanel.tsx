@@ -3,7 +3,8 @@
 import { useState } from 'react';
 import { Slider } from '@/components/ui/slider';
 import { useEditorStore } from '@/lib/editor/state';
-import { ColorRange } from '@/types/editor';
+import { useGalleryStore } from '@/lib/gallery/store';
+import { ColorRange, HSLAdjustment } from '@/types/editor';
 
 const COLOR_RANGES: { id: ColorRange; label: string; hue: string }[] = [
   { id: 'red', label: 'Red', hue: '0deg' },
@@ -53,21 +54,60 @@ function HSLSlider({ label, value, onChange, color }: HSLSliderProps) {
 
 export function HSLPanel() {
   const [selectedColor, setSelectedColor] = useState<ColorRange>('red');
-  const hsl = useEditorStore((state) => state.editState.hsl);
+  const image = useEditorStore((state) => state.image);
+  const editorHsl = useEditorStore((state) => state.editState.hsl);
   const setHSL = useEditorStore((state) => state.setHSL);
+
+  // Gallery store for batch mode
+  const { selectedIds, images: galleryImages, updateImageEditState } = useGalleryStore();
+
+  // Determine mode: editor (single image) or gallery (batch)
+  const isGalleryMode = !image && selectedIds.length > 0;
+  const selectedGalleryImages = isGalleryMode
+    ? galleryImages.filter((img) => selectedIds.includes(img.id))
+    : [];
+
+  // Use first selected image's HSL for display in gallery mode
+  const hsl = isGalleryMode && selectedGalleryImages.length > 0
+    ? selectedGalleryImages[0].editState.hsl
+    : editorHsl;
 
   const currentColor = COLOR_RANGES.find((c) => c.id === selectedColor);
   const currentHSL = hsl[selectedColor];
 
   const handleUpdate = (key: 'hue' | 'saturation' | 'luminance', value: number) => {
     const newHSL = { ...hsl[selectedColor], [key]: value };
-    // Use batched update for smooth slider experience
-    useEditorStore.setState((state) => ({
-      editState: {
-        ...state.editState,
-        hsl: { ...state.editState.hsl, [selectedColor]: newHSL },
-      },
-    }));
+
+    if (isGalleryMode) {
+      selectedGalleryImages.forEach((img) => {
+        updateImageEditState(img.id, {
+          ...img.editState,
+          hsl: { ...img.editState.hsl, [selectedColor]: newHSL },
+        });
+      });
+    } else {
+      useEditorStore.setState((state) => ({
+        editState: {
+          ...state.editState,
+          hsl: { ...state.editState.hsl, [selectedColor]: newHSL },
+        },
+      }));
+    }
+  };
+
+  const handleReset = () => {
+    const resetHSL: HSLAdjustment = { hue: 0, saturation: 0, luminance: 0 };
+
+    if (isGalleryMode) {
+      selectedGalleryImages.forEach((img) => {
+        updateImageEditState(img.id, {
+          ...img.editState,
+          hsl: { ...img.editState.hsl, [selectedColor]: resetHSL },
+        });
+      });
+    } else {
+      setHSL(selectedColor, resetHSL);
+    }
   };
 
   return (
@@ -115,7 +155,7 @@ export function HSLPanel() {
 
       {/* Reset button */}
       <button
-        onClick={() => setHSL(selectedColor, { hue: 0, saturation: 0, luminance: 0 })}
+        onClick={handleReset}
         className="w-full text-sm text-neutral-500 hover:text-white transition-colors"
       >
         Reset {currentColor?.label}

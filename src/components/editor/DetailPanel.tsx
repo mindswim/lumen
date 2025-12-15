@@ -1,6 +1,7 @@
 'use client';
 
 import { useEditorStore } from '@/lib/editor/state';
+import { useGalleryStore } from '@/lib/gallery/store';
 import { AdjustmentSlider } from '@/components/ui/adjustment-slider';
 import {
   PanelSection,
@@ -8,27 +9,63 @@ import {
   PanelDivider,
   PanelHint,
 } from '@/components/ui/panel-section';
+import { SharpeningSettings, NoiseReductionSettings } from '@/types/editor';
 
 export function DetailPanel() {
-  const sharpening = useEditorStore((state) => state.editState.sharpening);
-  const noiseReduction = useEditorStore((state) => state.editState.noiseReduction);
+  const image = useEditorStore((state) => state.image);
+  const editorEditState = useEditorStore((state) => state.editState);
 
-  const handleSharpeningUpdate = (key: keyof typeof sharpening, value: number) => {
-    useEditorStore.setState((state) => ({
-      editState: {
-        ...state.editState,
-        sharpening: { ...state.editState.sharpening, [key]: value },
-      },
-    }));
+  // Gallery store for batch mode
+  const { selectedIds, images: galleryImages, updateImageEditState } = useGalleryStore();
+
+  // Determine mode: editor (single image) or gallery (batch)
+  const isGalleryMode = !image && selectedIds.length > 0;
+  const selectedGalleryImages = isGalleryMode
+    ? galleryImages.filter((img) => selectedIds.includes(img.id))
+    : [];
+
+  // Use first selected image's edit state for display in gallery mode
+  const editState = isGalleryMode && selectedGalleryImages.length > 0
+    ? selectedGalleryImages[0].editState
+    : editorEditState;
+
+  const sharpening = editState.sharpening;
+  const noiseReduction = editState.noiseReduction;
+
+  const handleSharpeningUpdate = (key: keyof SharpeningSettings, value: number) => {
+    if (isGalleryMode) {
+      selectedGalleryImages.forEach((img) => {
+        updateImageEditState(img.id, {
+          ...img.editState,
+          sharpening: { ...img.editState.sharpening, [key]: value },
+        });
+      });
+    } else {
+      useEditorStore.setState((state) => ({
+        editState: {
+          ...state.editState,
+          sharpening: { ...state.editState.sharpening, [key]: value },
+        },
+      }));
+    }
   };
 
-  const handleNoiseReductionUpdate = (key: keyof typeof noiseReduction, value: number) => {
-    useEditorStore.setState((state) => ({
-      editState: {
-        ...state.editState,
-        noiseReduction: { ...state.editState.noiseReduction, [key]: value },
-      },
-    }));
+  const handleNoiseReductionUpdate = (key: keyof NoiseReductionSettings, value: number) => {
+    if (isGalleryMode) {
+      selectedGalleryImages.forEach((img) => {
+        updateImageEditState(img.id, {
+          ...img.editState,
+          noiseReduction: { ...img.editState.noiseReduction, [key]: value },
+        });
+      });
+    } else {
+      useEditorStore.setState((state) => ({
+        editState: {
+          ...state.editState,
+          noiseReduction: { ...state.editState.noiseReduction, [key]: value },
+        },
+      }));
+    }
   };
 
   return (

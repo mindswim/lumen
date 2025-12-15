@@ -1,7 +1,7 @@
 'use client';
 
-import { Editor } from '@/components/editor/Editor';
+import { Gallery } from '@/components/gallery/Gallery';
 
 export default function Home() {
-  return <Editor />;
+  return <Gallery />;
 }

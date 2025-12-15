@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useEditorStore } from '@/lib/editor/state';
+import { useGalleryStore } from '@/lib/gallery/store';
 import { PRESETS, applyPreset } from '@/lib/editor/presets';
 import { Slider } from '@/components/ui/slider';
 import { createDefaultEditState, Preset } from '@/types/editor';
@@ -183,10 +184,21 @@ function UserPresetPill({ preset, isActive, onClick, onDelete }: UserPresetPillP
 }
 
 export function PresetPanel() {
+  // Editor store (single image mode)
   const image = useEditorStore((state) => state.image);
   const editState = useEditorStore((state) => state.editState);
   const updateEditState = useEditorStore((state) => state.updateEditState);
   const pushHistory = useEditorStore((state) => state.pushHistory);
+  const showToast = useEditorStore((state) => state.showToast);
+
+  // Gallery store (batch mode)
+  const { selectedIds, images: galleryImages, updateImageEditState } = useGalleryStore();
+
+  // Determine mode: editor (single image) or gallery (batch)
+  const isGalleryMode = !image && selectedIds.length > 0;
+  const selectedGalleryImages = isGalleryMode
+    ? galleryImages.filter((img) => selectedIds.includes(img.id))
+    : [];
 
   const [userPresets, setUserPresets] = useState<UserPreset[]>([]);
   const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
@@ -199,24 +211,50 @@ export function PresetPanel() {
   }, []);
 
   const handlePresetClick = (preset: (typeof PRESETS)[number]) => {
-    pushHistory();
-    setActiveUserPresetId(null);
-
-    if (preset.id === 'original') {
-      const defaultState = createDefaultEditState();
-      updateEditState(defaultState);
+    if (isGalleryMode) {
+      // Batch apply to selected gallery images
+      selectedGalleryImages.forEach((galleryImg) => {
+        let newEditState;
+        if (preset.id === 'original') {
+          newEditState = createDefaultEditState();
+        } else {
+          const presetState = applyPreset(preset);
+          const defaultState = createDefaultEditState();
+          newEditState = { ...defaultState, ...presetState };
+        }
+        updateImageEditState(galleryImg.id, newEditState);
+      });
+      showToast(`Applied to ${selectedGalleryImages.length} photo${selectedGalleryImages.length > 1 ? 's' : ''}`);
     } else {
-      const presetState = applyPreset(preset);
-      const defaultState = createDefaultEditState();
-      updateEditState({ ...defaultState, ...presetState });
+      // Single image mode
+      pushHistory();
+      setActiveUserPresetId(null);
+
+      if (preset.id === 'original') {
+        const defaultState = createDefaultEditState();
+        updateEditState(defaultState);
+      } else {
+        const presetState = applyPreset(preset);
+        const defaultState = createDefaultEditState();
+        updateEditState({ ...defaultState, ...presetState });
+      }
     }
   };
 
   const handleUserPresetClick = (preset: UserPreset) => {
-    pushHistory();
-    setActiveUserPresetId(preset.id);
-    const newState = applyUserPreset(preset, createDefaultEditState());
-    updateEditState(newState);
+    if (isGalleryMode) {
+      // Batch apply to selected gallery images
+      selectedGalleryImages.forEach((galleryImg) => {
+        const newState = applyUserPreset(preset, createDefaultEditState());
+        updateImageEditState(galleryImg.id, newState);
+      });
+      showToast(`Applied to ${selectedGalleryImages.length} photo${selectedGalleryImages.length > 1 ? 's' : ''}`);
+    } else {
+      pushHistory();
+      setActiveUserPresetId(preset.id);
+      const newState = applyUserPreset(preset, createDefaultEditState());
+      updateEditState(newState);
+    }
   };
 
   const handleSavePreset = (name: string) => {
@@ -291,7 +329,7 @@ export function PresetPanel() {
   return (
     <div className="py-2">
       {/* Strength slider (when a preset is active) */}
-      {activePreset && (
+      {activePreset && !isGalleryMode && (
         <div className="px-4 py-3 border-b border-neutral-800">
           <div className="flex justify-between text-sm mb-2">
             <span className="text-neutral-400">Strength</span>
@@ -367,13 +405,14 @@ export function PresetPanel() {
                 name={preset.name}
                 category={preset.category}
                 isActive={
+                  !isGalleryMode &&
                   activeUserPresetId === null &&
                   (preset.id === 'original'
                     ? !editState.lutId
                     : editState.lutId === preset.lutFile)
                 }
                 onClick={() => handlePresetClick(preset)}
-                thumbnailSrc={image?.preview.src}
+                thumbnailSrc={isGalleryMode ? selectedGalleryImages[0]?.thumbnailUrl : image?.preview.src}
                 filter={getPresetFilter(preset)}
               />
             ))}

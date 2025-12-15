@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
-import { TransformWrapper, TransformComponent, useControls } from 'react-zoom-pan-pinch';
+import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { useWebGL } from '@/hooks/useWebGL';
 import { useEditorStore } from '@/lib/editor/state';
 import { MaskOverlay } from './MaskOverlay';
@@ -14,46 +14,12 @@ interface CanvasProps {
   className?: string;
 }
 
-// Zoom controls component
-function ZoomControls({ scale }: { scale: number }) {
-  const { zoomIn, zoomOut, resetTransform } = useControls();
-  const percentage = Math.round(scale * 100);
-
-  return (
-    <div className="absolute bottom-4 left-4 flex items-center gap-1 bg-black/60 rounded-lg p-1 z-10">
-      <button
-        onClick={() => zoomOut()}
-        className="w-7 h-7 flex items-center justify-center text-white hover:bg-white/10 rounded transition-colors"
-        title="Zoom out"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M5 12h14" />
-        </svg>
-      </button>
-      <button
-        onClick={() => resetTransform()}
-        className="px-2 h-7 text-xs text-white hover:bg-white/10 rounded transition-colors min-w-[48px]"
-        title="Reset zoom"
-      >
-        {percentage}%
-      </button>
-      <button
-        onClick={() => zoomIn()}
-        className="w-7 h-7 flex items-center justify-center text-white hover:bg-white/10 rounded transition-colors"
-        title="Zoom in"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M12 5v14M5 12h14" />
-        </svg>
-      </button>
-    </div>
-  );
-}
 
 export function Canvas({ className }: CanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const transformRef = useRef<{ setTransform: (x: number, y: number, scale: number) => void } | null>(null);
   const { initRenderer, setImage, render, setLut, clearLut } = useWebGL();
   const { image, editState } = useEditorStore();
   const selectedMaskId = useEditorStore((state) => state.selectedMaskId);
@@ -64,10 +30,15 @@ export function Canvas({ className }: CanvasProps) {
   const setIsHoldingOriginal = useEditorStore((state) => state.setIsHoldingOriginal);
   const showHistogram = useEditorStore((state) => state.showHistogram);
   const setHistogramData = useEditorStore((state) => state.setHistogramData);
+  const zoomLevel = useEditorStore((state) => state.zoomLevel);
+  const setZoomLevel = useEditorStore((state) => state.setZoomLevel);
+  const zoomToFit = useEditorStore((state) => state.zoomToFit);
+  const setZoomToFit = useEditorStore((state) => state.setZoomToFit);
 
   const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
   const [currentScale, setCurrentScale] = useState(1);
   const histogramTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isExternalZoomChange = useRef(false);
 
   // Handle spacebar hold for comparison
   useEffect(() => {
@@ -229,6 +200,30 @@ export function Canvas({ className }: CanvasProps) {
     setCurrentScale(initialScale);
   }, [initialScale]);
 
+  // Sync zoom from store to TransformWrapper
+  useEffect(() => {
+    if (!transformRef.current || !containerSize.width || !containerSize.height) return;
+
+    const targetScale = zoomToFit ? initialScale : zoomLevel;
+
+    // Only update if significantly different
+    if (Math.abs(currentScale - targetScale) > 0.01) {
+      isExternalZoomChange.current = true;
+      // Center the image when zooming
+      const centerX = containerSize.width / 2;
+      const centerY = containerSize.height / 2;
+      transformRef.current.setTransform(
+        centerX - (image?.width || 0) * targetScale / 2,
+        centerY - (image?.height || 0) * targetScale / 2,
+        targetScale
+      );
+      setCurrentScale(targetScale);
+      setTimeout(() => {
+        isExternalZoomChange.current = false;
+      }, 100);
+    }
+  }, [zoomLevel, zoomToFit, initialScale, containerSize, image]);
+
   return (
     <div
       ref={containerRef}
@@ -236,9 +231,14 @@ export function Canvas({ className }: CanvasProps) {
     >
       {image ? (
         <TransformWrapper
+          ref={(ref) => {
+            if (ref) {
+              transformRef.current = ref;
+            }
+          }}
           initialScale={initialScale}
           minScale={0.1}
-          maxScale={4}
+          maxScale={15}
           centerOnInit
           limitToBounds={false}
           panning={{
@@ -248,11 +248,18 @@ export function Canvas({ className }: CanvasProps) {
           doubleClick={{ mode: 'reset' }}
           onTransformed={(_, state) => {
             setCurrentScale(state.scale);
+            // Sync back to store (only if not triggered by store change)
+            if (!isExternalZoomChange.current) {
+              if (Math.abs(state.scale - initialScale) < 0.01) {
+                setZoomToFit(true);
+              } else {
+                setZoomLevel(state.scale);
+              }
+            }
           }}
         >
           {() => (
             <>
-              <ZoomControls scale={currentScale} />
               <TransformComponent
                 wrapperStyle={{
                   width: '100%',

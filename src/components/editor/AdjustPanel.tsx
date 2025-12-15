@@ -1,21 +1,58 @@
 'use client';
 
 import { useEditorStore, batchedUpdate } from '@/lib/editor/state';
+import { useGalleryStore } from '@/lib/gallery/store';
 import { AdjustmentSlider, sliderPresets } from '@/components/ui/adjustment-slider';
 import { PanelSection, PanelContainer, PanelDivider } from '@/components/ui/panel-section';
-import { SkinToneSettings } from '@/types/editor';
+import { SkinToneSettings, EditState } from '@/types/editor';
 
 export function AdjustPanel() {
-  const editState = useEditorStore((state) => state.editState);
+  const image = useEditorStore((state) => state.image);
+  const editorEditState = useEditorStore((state) => state.editState);
+
+  // Gallery store for batch mode
+  const { selectedIds, images: galleryImages, updateImageEditState } = useGalleryStore();
+
+  // Determine mode: editor (single image) or gallery (batch)
+  const isGalleryMode = !image && selectedIds.length > 0;
+  const selectedGalleryImages = isGalleryMode
+    ? galleryImages.filter((img) => selectedIds.includes(img.id))
+    : [];
+
+  // Use first selected image's edit state for display in gallery mode
+  const editState = isGalleryMode && selectedGalleryImages.length > 0
+    ? selectedGalleryImages[0].editState
+    : editorEditState;
+
   const skinTone = editState.skinTone;
 
+  // Batch update helper for gallery mode
+  const handleBatchUpdate = <K extends keyof EditState>(key: K, value: EditState[K]) => {
+    if (isGalleryMode) {
+      selectedGalleryImages.forEach((img) => {
+        updateImageEditState(img.id, { ...img.editState, [key]: value });
+      });
+    } else {
+      batchedUpdate(key, value);
+    }
+  };
+
   const handleSkinToneUpdate = <K extends keyof SkinToneSettings>(key: K, value: SkinToneSettings[K]) => {
-    useEditorStore.setState((state) => ({
-      editState: {
-        ...state.editState,
-        skinTone: { ...state.editState.skinTone, [key]: value },
-      },
-    }));
+    if (isGalleryMode) {
+      selectedGalleryImages.forEach((img) => {
+        updateImageEditState(img.id, {
+          ...img.editState,
+          skinTone: { ...img.editState.skinTone, [key]: value },
+        });
+      });
+    } else {
+      useEditorStore.setState((state) => ({
+        editState: {
+          ...state.editState,
+          skinTone: { ...state.editState.skinTone, [key]: value },
+        },
+      }));
+    }
   };
 
   return (
@@ -26,37 +63,37 @@ export function AdjustPanel() {
           label="Exposure"
           value={editState.exposure}
           {...sliderPresets.exposure}
-          onChange={(v) => batchedUpdate('exposure', v)}
+          onChange={(v) => handleBatchUpdate('exposure', v)}
         />
         <AdjustmentSlider
           label="Contrast"
           value={editState.contrast}
           {...sliderPresets.contrast}
-          onChange={(v) => batchedUpdate('contrast', v)}
+          onChange={(v) => handleBatchUpdate('contrast', v)}
         />
         <AdjustmentSlider
           label="Highlights"
           value={editState.highlights}
           {...sliderPresets.highlights}
-          onChange={(v) => batchedUpdate('highlights', v)}
+          onChange={(v) => handleBatchUpdate('highlights', v)}
         />
         <AdjustmentSlider
           label="Shadows"
           value={editState.shadows}
           {...sliderPresets.shadows}
-          onChange={(v) => batchedUpdate('shadows', v)}
+          onChange={(v) => handleBatchUpdate('shadows', v)}
         />
         <AdjustmentSlider
           label="Whites"
           value={editState.whites}
           {...sliderPresets.whites}
-          onChange={(v) => batchedUpdate('whites', v)}
+          onChange={(v) => handleBatchUpdate('whites', v)}
         />
         <AdjustmentSlider
           label="Blacks"
           value={editState.blacks}
           {...sliderPresets.blacks}
-          onChange={(v) => batchedUpdate('blacks', v)}
+          onChange={(v) => handleBatchUpdate('blacks', v)}
         />
       </PanelSection>
 
@@ -68,27 +105,27 @@ export function AdjustPanel() {
           label="Saturation"
           value={editState.saturation}
           {...sliderPresets.saturation}
-          onChange={(v) => batchedUpdate('saturation', v)}
+          onChange={(v) => handleBatchUpdate('saturation', v)}
         />
         <AdjustmentSlider
           label="Vibrance"
           value={editState.vibrance}
           {...sliderPresets.vibrance}
-          onChange={(v) => batchedUpdate('vibrance', v)}
+          onChange={(v) => handleBatchUpdate('vibrance', v)}
         />
         <AdjustmentSlider
           label="Temperature"
           value={editState.temperature}
           {...sliderPresets.temperature}
           gradient="temperature"
-          onChange={(v) => batchedUpdate('temperature', v)}
+          onChange={(v) => handleBatchUpdate('temperature', v)}
         />
         <AdjustmentSlider
           label="Tint"
           value={editState.tint}
           {...sliderPresets.tint}
           gradient="tint"
-          onChange={(v) => batchedUpdate('tint', v)}
+          onChange={(v) => handleBatchUpdate('tint', v)}
         />
       </PanelSection>
 
@@ -130,7 +167,7 @@ export function AdjustPanel() {
           label="Clarity"
           value={editState.clarity}
           {...sliderPresets.clarity}
-          onChange={(v) => batchedUpdate('clarity', v)}
+          onChange={(v) => handleBatchUpdate('clarity', v)}
         />
       </PanelSection>
     </PanelContainer>

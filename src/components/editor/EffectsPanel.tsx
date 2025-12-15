@@ -1,11 +1,12 @@
 'use client';
 
 import { useEditorStore, batchedUpdate } from '@/lib/editor/state';
+import { useGalleryStore } from '@/lib/gallery/store';
 import { AdjustmentSlider, sliderPresets } from '@/components/ui/adjustment-slider';
 import { PanelSection, PanelContainer, PanelDivider } from '@/components/ui/panel-section';
 import { Slider } from '@/components/ui/slider';
 import { Button } from '@/components/ui/button';
-import { BlurSettings, BorderSettings, BloomSettings, HalationSettings } from '@/types/editor';
+import { BlurSettings, BorderSettings, BloomSettings, HalationSettings, EditState } from '@/types/editor';
 
 // Color presets for split tone hue picker
 const HUE_PRESETS = [
@@ -84,7 +85,23 @@ function HueSlider({
 }
 
 export function EffectsPanel() {
-  const editState = useEditorStore((state) => state.editState);
+  const image = useEditorStore((state) => state.image);
+  const editorEditState = useEditorStore((state) => state.editState);
+
+  // Gallery store for batch mode
+  const { selectedIds, images: galleryImages, updateImageEditState } = useGalleryStore();
+
+  // Determine mode: editor (single image) or gallery (batch)
+  const isGalleryMode = !image && selectedIds.length > 0;
+  const selectedGalleryImages = isGalleryMode
+    ? galleryImages.filter((img) => selectedIds.includes(img.id))
+    : [];
+
+  // Use first selected image's edit state for display in gallery mode
+  const editState = isGalleryMode && selectedGalleryImages.length > 0
+    ? selectedGalleryImages[0].editState
+    : editorEditState;
+
   const grain = editState.grain;
   const vignette = editState.vignette;
   const splitTone = editState.splitTone;
@@ -93,67 +110,141 @@ export function EffectsPanel() {
   const bloom = editState.bloom;
   const halation = editState.halation;
 
+  // Batch update helper for simple properties
+  const handleBatchUpdate = <K extends keyof EditState>(key: K, value: EditState[K]) => {
+    if (isGalleryMode) {
+      selectedGalleryImages.forEach((img) => {
+        updateImageEditState(img.id, { ...img.editState, [key]: value });
+      });
+    } else {
+      batchedUpdate(key, value);
+    }
+  };
+
   const handleGrainUpdate = (key: keyof typeof grain, value: number) => {
-    useEditorStore.setState((state) => ({
-      editState: {
-        ...state.editState,
-        grain: { ...state.editState.grain, [key]: value },
-      },
-    }));
+    if (isGalleryMode) {
+      selectedGalleryImages.forEach((img) => {
+        updateImageEditState(img.id, {
+          ...img.editState,
+          grain: { ...img.editState.grain, [key]: value },
+        });
+      });
+    } else {
+      useEditorStore.setState((state) => ({
+        editState: {
+          ...state.editState,
+          grain: { ...state.editState.grain, [key]: value },
+        },
+      }));
+    }
   };
 
   const handleVignetteUpdate = (key: keyof typeof vignette, value: number) => {
-    useEditorStore.setState((state) => ({
-      editState: {
-        ...state.editState,
-        vignette: { ...state.editState.vignette, [key]: value },
-      },
-    }));
+    if (isGalleryMode) {
+      selectedGalleryImages.forEach((img) => {
+        updateImageEditState(img.id, {
+          ...img.editState,
+          vignette: { ...img.editState.vignette, [key]: value },
+        });
+      });
+    } else {
+      useEditorStore.setState((state) => ({
+        editState: {
+          ...state.editState,
+          vignette: { ...state.editState.vignette, [key]: value },
+        },
+      }));
+    }
   };
 
   const handleSplitToneUpdate = (key: keyof typeof splitTone, value: number) => {
-    useEditorStore.setState((state) => ({
-      editState: {
-        ...state.editState,
-        splitTone: { ...state.editState.splitTone, [key]: value },
-      },
-    }));
+    if (isGalleryMode) {
+      selectedGalleryImages.forEach((img) => {
+        updateImageEditState(img.id, {
+          ...img.editState,
+          splitTone: { ...img.editState.splitTone, [key]: value },
+        });
+      });
+    } else {
+      useEditorStore.setState((state) => ({
+        editState: {
+          ...state.editState,
+          splitTone: { ...state.editState.splitTone, [key]: value },
+        },
+      }));
+    }
   };
 
   const handleBlurUpdate = <K extends keyof BlurSettings>(key: K, value: BlurSettings[K]) => {
-    useEditorStore.setState((state) => ({
-      editState: {
-        ...state.editState,
-        blur: { ...state.editState.blur, [key]: value },
-      },
-    }));
+    if (isGalleryMode) {
+      selectedGalleryImages.forEach((img) => {
+        updateImageEditState(img.id, {
+          ...img.editState,
+          blur: { ...img.editState.blur, [key]: value },
+        });
+      });
+    } else {
+      useEditorStore.setState((state) => ({
+        editState: {
+          ...state.editState,
+          blur: { ...state.editState.blur, [key]: value },
+        },
+      }));
+    }
   };
 
   const handleBorderUpdate = <K extends keyof BorderSettings>(key: K, value: BorderSettings[K]) => {
-    useEditorStore.setState((state) => ({
-      editState: {
-        ...state.editState,
-        border: { ...state.editState.border, [key]: value },
-      },
-    }));
+    if (isGalleryMode) {
+      selectedGalleryImages.forEach((img) => {
+        updateImageEditState(img.id, {
+          ...img.editState,
+          border: { ...img.editState.border, [key]: value },
+        });
+      });
+    } else {
+      useEditorStore.setState((state) => ({
+        editState: {
+          ...state.editState,
+          border: { ...state.editState.border, [key]: value },
+        },
+      }));
+    }
   };
 
   const handleBloomUpdate = <K extends keyof BloomSettings>(key: K, value: BloomSettings[K]) => {
-    useEditorStore.setState((state) => ({
-      editState: {
-        ...state.editState,
-        bloom: { ...state.editState.bloom, [key]: value },
-      },
-    }));
+    if (isGalleryMode) {
+      selectedGalleryImages.forEach((img) => {
+        updateImageEditState(img.id, {
+          ...img.editState,
+          bloom: { ...img.editState.bloom, [key]: value },
+        });
+      });
+    } else {
+      useEditorStore.setState((state) => ({
+        editState: {
+          ...state.editState,
+          bloom: { ...state.editState.bloom, [key]: value },
+        },
+      }));
+    }
   };
 
   const handleHalationUpdate = <K extends keyof HalationSettings>(key: K, value: HalationSettings[K]) => {
-    useEditorStore.setState((state) => ({
-      editState: {
-        ...state.editState,
-        halation: { ...state.editState.halation, [key]: value },
-      },
-    }));
+    if (isGalleryMode) {
+      selectedGalleryImages.forEach((img) => {
+        updateImageEditState(img.id, {
+          ...img.editState,
+          halation: { ...img.editState.halation, [key]: value },
+        });
+      });
+    } else {
+      useEditorStore.setState((state) => ({
+        editState: {
+          ...state.editState,
+          halation: { ...state.editState.halation, [key]: value },
+        },
+      }));
+    }
   };
 
   return (
@@ -166,7 +257,7 @@ export function EffectsPanel() {
           min={0}
           max={100}
           defaultValue={0}
-          onChange={(v) => batchedUpdate('fade', v)}
+          onChange={(v) => handleBatchUpdate('fade', v)}
         />
       </PanelSection>
 

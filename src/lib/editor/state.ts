@@ -88,6 +88,12 @@ interface EditorStore {
   isHoldingOriginal: boolean;
   setIsHoldingOriginal: (holding: boolean) => void;
 
+  // Zoom state
+  zoomLevel: number; // 1 = 100%
+  setZoomLevel: (level: number) => void;
+  zoomToFit: boolean;
+  setZoomToFit: (fit: boolean) => void;
+
   // Histogram
   histogramData: HistogramData;
   setHistogramData: (data: HistogramData) => void;
@@ -340,6 +346,12 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   setComparisonSplitPosition: (position) => set({ comparisonSplitPosition: position }),
   isHoldingOriginal: false,
   setIsHoldingOriginal: (holding) => set({ isHoldingOriginal: holding }),
+
+  // Zoom state
+  zoomLevel: 1,
+  setZoomLevel: (level) => set({ zoomLevel: level, zoomToFit: false }),
+  zoomToFit: true,
+  setZoomToFit: (fit) => set({ zoomToFit: fit }),
 
   // Histogram
   histogramData: createEmptyHistogram(),
