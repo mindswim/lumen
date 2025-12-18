@@ -1,6 +1,13 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { EditState, createDefaultEditState } from '@/types/editor';
+import {
+  saveImage,
+  saveImages,
+  deleteImages,
+  getAllImages,
+  StoredImage,
+} from '@/lib/storage/indexed-db';
 
 export interface GalleryImage {
   id: string;
@@ -21,6 +28,7 @@ interface GalleryStore {
   gridColumns: number; // 1-8 columns
   isIsolated: boolean; // Isolate mode - show only isolated images
   isolatedIds: string[]; // IDs of images being isolated
+  isHydrated: boolean; // Whether IndexedDB data has been loaded
 
   // Actions
   addImages: (files: File[]) => Promise<void>;
@@ -33,6 +41,7 @@ interface GalleryStore {
   setGridColumns: (columns: number) => void;
   toggleIsolate: () => void; // Enter/exit isolate mode
   exitIsolate: () => void; // Exit isolate mode
+  hydrateFromIndexedDB: () => Promise<void>; // Load images from IndexedDB
 
   // Computed
   getVisibleImages: () => GalleryImage[]; // Returns isolated images if in isolate mode
@@ -98,125 +107,164 @@ export const useGalleryStore = create<GalleryStore>()(
       gridColumns: 5, // Default to 5 columns
       isIsolated: false,
       isolatedIds: [],
+      isHydrated: false,
 
-  addImages: async (files: File[]) => {
-    const newImages: GalleryImage[] = [];
+      hydrateFromIndexedDB: async () => {
+        try {
+          const storedImages = await getAllImages();
+          const images: GalleryImage[] = storedImages.map((img: StoredImage) => ({
+            ...img,
+            editState: img.editState as EditState,
+          }));
+          // Sort by createdAt descending (newest first)
+          images.sort((a, b) => b.createdAt - a.createdAt);
+          set({ images, isHydrated: true });
+        } catch (error) {
+          console.error('Failed to hydrate from IndexedDB:', error);
+          set({ isHydrated: true }); // Mark as hydrated even on error
+        }
+      },
 
-    for (const file of files) {
-      if (!file.type.startsWith('image/')) continue;
+      addImages: async (files: File[]) => {
+        const newImages: GalleryImage[] = [];
 
-      try {
-        const img = await loadImageFromFile(file);
-        const reader = new FileReader();
-        const dataUrl = await new Promise<string>((resolve) => {
-          reader.onload = (e) => resolve(e.target?.result as string);
-          reader.readAsDataURL(file);
+        for (const file of files) {
+          if (!file.type.startsWith('image/')) continue;
+
+          try {
+            const img = await loadImageFromFile(file);
+            const reader = new FileReader();
+            const dataUrl = await new Promise<string>((resolve) => {
+              reader.onload = (e) => resolve(e.target?.result as string);
+              reader.readAsDataURL(file);
+            });
+
+            const thumbnailUrl = await createThumbnail(img);
+
+            newImages.push({
+              id: generateId(),
+              fileName: file.name,
+              dataUrl,
+              thumbnailUrl,
+              width: img.width,
+              height: img.height,
+              editState: createDefaultEditState(),
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            });
+          } catch (err) {
+            console.error('Failed to load image:', file.name, err);
+          }
+        }
+
+        // Save to IndexedDB
+        try {
+          await saveImages(newImages as StoredImage[]);
+        } catch (err) {
+          console.error('Failed to save images to IndexedDB:', err);
+        }
+
+        set((state) => ({
+          images: [...newImages, ...state.images], // Add new images at the beginning
+        }));
+      },
+
+      removeImages: (ids: string[]) => {
+        // Delete from IndexedDB (fire and forget, don't block UI)
+        deleteImages(ids).catch((err) => {
+          console.error('Failed to delete images from IndexedDB:', err);
         });
 
-        const thumbnailUrl = await createThumbnail(img);
+        set((state) => ({
+          images: state.images.filter((img) => !ids.includes(img.id)),
+          selectedIds: state.selectedIds.filter((id) => !ids.includes(id)),
+          activeImageId: ids.includes(state.activeImageId || '')
+            ? null
+            : state.activeImageId,
+        }));
+      },
 
-        newImages.push({
-          id: generateId(),
-          fileName: file.name,
-          dataUrl,
-          thumbnailUrl,
-          width: img.width,
-          height: img.height,
-          editState: createDefaultEditState(),
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
+      selectImage: (id: string, multi = false) => {
+        set((state) => {
+          if (multi) {
+            // Toggle selection
+            const isSelected = state.selectedIds.includes(id);
+            return {
+              selectedIds: isSelected
+                ? state.selectedIds.filter((sid) => sid !== id)
+                : [...state.selectedIds, id],
+            };
+          } else {
+            // Single selection
+            return { selectedIds: [id] };
+          }
         });
-      } catch (err) {
-        console.error('Failed to load image:', file.name, err);
-      }
-    }
+      },
 
-    set((state) => ({
-      images: [...state.images, ...newImages],
-    }));
-  },
+      deselectAll: () => {
+        set({ selectedIds: [] });
+      },
 
-  removeImages: (ids: string[]) => {
-    set((state) => ({
-      images: state.images.filter((img) => !ids.includes(img.id)),
-      selectedIds: state.selectedIds.filter((id) => !ids.includes(id)),
-      activeImageId: ids.includes(state.activeImageId || '')
-        ? null
-        : state.activeImageId,
-    }));
-  },
+      setActiveImage: (id: string | null) => {
+        set({ activeImageId: id });
+      },
 
-  selectImage: (id: string, multi = false) => {
-    set((state) => {
-      if (multi) {
-        // Toggle selection
-        const isSelected = state.selectedIds.includes(id);
-        return {
-          selectedIds: isSelected
-            ? state.selectedIds.filter((sid) => sid !== id)
-            : [...state.selectedIds, id],
-        };
-      } else {
-        // Single selection
-        return { selectedIds: [id] };
-      }
-    });
-  },
+      updateImageEditState: (id: string, editState: EditState) => {
+        const updatedAt = Date.now();
 
-  deselectAll: () => {
-    set({ selectedIds: [] });
-  },
+        set((state) => {
+          const updatedImages = state.images.map((img) =>
+            img.id === id ? { ...img, editState, updatedAt } : img
+          );
 
-  setActiveImage: (id: string | null) => {
-    set({ activeImageId: id });
-  },
+          // Save to IndexedDB (fire and forget)
+          const updatedImage = updatedImages.find((img) => img.id === id);
+          if (updatedImage) {
+            saveImage(updatedImage as StoredImage).catch((err) => {
+              console.error('Failed to save image edit state to IndexedDB:', err);
+            });
+          }
 
-  updateImageEditState: (id: string, editState: EditState) => {
-    set((state) => ({
-      images: state.images.map((img) =>
-        img.id === id
-          ? { ...img, editState, updatedAt: Date.now() }
-          : img
-      ),
-    }));
-  },
+          return { images: updatedImages };
+        });
+      },
 
-  getImage: (id: string) => {
-    return get().images.find((img) => img.id === id);
-  },
+      getImage: (id: string) => {
+        return get().images.find((img) => img.id === id);
+      },
 
-  setGridColumns: (columns: number) => {
-    set({ gridColumns: Math.max(1, Math.min(8, columns)) });
-  },
+      setGridColumns: (columns: number) => {
+        set({ gridColumns: Math.max(1, Math.min(8, columns)) });
+      },
 
-  toggleIsolate: () => {
-    const { isIsolated, selectedIds } = get();
-    if (isIsolated) {
-      // Exit isolate mode
-      set({ isIsolated: false, isolatedIds: [] });
-    } else {
-      // Enter isolate mode with currently selected images
-      if (selectedIds.length > 0) {
-        set({ isIsolated: true, isolatedIds: [...selectedIds] });
-      }
-    }
-  },
+      toggleIsolate: () => {
+        const { isIsolated, selectedIds } = get();
+        if (isIsolated) {
+          // Exit isolate mode
+          set({ isIsolated: false, isolatedIds: [] });
+        } else {
+          // Enter isolate mode with currently selected images
+          if (selectedIds.length > 0) {
+            set({ isIsolated: true, isolatedIds: [...selectedIds] });
+          }
+        }
+      },
 
-  exitIsolate: () => {
-    set({ isIsolated: false, isolatedIds: [] });
-  },
+      exitIsolate: () => {
+        set({ isIsolated: false, isolatedIds: [] });
+      },
 
-  getVisibleImages: () => {
-    const { images, isIsolated, isolatedIds } = get();
-    if (isIsolated && isolatedIds.length > 0) {
-      return images.filter((img) => isolatedIds.includes(img.id));
-    }
-    return images;
-  },
+      getVisibleImages: () => {
+        const { images, isIsolated, isolatedIds } = get();
+        if (isIsolated && isolatedIds.length > 0) {
+          return images.filter((img) => isolatedIds.includes(img.id));
+        }
+        return images;
+      },
     }),
     {
       name: 'lumen-ui-preferences',
-      // Only persist UI preferences, not images or selection state
+      // Only persist UI preferences, not images (those go to IndexedDB)
       partialize: (state) => ({
         gridColumns: state.gridColumns,
       }),

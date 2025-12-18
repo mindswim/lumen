@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useState, useRef } from 'react';
+import { useCallback, useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useGalleryStore, GalleryImage } from '@/lib/gallery/store';
 import { useEditorStore } from '@/lib/editor/state';
@@ -151,7 +151,16 @@ export function Gallery() {
     setActiveImage,
     gridColumns,
     getVisibleImages,
+    isHydrated,
+    hydrateFromIndexedDB,
   } = useGalleryStore();
+
+  // Hydrate from IndexedDB on mount
+  useEffect(() => {
+    if (!isHydrated) {
+      hydrateFromIndexedDB();
+    }
+  }, [isHydrated, hydrateFromIndexedDB]);
 
   // Get visible images (filtered if in isolate mode)
   const visibleImages = getVisibleImages();
@@ -284,7 +293,11 @@ export function Gallery() {
           )}
 
           {/* Content */}
-          {images.length === 0 ? (
+          {!isHydrated ? (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-neutral-500">Loading...</div>
+            </div>
+          ) : images.length === 0 ? (
             <EmptyState onAddPhotos={handleAddPhotos} />
           ) : (
             <div

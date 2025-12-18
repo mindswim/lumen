@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
 import { useEditorStore } from '@/lib/editor/state';
+import { useExport } from '@/contexts/export-context';
 
 interface ExportDialogProps {
   open: boolean;
@@ -19,141 +20,71 @@ interface ExportDialogProps {
 }
 
 type ExportFormat = 'jpeg' | 'png' | 'webp';
+type ResolutionOption = 'full' | '75' | '50' | 'custom';
 
 export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
   const image = useEditorStore((state) => state.image);
   const editState = useEditorStore((state) => state.editState);
+  const showToast = useEditorStore((state) => state.showToast);
+  const { exportFunction } = useExport();
 
   const [format, setFormat] = useState<ExportFormat>('jpeg');
   const [quality, setQuality] = useState(95);
+  const [resolution, setResolution] = useState<ResolutionOption>('full');
+  const [maxDimension, setMaxDimension] = useState(2048);
   const [isExporting, setIsExporting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleExport = useCallback(async () => {
-    if (!image) return;
+  // Calculate output dimensions based on settings
+  const outputDimensions = useMemo(() => {
+    if (!image) return { width: 0, height: 0 };
 
-    setIsExporting(true);
+    let width = image.width;
+    let height = image.height;
 
-    try {
-      // Determine MIME type
-      const mimeTypes: Record<ExportFormat, string> = {
-        jpeg: 'image/jpeg',
-        png: 'image/png',
-        webp: 'image/webp',
-      };
-
-      const mimeType = mimeTypes[format];
-      const qualityValue = format === 'png' ? undefined : quality / 100;
-
-      // Calculate crop dimensions (use full image if no crop)
-      const crop = editState.crop;
-      const sourceX = crop ? Math.round(crop.left * image.width) : 0;
-      const sourceY = crop ? Math.round(crop.top * image.height) : 0;
-      const sourceWidth = crop ? Math.round(crop.width * image.width) : image.width;
-      const sourceHeight = crop ? Math.round(crop.height * image.height) : image.height;
-
-      // Get the edited canvas (preview resolution with effects)
-      const editedCanvas = document.querySelector('canvas');
-      if (!editedCanvas) throw new Error('Canvas not found');
-
-      // Create output canvas at full resolution for the cropped area
-      const outputCanvas = document.createElement('canvas');
-
-      // Apply rotation to determine output dimensions
-      const rotation = editState.rotation || 0;
-      const isRotated90 = Math.abs(rotation) === 90 || Math.abs(rotation) === 270;
-
-      if (isRotated90) {
-        outputCanvas.width = sourceHeight;
-        outputCanvas.height = sourceWidth;
-      } else {
-        outputCanvas.width = sourceWidth;
-        outputCanvas.height = sourceHeight;
-      }
-
-      const ctx = outputCanvas.getContext('2d');
-      if (!ctx) throw new Error('Failed to get canvas context');
-
-      // Apply transforms (rotation, flip)
-      ctx.save();
-      ctx.translate(outputCanvas.width / 2, outputCanvas.height / 2);
-
-      if (rotation !== 0) {
-        ctx.rotate((rotation * Math.PI) / 180);
-      }
-      if (editState.flipH) {
-        ctx.scale(-1, 1);
-      }
-      if (editState.flipV) {
-        ctx.scale(1, -1);
-      }
-
-      // Draw from the edited canvas, scaling from preview to crop region
-      // Since we're exporting preview resolution (with effects), we scale appropriately
-      const scaleX = editedCanvas.width / image.width;
-      const scaleY = editedCanvas.height / image.height;
-
-      const drawWidth = isRotated90 ? sourceHeight : sourceWidth;
-      const drawHeight = isRotated90 ? sourceWidth : sourceHeight;
-
-      ctx.drawImage(
-        editedCanvas,
-        sourceX * scaleX,
-        sourceY * scaleY,
-        sourceWidth * scaleX,
-        sourceHeight * scaleY,
-        -drawWidth / 2,
-        -drawHeight / 2,
-        drawWidth,
-        drawHeight
-      );
-
-      ctx.restore();
-
-      // Export the final canvas
-      const blob = await new Promise<Blob>((resolve, reject) => {
-        outputCanvas.toBlob(
-          (blob) => {
-            if (blob) resolve(blob);
-            else reject(new Error('Failed to create blob'));
-          },
-          mimeType,
-          qualityValue
-        );
-      });
-
-      // Create download link
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      const baseName = image.fileName?.replace(/\.[^/.]+$/, '') || 'edited';
-      a.href = url;
-      a.download = `${baseName}-edited.${format}`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-
-      onOpenChange(false);
-    } catch (error) {
-      console.error('Export failed:', error);
-    } finally {
-      setIsExporting(false);
-    }
-  }, [image, editState, format, quality, onOpenChange]);
-
-  const formatSizeEstimate = useCallback(() => {
-    if (!image) return 'N/A';
-
-    // Use cropped dimensions if available
+    // Apply crop
     const crop = editState.crop;
-    const width = crop ? Math.round(crop.width * image.width) : image.width;
-    const height = crop ? Math.round(crop.height * image.height) : image.height;
+    if (crop) {
+      width = Math.round(crop.width * image.width);
+      height = Math.round(crop.height * image.height);
+    }
 
-    // Rough estimate based on dimensions and format
-    const pixels = width * height;
+    // Apply rotation (swap for 90/270)
+    const rotation = editState.rotation || 0;
+    if (Math.abs(rotation) === 90 || Math.abs(rotation) === 270) {
+      [width, height] = [height, width];
+    }
+
+    // Apply scale based on resolution option
+    let scale = 1;
+    switch (resolution) {
+      case '75':
+        scale = 0.75;
+        break;
+      case '50':
+        scale = 0.5;
+        break;
+      case 'custom':
+        const maxSide = Math.max(width, height);
+        if (maxSide > maxDimension) {
+          scale = maxDimension / maxSide;
+        }
+        break;
+    }
+
+    return {
+      width: Math.round(width * scale),
+      height: Math.round(height * scale),
+    };
+  }, [image, editState.crop, editState.rotation, resolution, maxDimension]);
+
+  // Estimate file size
+  const estimatedSize = useMemo(() => {
+    const pixels = outputDimensions.width * outputDimensions.height;
     let bytesPerPixel: number;
 
     if (format === 'png') {
-      bytesPerPixel = 3; // Lossless, roughly 3 bytes per pixel
+      bytesPerPixel = 3;
     } else if (format === 'webp') {
       bytesPerPixel = 0.5 + (quality / 100) * 1.5;
     } else {
@@ -165,7 +96,68 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
     if (bytes < 1024) return `~${Math.round(bytes)} B`;
     if (bytes < 1024 * 1024) return `~${Math.round(bytes / 1024)} KB`;
     return `~${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }, [image, editState.crop, format, quality]);
+  }, [outputDimensions, format, quality]);
+
+  const handleExport = useCallback(async () => {
+    if (!image || !exportFunction) {
+      setError('Export not available. Please try again.');
+      return;
+    }
+
+    setIsExporting(true);
+    setError(null);
+
+    try {
+      // Calculate scale based on resolution option
+      let scale = 1;
+      let maxDim: number | undefined;
+
+      switch (resolution) {
+        case '75':
+          scale = 0.75;
+          break;
+        case '50':
+          scale = 0.5;
+          break;
+        case 'custom':
+          maxDim = maxDimension;
+          break;
+      }
+
+      const blob = await exportFunction(editState, image.original, {
+        format,
+        quality: quality / 100,
+        scale,
+        maxDimension: maxDim,
+      });
+
+      // Create download link
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const baseName = image.fileName?.replace(/\.[^/.]+$/, '') || 'photo';
+      a.href = url;
+      a.download = `${baseName}-edited.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      showToast(`Exported ${outputDimensions.width} x ${outputDimensions.height}`);
+      onOpenChange(false);
+    } catch (err) {
+      console.error('Export failed:', err);
+      setError(err instanceof Error ? err.message : 'Export failed. Please try again.');
+    } finally {
+      setIsExporting(false);
+    }
+  }, [image, editState, exportFunction, format, quality, resolution, maxDimension, outputDimensions, onOpenChange, showToast]);
+
+  const resolutionOptions: { value: ResolutionOption; label: string }[] = [
+    { value: 'full', label: 'Full' },
+    { value: '75', label: '75%' },
+    { value: '50', label: '50%' },
+    { value: 'custom', label: 'Max' },
+  ];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -173,23 +165,64 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
         <DialogHeader>
           <DialogTitle className="text-white">Export Image</DialogTitle>
           <DialogDescription className="text-neutral-400">
-            Choose format and quality settings for your export.
+            Configure export settings for your edited image.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6 py-4">
-          {/* Image info */}
-          {image && (
-            <div className="text-sm text-neutral-400 space-y-1">
-              <p>
+          {/* Output dimensions */}
+          <div className="p-3 bg-neutral-800/50 rounded-lg">
+            <div className="text-sm text-neutral-400">Output size</div>
+            <div className="text-lg font-medium text-white">
+              {outputDimensions.width} x {outputDimensions.height} px
+            </div>
+            {image && (outputDimensions.width !== image.width || outputDimensions.height !== image.height) && (
+              <div className="text-xs text-neutral-500 mt-1">
                 Original: {image.width} x {image.height} px
-              </p>
-              {editState.crop && (
-                <p>
-                  Cropped: {Math.round(editState.crop.width * image.width)} x{' '}
-                  {Math.round(editState.crop.height * image.height)} px
-                </p>
-              )}
+              </div>
+            )}
+          </div>
+
+          {/* Resolution selection */}
+          <div className="space-y-2">
+            <Label className="text-white">Resolution</Label>
+            <div className="grid grid-cols-4 gap-2">
+              {resolutionOptions.map((option) => (
+                <Button
+                  key={option.value}
+                  variant={resolution === option.value ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setResolution(option.value)}
+                  className={
+                    resolution === option.value
+                      ? 'bg-white text-black hover:bg-neutral-200'
+                      : 'bg-neutral-800 border-neutral-700 hover:bg-neutral-700 text-white'
+                  }
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          {/* Max dimension input for custom resolution */}
+          {resolution === 'custom' && (
+            <div className="space-y-2">
+              <div className="flex justify-between">
+                <Label className="text-white">Max dimension</Label>
+                <span className="text-sm text-neutral-400">{maxDimension} px</span>
+              </div>
+              <Slider
+                value={[maxDimension]}
+                min={512}
+                max={8192}
+                step={256}
+                onValueChange={([v]) => setMaxDimension(v)}
+              />
+              <div className="flex justify-between text-xs text-neutral-500">
+                <span>512</span>
+                <span>8192</span>
+              </div>
             </div>
           )}
 
@@ -213,6 +246,11 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
                 </Button>
               ))}
             </div>
+            <p className="text-xs text-neutral-500">
+              {format === 'png' && 'Lossless, larger files, supports transparency'}
+              {format === 'jpeg' && 'Best for photos, smaller files, no transparency'}
+              {format === 'webp' && 'Modern format, great compression, wide support'}
+            </p>
           </div>
 
           {/* Quality slider (not for PNG) */}
@@ -229,16 +267,25 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
                 step={5}
                 onValueChange={([v]) => setQuality(v)}
               />
-              <p className="text-xs text-neutral-500">
-                Higher quality = larger file size
-              </p>
+              <div className="flex justify-between text-xs text-neutral-500">
+                <span>Smaller file</span>
+                <span>Higher quality</span>
+              </div>
             </div>
           )}
 
-          {/* Size estimate */}
-          <div className="text-sm text-neutral-400">
-            <p>Estimated size: {formatSizeEstimate()}</p>
+          {/* Estimated size */}
+          <div className="flex justify-between text-sm">
+            <span className="text-neutral-400">Estimated file size</span>
+            <span className="text-white">{estimatedSize}</span>
           </div>
+
+          {/* Error message */}
+          {error && (
+            <div className="p-3 bg-red-900/30 border border-red-800 rounded-lg text-sm text-red-300">
+              {error}
+            </div>
+          )}
         </div>
 
         {/* Actions */}
@@ -252,10 +299,32 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
           </Button>
           <Button
             onClick={handleExport}
-            disabled={isExporting || !image}
-            className="bg-white text-black hover:bg-neutral-200"
+            disabled={isExporting || !image || !exportFunction}
+            className="bg-white text-black hover:bg-neutral-200 min-w-[100px]"
           >
-            {isExporting ? 'Exporting...' : 'Export'}
+            {isExporting ? (
+              <span className="flex items-center gap-2">
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                    fill="none"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                  />
+                </svg>
+                Exporting
+              </span>
+            ) : (
+              'Export'
+            )}
           </Button>
         </div>
       </DialogContent>

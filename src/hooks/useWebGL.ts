@@ -49,14 +49,25 @@ export function useWebGL() {
   }, []);
 
   const exportImage = useCallback(
-    async (editState: EditState, originalImage: HTMLImageElement): Promise<Blob> => {
+    async (
+      editState: EditState,
+      originalImage: HTMLImageElement,
+      options?: {
+        format?: 'jpeg' | 'png' | 'webp';
+        quality?: number;
+        scale?: number;
+        maxDimension?: number;
+      }
+    ): Promise<Blob> => {
       if (!rendererRef.current) {
         throw new Error('Renderer not initialized');
       }
-      return rendererRef.current.exportImage(editState, originalImage);
+      return rendererRef.current.exportImage(editState, originalImage, options);
     },
     []
   );
+
+  const getRenderer = useCallback(() => rendererRef.current, []);
 
   useEffect(() => {
     return () => {
@@ -76,6 +87,7 @@ export function useWebGL() {
     setLut,
     clearLut,
     exportImage,
+    getRenderer,
     canvasRef,
   };
 }

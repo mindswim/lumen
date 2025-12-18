@@ -4,6 +4,7 @@ import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { useWebGL } from '@/hooks/useWebGL';
 import { useEditorStore } from '@/lib/editor/state';
+import { useExport } from '@/contexts/export-context';
 import { MaskOverlay } from './MaskOverlay';
 import { CropOverlay } from './CropOverlay';
 import { ComparisonOverlay } from './ComparisonOverlay';
@@ -19,7 +20,8 @@ export function Canvas({ className }: CanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const transformRef = useRef<{ setTransform: (x: number, y: number, scale: number) => void } | null>(null);
-  const { initRenderer, setImage, render } = useWebGL();
+  const { initRenderer, setImage, render, exportImage } = useWebGL();
+  const { setExportFunction } = useExport();
   const { image, editState } = useEditorStore();
   const selectedMaskId = useEditorStore((state) => state.selectedMaskId);
   const isCropping = useEditorStore((state) => state.isCropping);
@@ -70,6 +72,12 @@ export function Canvas({ className }: CanvasProps) {
       initRenderer(canvasRef.current);
     }
   }, [initRenderer]);
+
+  // Register export function with context
+  useEffect(() => {
+    setExportFunction(exportImage);
+    return () => setExportFunction(null);
+  }, [exportImage, setExportFunction]);
 
   // Set image when it changes
   useEffect(() => {

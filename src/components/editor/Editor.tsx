@@ -20,6 +20,7 @@ import { DetailPanel } from './DetailPanel';
 import { PresetPanel } from './PresetPanel';
 import { MaskPanel } from './MaskPanel';
 import { TransformPanel } from './TransformPanel';
+import { ExportProvider } from '@/contexts/export-context';
 
 type PanelType = 'presets' | 'tools' | 'hsl' | 'effects';
 
@@ -120,6 +121,7 @@ export function Editor() {
   };
 
   return (
+    <ExportProvider>
     <div className="h-screen flex flex-col bg-neutral-950 text-white overflow-hidden">
       <div className="flex-1 flex overflow-hidden">
         {/* Left tool sidebar - hidden on mobile */}
@@ -246,5 +248,6 @@ export function Editor() {
         </div>
       )}
     </div>
+    </ExportProvider>
   );
 }

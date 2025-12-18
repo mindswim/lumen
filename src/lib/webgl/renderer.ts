@@ -1036,6 +1036,7 @@ export class WebGLRenderer {
   // State
   private startTime: number = Date.now();
   private lutSize: number = 0;
+  private lutData: Uint8Array | null = null; // Store for export copying
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -1483,6 +1484,7 @@ export class WebGLRenderer {
     }
 
     this.lutSize = size;
+    this.lutData = lutData; // Store for export copying
     this.lutTexture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, this.lutTexture);
 
@@ -1510,7 +1512,16 @@ export class WebGLRenderer {
       this.gl.deleteTexture(this.lutTexture);
       this.lutTexture = null;
       this.lutSize = 0;
+      this.lutData = null;
     }
+  }
+
+  // Get LUT data for copying to export renderer
+  getLutData(): { data: Uint8Array; size: number } | null {
+    if (this.lutData && this.lutSize > 0) {
+      return { data: this.lutData, size: this.lutSize };
+    }
+    return null;
   }
 
   render(editState: EditState): void {
@@ -1968,35 +1979,148 @@ export class WebGLRenderer {
     );
   }
 
-  exportImage(editState: EditState, originalImage: HTMLImageElement): Promise<Blob> {
+  exportImage(
+    editState: EditState,
+    originalImage: HTMLImageElement,
+    options: {
+      format?: 'jpeg' | 'png' | 'webp';
+      quality?: number; // 0-1
+      scale?: number; // 1 = original size, 0.5 = half, etc.
+      maxDimension?: number; // Max width or height
+    } = {}
+  ): Promise<Blob> {
     return new Promise((resolve, reject) => {
-      // Create offscreen canvas at full resolution
-      const offscreenCanvas = document.createElement('canvas');
-      offscreenCanvas.width = originalImage.width;
-      offscreenCanvas.height = originalImage.height;
+      const {
+        format = 'jpeg',
+        quality = 0.95,
+        scale = 1,
+        maxDimension,
+      } = options;
 
-      const offscreenRenderer = new WebGLRenderer(offscreenCanvas);
+      // Calculate output dimensions
+      let outputWidth = originalImage.width;
+      let outputHeight = originalImage.height;
+
+      // Apply crop first to get base dimensions
+      const crop = editState.crop;
+      if (crop) {
+        outputWidth = Math.round(crop.width * originalImage.width);
+        outputHeight = Math.round(crop.height * originalImage.height);
+      }
+
+      // Apply rotation (swap dimensions for 90/270)
+      const rotation = editState.rotation || 0;
+      const isRotated90 = Math.abs(rotation) === 90 || Math.abs(rotation) === 270;
+      if (isRotated90) {
+        [outputWidth, outputHeight] = [outputHeight, outputWidth];
+      }
+
+      // Apply scale
+      outputWidth = Math.round(outputWidth * scale);
+      outputHeight = Math.round(outputHeight * scale);
+
+      // Apply max dimension constraint
+      if (maxDimension) {
+        const maxSide = Math.max(outputWidth, outputHeight);
+        if (maxSide > maxDimension) {
+          const ratio = maxDimension / maxSide;
+          outputWidth = Math.round(outputWidth * ratio);
+          outputHeight = Math.round(outputHeight * ratio);
+        }
+      }
+
+      // Create offscreen canvas for WebGL rendering at full original resolution
+      // We render at full res then apply transforms
+      const renderCanvas = document.createElement('canvas');
+      renderCanvas.width = originalImage.width;
+      renderCanvas.height = originalImage.height;
+
+      const offscreenRenderer = new WebGLRenderer(renderCanvas);
       offscreenRenderer.setImage(originalImage);
 
       // Copy LUT if set
-      if (this.lutTexture && this.lutSize > 0) {
-        // We'd need to copy LUT data, simplified here
+      const lutData = this.getLutData();
+      if (lutData) {
+        offscreenRenderer.setLut(lutData.data, lutData.size);
       }
 
       offscreenRenderer.updateCurveLut(editState.curve);
       offscreenRenderer.render(editState);
 
-      offscreenCanvas.toBlob(
+      // Create final output canvas with transforms applied
+      const outputCanvas = document.createElement('canvas');
+      outputCanvas.width = outputWidth;
+      outputCanvas.height = outputHeight;
+
+      const ctx = outputCanvas.getContext('2d');
+      if (!ctx) {
+        offscreenRenderer.dispose();
+        reject(new Error('Failed to get canvas context'));
+        return;
+      }
+
+      // Calculate source region (crop)
+      const sourceX = crop ? Math.round(crop.left * originalImage.width) : 0;
+      const sourceY = crop ? Math.round(crop.top * originalImage.height) : 0;
+      const sourceWidth = crop ? Math.round(crop.width * originalImage.width) : originalImage.width;
+      const sourceHeight = crop ? Math.round(crop.height * originalImage.height) : originalImage.height;
+
+      // Apply transforms
+      ctx.save();
+      ctx.translate(outputWidth / 2, outputHeight / 2);
+
+      // Rotation
+      if (rotation !== 0) {
+        ctx.rotate((rotation * Math.PI) / 180);
+      }
+
+      // Straighten (fine angle)
+      if (editState.straighten) {
+        ctx.rotate((editState.straighten * Math.PI) / 180);
+      }
+
+      // Flip
+      if (editState.flipH) {
+        ctx.scale(-1, 1);
+      }
+      if (editState.flipV) {
+        ctx.scale(1, -1);
+      }
+
+      // Calculate draw dimensions (account for rotation)
+      const drawWidth = isRotated90 ? outputHeight : outputWidth;
+      const drawHeight = isRotated90 ? outputWidth : outputHeight;
+
+      // Draw the rendered image with crop and transforms
+      ctx.drawImage(
+        renderCanvas,
+        sourceX,
+        sourceY,
+        sourceWidth,
+        sourceHeight,
+        -drawWidth / 2,
+        -drawHeight / 2,
+        drawWidth,
+        drawHeight
+      );
+
+      ctx.restore();
+
+      // Clean up offscreen renderer
+      offscreenRenderer.dispose();
+
+      // Export to blob
+      const mimeType = `image/${format}`;
+      outputCanvas.toBlob(
         (blob) => {
           if (blob) {
             resolve(blob);
           } else {
             reject(new Error('Failed to export image'));
           }
-          offscreenRenderer.dispose();
         },
-        'image/jpeg',
-        0.95
+        mimeType,
+        format === 'png' ? undefined : quality
       );
     });
   }
