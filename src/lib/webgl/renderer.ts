@@ -700,8 +700,8 @@ vec3 applySharpening(vec3 color, vec2 uv) {
   return color + mask * amount * detailFactor;
 }
 
-// Noise reduction using bilateral filter
-// Separates luminance and chroma processing for professional results
+// Noise reduction using bilateral filter for luminance, simple blur for color
+// Color NR can be aggressive since eyes are less sensitive to chroma edges
 vec3 applyNoiseReduction(vec3 color, vec2 uv) {
   if (u_noiseReductionLuminance == 0.0 && u_noiseReductionColor == 0.0) return color;
 
@@ -710,44 +710,46 @@ vec3 applyNoiseReduction(vec3 color, vec2 uv) {
   float colorStrength = u_noiseReductionColor / 100.0;
 
   // Detail: 0 = aggressive smoothing, 100 = preserve fine detail
-  // Controls the edge-preservation threshold
   float edgeThreshold = 0.02 + (100.0 - u_noiseReductionDetail) / 100.0 * 0.15;
 
   // Convert to luminance + chroma
   float lum = dot(color, vec3(0.2126, 0.7152, 0.0722));
   vec3 chroma = color - vec3(lum);
 
-  // Separate accumulators for luminance and color
+  // Accumulators
   float lumBlurred = 0.0;
   float lumTotalWeight = 0.0;
   vec3 chromaBlurred = vec3(0.0);
   float chromaTotalWeight = 0.0;
 
-  // 7x7 kernel for better noise reduction
+  // 7x7 kernel
   for (int x = -3; x <= 3; x++) {
     for (int y = -3; y <= 3; y++) {
-      vec2 offset = vec2(float(x), float(y)) * texelSize * 1.2;
-      vec3 sampleColor = texture(u_image, uv + offset).rgb;
-      float sampleLum = dot(sampleColor, vec3(0.2126, 0.7152, 0.0722));
-      vec3 sampleChroma = sampleColor - vec3(sampleLum);
-
-      // Spatial weight (Gaussian)
       float dist2 = float(x*x + y*y);
       float spatialWeight = exp(-dist2 / 12.0);
 
-      // Luminance: edge-aware bilateral weight
+      // Sample for luminance NR (tighter sampling)
+      vec2 lumOffset = vec2(float(x), float(y)) * texelSize * 1.2;
+      vec3 lumSample = texture(u_image, uv + lumOffset).rgb;
+      float sampleLum = dot(lumSample, vec3(0.2126, 0.7152, 0.0722));
+
+      // Luminance: bilateral (edge-aware)
       float lumDiff = abs(sampleLum - lum);
       float lumRangeWeight = exp(-lumDiff * lumDiff / (edgeThreshold * edgeThreshold));
       float lumWeight = spatialWeight * lumRangeWeight;
       lumBlurred += sampleLum * lumWeight;
       lumTotalWeight += lumWeight;
 
-      // Color: use chroma difference for edge detection (key fix!)
-      float chromaDiff = length(sampleChroma - chroma);
-      float chromaRangeWeight = exp(-chromaDiff * chromaDiff / (edgeThreshold * edgeThreshold * 4.0));
-      float chromaWeight = spatialWeight * chromaRangeWeight;
-      chromaBlurred += sampleChroma * chromaWeight;
-      chromaTotalWeight += chromaWeight;
+      // Sample for color NR (wider sampling to catch color splotches)
+      vec2 chromaOffset = vec2(float(x), float(y)) * texelSize * 2.0;
+      vec3 chromaSample = texture(u_image, uv + chromaOffset).rgb;
+      float chromaSampleLum = dot(chromaSample, vec3(0.2126, 0.7152, 0.0722));
+      vec3 sampleChroma = chromaSample - vec3(chromaSampleLum);
+
+      // Color: simple Gaussian blur (no edge preservation needed for chroma)
+      // Human vision is much less sensitive to color edges
+      chromaBlurred += sampleChroma * spatialWeight;
+      chromaTotalWeight += spatialWeight;
     }
   }
 
