@@ -119,50 +119,29 @@ export function Canvas({ className }: CanvasProps) {
   // Show overlay when Transform panel is active (which auto-enables cropping)
   const showTransformOverlay = isTransformPanelActive || isCropping;
 
-  // Calculate auto-scale to prevent empty corners when rotating/skewing
+  // Calculate auto-scale to prevent empty corners when rotating
   // This zooms the image just enough to fill the frame with no gaps
+  // Note: Skew/perspective does NOT auto-zoom (industry standard - shows empty corners)
   const autoScale = useMemo(() => {
     if (!image) return 1;
+    if (editState.straighten === 0) return 1;
 
-    let scale = 1;
     const ar = image.width / image.height;
+    const theta = Math.abs(editState.straighten) * Math.PI / 180;
+    const sin = Math.sin(theta);
+    const cos = Math.cos(theta);
 
-    // Straighten (rotation) - calculate scale to fill frame
     // Formula: scale = max(cos + sin*ar, cos + sin/ar)
     // This ensures all 4 corners of the frame are covered by the rotated image
-    if (editState.straighten !== 0) {
-      const theta = Math.abs(editState.straighten) * Math.PI / 180;
-      const sin = Math.sin(theta);
-      const cos = Math.cos(theta);
-
-      // For landscape (ar > 1): horizontal scale dominates
-      // For portrait (ar < 1): vertical scale dominates
-      const scaleH = cos + sin * ar;
-      const scaleV = cos + sin / ar;
-      scale = Math.max(scaleH, scaleV);
-    }
-
-    // Skew creates asymmetric distortion - compensate based on the skew angle
-    // For skewX, the image stretches horizontally at top/bottom
-    // For skewY, the image stretches vertically at left/right
-    if (editState.perspectiveX !== 0) {
-      const skewAngle = Math.abs(editState.perspectiveX * 0.15) * Math.PI / 180;
-      // Scale factor for skew: 1 / cos(skewAngle) to maintain coverage
-      scale *= 1 / Math.cos(skewAngle);
-    }
-
-    if (editState.perspectiveY !== 0) {
-      const skewAngle = Math.abs(editState.perspectiveY * 0.15) * Math.PI / 180;
-      scale *= 1 / Math.cos(skewAngle);
-    }
+    const scaleH = cos + sin * ar;
+    const scaleV = cos + sin / ar;
+    let scale = Math.max(scaleH, scaleV);
 
     // Add small buffer (0.5%) to account for antialiasing and subpixel rendering
-    if (scale > 1) {
-      scale *= 1.005;
-    }
+    scale *= 1.005;
 
     return Math.min(scale, 2.5); // Cap at 2.5x to prevent extreme zoom
-  }, [editState.straighten, editState.perspectiveX, editState.perspectiveY, image]);
+  }, [editState.straighten, image]);
 
   // Calculate transform styles for rotation, flip, and perspective
   const transformStyle = useMemo(() => {
