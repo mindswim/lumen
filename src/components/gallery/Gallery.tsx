@@ -255,7 +255,7 @@ export function Gallery() {
 
   return (
     <div
-      className="h-screen flex flex-col bg-neutral-950 text-white overflow-hidden"
+      className="h-screen flex flex-col bg-neutral-900 text-white overflow-hidden"
       onDrop={handleDrop}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}

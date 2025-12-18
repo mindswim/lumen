@@ -154,7 +154,7 @@ export function ToolSidebar({ mode, onExport, onAddPhotos }: ToolSidebarProps) {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <aside className="w-14 bg-neutral-900 border-r border-neutral-800 flex flex-col items-center py-3">
+      <aside className="w-14 bg-neutral-950 border-r border-neutral-800 flex flex-col items-center py-3">
         {/* Hidden file input */}
         <input
           ref={fileInputRef}

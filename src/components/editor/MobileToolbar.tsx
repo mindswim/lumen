@@ -65,7 +65,7 @@ export function MobileToolbar({
 
   if (mode === 'editor') {
     return (
-      <div className="fixed bottom-0 left-0 right-0 bg-neutral-900 border-t border-neutral-800 px-2 py-2 z-40">
+      <div className="fixed bottom-0 left-0 right-0 bg-neutral-950 border-t border-neutral-800 px-2 py-2 z-40">
         <div className="flex items-center justify-between max-w-lg mx-auto">
           <ToolbarButton
             icon={<ArrowLeft className="w-5 h-5" />}

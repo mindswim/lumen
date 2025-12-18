@@ -122,7 +122,7 @@ export function Editor() {
 
   return (
     <ExportProvider>
-    <div className="h-screen flex flex-col bg-neutral-950 text-white overflow-hidden">
+    <div className="h-screen flex flex-col bg-neutral-900 text-white overflow-hidden">
       <div className="flex-1 flex overflow-hidden">
         {/* Left tool sidebar - hidden on mobile */}
         {!isMobile && (

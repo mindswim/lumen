@@ -216,7 +216,7 @@ export function Canvas({ className }: CanvasProps) {
   return (
     <div
       ref={containerRef}
-      className={`relative overflow-hidden bg-neutral-950 ${className || ''}`}
+      className={`relative overflow-hidden bg-neutral-900 ${className || ''}`}
     >
       {image ? (
         <TransformWrapper

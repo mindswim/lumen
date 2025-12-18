@@ -86,7 +86,7 @@ export function Sidebar() {
   const [activePanel, setActivePanel] = useState<PanelType>('presets');
 
   return (
-    <aside className="w-80 bg-neutral-900 border-l border-neutral-800 flex h-full overflow-hidden">
+    <aside className="w-80 bg-neutral-950 border-l border-neutral-800 flex h-full overflow-hidden">
       {/* Panel content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
