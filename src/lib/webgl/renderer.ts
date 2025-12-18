@@ -691,8 +691,9 @@ vec3 applySharpening(vec3 color, vec2 uv) {
   // Detail preservation: controls which edges get sharpened
   // Low detail = only strong edges, High detail = all edges including fine details
   float maskStrength = length(mask);
-  float detailThreshold = (100.0 - u_sharpeningDetail) / 100.0 * 0.05;
-  float detailFactor = u_sharpeningDetail >= 99.0 ? 1.0 : smoothstep(0.0, max(detailThreshold, 0.001), maskStrength);
+  // Threshold range 0.0 to 0.2 - wide enough to see the difference
+  float detailThreshold = (100.0 - u_sharpeningDetail) / 100.0 * 0.2;
+  float detailFactor = u_sharpeningDetail >= 99.0 ? 1.0 : smoothstep(0.0, max(detailThreshold, 0.002), maskStrength);
 
   // Apply sharpening - amount 100 = strong visible sharpening
   float amount = u_sharpeningAmount / 100.0 * 3.0;
