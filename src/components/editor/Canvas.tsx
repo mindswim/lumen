@@ -119,9 +119,59 @@ export function Canvas({ className }: CanvasProps) {
   // Show overlay when Transform panel is active (which auto-enables cropping)
   const showTransformOverlay = isTransformPanelActive || isCropping;
 
+  // Calculate auto-scale to prevent empty corners when rotating/skewing
+  // This zooms the image just enough to fill the frame with no gaps
+  const autoScale = useMemo(() => {
+    if (!image) return 1;
+
+    let scale = 1;
+    const ar = image.width / image.height;
+
+    // Straighten (rotation) - calculate scale to fill frame
+    if (editState.straighten !== 0) {
+      const theta = Math.abs(editState.straighten) * Math.PI / 180;
+      const sin = Math.sin(theta);
+      const cos = Math.cos(theta);
+
+      // Scale factor formula: 1 / (cos - sin / aspectRatio) for landscape
+      // This ensures the rotated image completely fills the frame
+      let denom;
+      if (ar >= 1) {
+        denom = cos - sin / ar;
+      } else {
+        denom = cos - sin * ar;
+      }
+
+      // Clamp to prevent infinity at extreme angles
+      if (denom > 0.1) {
+        scale = 1 / denom;
+      } else {
+        scale = 2;
+      }
+    }
+
+    // Skew also creates gaps - add scale compensation
+    if (editState.perspectiveX !== 0) {
+      const skewAngle = Math.abs(editState.perspectiveX * 0.15) * Math.PI / 180;
+      scale *= 1 + Math.tan(skewAngle) * 0.5;
+    }
+
+    if (editState.perspectiveY !== 0) {
+      const skewAngle = Math.abs(editState.perspectiveY * 0.15) * Math.PI / 180;
+      scale *= 1 + Math.tan(skewAngle) * 0.5;
+    }
+
+    return Math.min(scale, 2); // Cap at 2x to prevent extreme zoom
+  }, [editState.straighten, editState.perspectiveX, editState.perspectiveY, image]);
+
   // Calculate transform styles for rotation, flip, and perspective
   const transformStyle = useMemo(() => {
     const transforms: string[] = [];
+
+    // Auto-scale to fill frame (must be first to scale from center)
+    if (autoScale !== 1) {
+      transforms.push(`scale(${autoScale})`);
+    }
 
     // 90-degree rotations
     if (editState.rotation !== 0) {
@@ -152,7 +202,7 @@ export function Canvas({ className }: CanvasProps) {
     }
 
     return transforms.length > 0 ? transforms.join(' ') : undefined;
-  }, [editState.rotation, editState.straighten, editState.perspectiveX, editState.perspectiveY, editState.flipH, editState.flipV]);
+  }, [editState.rotation, editState.straighten, editState.perspectiveX, editState.perspectiveY, editState.flipH, editState.flipV, autoScale]);
 
   // Calculate initial scale to fit image in viewport with padding
   const initialScale = useMemo(() => {
