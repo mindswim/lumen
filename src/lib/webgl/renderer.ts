@@ -131,6 +131,22 @@ uniform float u_grayMixerBlue;
 uniform float u_grayMixerPurple;
 uniform float u_grayMixerMagenta;
 
+// Texture (fine detail control - smaller radius than clarity)
+uniform float u_texture;
+
+// Dehaze (atmospheric haze removal/addition)
+uniform float u_dehaze;
+
+// Chromatic Aberration Removal
+uniform float u_caAmount;
+
+// Color Grading Wheels (3-way color grading)
+uniform vec3 u_cgShadows;      // hue, sat, lum
+uniform vec3 u_cgMidtones;     // hue, sat, lum
+uniform vec3 u_cgHighlights;   // hue, sat, lum
+uniform vec3 u_cgGlobal;       // hue, sat, lum
+uniform float u_cgBlending;
+
 vec3 srgbToLinear(vec3 srgb) {
   return mix(srgb / 12.92, pow((srgb + 0.055) / 1.055, vec3(2.4)), step(0.04045, srgb));
 }
@@ -248,6 +264,93 @@ vec3 applyClarity(vec3 color, vec2 uv) {
   float clarityAmount = u_clarity / 100.0;
   vec3 diff = color - localAvg;
   return color + diff * clarityAmount;
+}
+
+// Texture - fine detail control at smaller radius than clarity
+vec3 applyTexture(vec3 color, vec2 uv) {
+  if (u_texture == 0.0) return color;
+
+  vec2 texelSize = 1.0 / u_resolution;
+  float radius = 3.0;  // Smaller than clarity (10px) for fine detail
+
+  // High-frequency detail extraction (3x3 kernel)
+  vec3 localAvg = vec3(0.0);
+  float totalWeight = 0.0;
+
+  for (int x = -1; x <= 1; x++) {
+    for (int y = -1; y <= 1; y++) {
+      vec2 offset = vec2(float(x), float(y)) * texelSize * radius;
+      float weight = 1.0 - length(vec2(float(x), float(y))) * 0.3;
+      localAvg += texture(u_image, uv + offset).rgb * weight;
+      totalWeight += weight;
+    }
+  }
+  localAvg /= totalWeight;
+
+  // Extract and boost high-frequency detail
+  float textureAmount = u_texture / 100.0;
+  vec3 detail = color - localAvg;
+  return color + detail * textureAmount * 1.5;
+}
+
+// Dehaze - atmospheric haze removal using dark channel prior approximation
+vec3 applyDehaze(vec3 color, vec2 uv) {
+  if (u_dehaze == 0.0) return color;
+
+  vec2 texelSize = 1.0 / u_resolution;
+  float radius = 15.0;
+
+  // Find dark channel (minimum RGB in local patch)
+  float darkChannel = 1.0;
+  for (int x = -2; x <= 2; x++) {
+    for (int y = -2; y <= 2; y++) {
+      vec2 offset = vec2(float(x), float(y)) * texelSize * radius;
+      vec3 texSample = texture(u_image, uv + offset).rgb;
+      darkChannel = min(darkChannel, min(min(texSample.r, texSample.g), texSample.b));
+    }
+  }
+
+  // Estimate transmission (how much haze)
+  float transmission = 1.0 - darkChannel * 0.95;
+  transmission = clamp(transmission, 0.1, 1.0);
+
+  // Atmospheric light (assume brightest = haze color, typically white-ish)
+  vec3 atmosphericLight = vec3(1.0);
+
+  float dehazeAmount = u_dehaze / 100.0;
+
+  if (dehazeAmount > 0.0) {
+    // Remove haze: recover original color
+    vec3 dehazed = (color - atmosphericLight * (1.0 - transmission)) / max(transmission, 0.1);
+    color = mix(color, dehazed, dehazeAmount);
+  } else {
+    // Add haze: blend toward atmospheric light
+    color = mix(color, mix(color, atmosphericLight, 1.0 - transmission), -dehazeAmount);
+  }
+
+  return clamp(color, 0.0, 1.0);
+}
+
+// Chromatic Aberration Removal - fixes color fringing at edges
+vec3 applyChromaticAberrationFix(vec2 uv) {
+  if (u_caAmount == 0.0) {
+    return texture(u_image, uv).rgb;
+  }
+
+  // Calculate distance from center (CA is stronger at edges)
+  vec2 center = vec2(0.5);
+  vec2 dir = uv - center;
+  float dist = length(dir);
+
+  // Shift amount increases toward edges
+  float shift = u_caAmount / 100.0 * 0.003 * dist;
+
+  // Sample RGB at slightly different positions
+  float r = texture(u_image, uv + dir * shift).r;
+  float g = texture(u_image, uv).g;  // Green stays centered
+  float b = texture(u_image, uv - dir * shift).b;
+
+  return vec3(r, g, b);
 }
 
 float getHueWeight(float hue, float targetHue, float width) {
@@ -397,6 +500,60 @@ vec3 hueToRgb(float hue) {
   else if (h < 5.0) rgb = vec3(x, 0.0, 1.0);
   else rgb = vec3(1.0, 0.0, x);
   return rgb;
+}
+
+// Apply color grading wheel to color based on mask
+vec3 applyColorWheel(vec3 color, vec3 wheelParams, float mask) {
+  if (wheelParams.y == 0.0 && wheelParams.z == 0.0) return color;
+
+  float hue = wheelParams.x;       // 0-360
+  float sat = wheelParams.y / 100.0;  // 0-100 -> 0-1
+  float lum = wheelParams.z / 100.0;  // -100 to 100 -> -1 to 1
+
+  // Apply hue/saturation tint
+  if (sat > 0.0) {
+    vec3 tint = hueToRgb(hue);
+    float gray = dot(color, vec3(0.299, 0.587, 0.114));
+    color = mix(color, tint * gray, sat * mask * 0.5);
+  }
+
+  // Apply luminance shift
+  color += lum * mask * 0.5;
+
+  return color;
+}
+
+// Color Grading - 3-way color grading with visual wheels
+vec3 applyColorGrading(vec3 color) {
+  // Check if any grading is applied
+  if (u_cgShadows.y == 0.0 && u_cgShadows.z == 0.0 &&
+      u_cgMidtones.y == 0.0 && u_cgMidtones.z == 0.0 &&
+      u_cgHighlights.y == 0.0 && u_cgHighlights.z == 0.0 &&
+      u_cgGlobal.y == 0.0 && u_cgGlobal.z == 0.0) {
+    return color;
+  }
+
+  float lum = dot(color, vec3(0.2126, 0.7152, 0.0722));
+
+  // Create masks with blending control
+  float blend = u_cgBlending / 100.0;
+
+  // Shadow mask: dark areas (0-0.33, with blending)
+  float shadowMask = 1.0 - smoothstep(0.0, 0.33 + blend * 0.17, lum);
+
+  // Midtone mask: mid-range (peak around 0.5)
+  float midtoneMask = smoothstep(0.0, 0.33, lum) * (1.0 - smoothstep(0.67, 1.0, lum));
+
+  // Highlight mask: bright areas (0.67-1.0, with blending)
+  float highlightMask = smoothstep(0.67 - blend * 0.17, 1.0, lum);
+
+  // Apply each region's color shift
+  color = applyColorWheel(color, u_cgShadows, shadowMask);
+  color = applyColorWheel(color, u_cgMidtones, midtoneMask);
+  color = applyColorWheel(color, u_cgHighlights, highlightMask);
+  color = applyColorWheel(color, u_cgGlobal, 1.0);  // Global always applies
+
+  return clamp(color, 0.0, 1.0);
 }
 
 vec3 applySplitTone(vec3 color) {
@@ -764,8 +921,9 @@ vec3 applyNoiseReduction(vec3 color, vec2 uv) {
 }
 
 void main() {
-  vec4 texColor = texture(u_image, v_texCoord);
-  vec3 color = texColor.rgb;
+  // Apply chromatic aberration fix first (modifies sampling)
+  vec3 color = applyChromaticAberrationFix(v_texCoord);
+  vec4 texColor = vec4(color, texture(u_image, v_texCoord).a);
 
   // Only apply linear space conversion if we have adjustments that need it
   if (hasBasicAdjustments()) {
@@ -813,6 +971,16 @@ void main() {
     color = applyClarity(color, v_texCoord);
   }
 
+  // Texture (fine detail control - smaller radius than clarity)
+  if (u_texture != 0.0) {
+    color = applyTexture(color, v_texCoord);
+  }
+
+  // Dehaze (atmospheric haze removal/addition)
+  if (u_dehaze != 0.0) {
+    color = applyDehaze(color, v_texCoord);
+  }
+
   // Skin tone (selective color adjustment)
   color = applySkinTone(color);
 
@@ -825,6 +993,9 @@ void main() {
 
   // Split tone (color grading for highlights/shadows)
   color = applySplitTone(color);
+
+  // Color Grading (3-way color wheels - more advanced than split tone)
+  color = applyColorGrading(color);
 
   // B&W conversion (if enabled, applied after color grading)
   color = applyGrayscale(color);
@@ -1329,6 +1500,15 @@ export class WebGLRenderer {
       'u_grayMixerBlue',
       'u_grayMixerPurple',
       'u_grayMixerMagenta',
+      // New uniforms: texture, dehaze, CA, color grading
+      'u_texture',
+      'u_dehaze',
+      'u_caAmount',
+      'u_cgShadows',
+      'u_cgMidtones',
+      'u_cgHighlights',
+      'u_cgGlobal',
+      'u_cgBlending',
     ];
 
     for (const name of uniforms) {
@@ -1753,6 +1933,8 @@ export class WebGLRenderer {
     gl.uniform1f(this.getUniform('u_temperature'), editState.temperature);
     gl.uniform1f(this.getUniform('u_tint'), editState.tint);
     gl.uniform1f(this.getUniform('u_clarity'), editState.clarity);
+    gl.uniform1f(this.getUniform('u_texture'), editState.texture);
+    gl.uniform1f(this.getUniform('u_dehaze'), editState.dehaze);
     gl.uniform1f(this.getUniform('u_vibrance'), editState.vibrance);
     gl.uniform1f(this.getUniform('u_saturation'), editState.saturation);
 
@@ -1796,6 +1978,17 @@ export class WebGLRenderer {
     gl.uniform1f(this.getUniform('u_splitShadowHue'), editState.splitTone.shadowHue);
     gl.uniform1f(this.getUniform('u_splitShadowSat'), editState.splitTone.shadowSaturation);
     gl.uniform1f(this.getUniform('u_splitBalance'), editState.splitTone.balance);
+
+    // Chromatic Aberration Removal
+    gl.uniform1f(this.getUniform('u_caAmount'), editState.chromaticAberration.amount);
+
+    // Color Grading (3-way wheels)
+    const cg = editState.colorGrading;
+    gl.uniform3f(this.getUniform('u_cgShadows'), cg.shadows.hue, cg.shadows.saturation, cg.shadows.luminance);
+    gl.uniform3f(this.getUniform('u_cgMidtones'), cg.midtones.hue, cg.midtones.saturation, cg.midtones.luminance);
+    gl.uniform3f(this.getUniform('u_cgHighlights'), cg.highlights.hue, cg.highlights.saturation, cg.highlights.luminance);
+    gl.uniform3f(this.getUniform('u_cgGlobal'), cg.global.hue, cg.global.saturation, cg.global.luminance);
+    gl.uniform1f(this.getUniform('u_cgBlending'), cg.blending);
 
     // Blur (disable if overridden for multi-pass)
     gl.uniform1f(this.getUniform('u_blurAmount'), overrides?.disableBlur ? 0 : editState.blur.amount);

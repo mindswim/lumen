@@ -105,6 +105,26 @@ export interface GrayMixerSettings {
   magenta: number;  // -100 to 100
 }
 
+// Chromatic Aberration Removal
+export interface ChromaticAberrationSettings {
+  amount: number;  // 0 to 100 (how much to correct)
+}
+
+// Color Grading Wheels - 3-way color grading
+export interface ColorWheelSettings {
+  hue: number;        // 0 to 360
+  saturation: number; // 0 to 100
+  luminance: number;  // -100 to 100
+}
+
+export interface ColorGradingSettings {
+  shadows: ColorWheelSettings;
+  midtones: ColorWheelSettings;
+  highlights: ColorWheelSettings;
+  global: ColorWheelSettings;
+  blending: number;   // 0 to 100, how much ranges overlap
+}
+
 export interface CropRect {
   top: number;
   left: number;
@@ -185,6 +205,8 @@ export interface EditState {
 
   // Presence
   clarity: number;       // -100 to +100
+  texture: number;       // -100 to +100 (fine detail, smaller scale than clarity)
+  dehaze: number;        // -100 to +100 (negative adds haze)
   vibrance: number;      // -100 to +100
   saturation: number;    // -100 to +100
 
@@ -199,6 +221,7 @@ export interface EditState {
   grain: GrainSettings;
   vignette: VignetteSettings;
   splitTone: SplitToneSettings;
+  colorGrading: ColorGradingSettings;
   blur: BlurSettings;
   border: BorderSettings;
   bloom: BloomSettings;
@@ -215,6 +238,7 @@ export interface EditState {
   // Detail
   sharpening: SharpeningSettings;
   noiseReduction: NoiseReductionSettings;
+  chromaticAberration: ChromaticAberrationSettings;
 
   // LUT / Preset
   lutId: string | null;
@@ -343,6 +367,24 @@ export const DEFAULT_NOISE_REDUCTION: NoiseReductionSettings = {
   detail: 50,
 };
 
+export const DEFAULT_CHROMATIC_ABERRATION: ChromaticAberrationSettings = {
+  amount: 0,
+};
+
+export const DEFAULT_COLOR_WHEEL: ColorWheelSettings = {
+  hue: 0,
+  saturation: 0,
+  luminance: 0,
+};
+
+export const DEFAULT_COLOR_GRADING: ColorGradingSettings = {
+  shadows: { ...DEFAULT_COLOR_WHEEL },
+  midtones: { ...DEFAULT_COLOR_WHEEL },
+  highlights: { ...DEFAULT_COLOR_WHEEL },
+  global: { ...DEFAULT_COLOR_WHEEL },
+  blending: 50,
+};
+
 export const DEFAULT_LOCAL_ADJUSTMENTS: LocalAdjustments = {
   exposure: 0,
   contrast: 0,
@@ -361,6 +403,8 @@ export function createDefaultEditState(): EditState {
     temperature: 0,
     tint: 0,
     clarity: 0,
+    texture: 0,
+    dehaze: 0,
     vibrance: 0,
     saturation: 0,
     curve: {
@@ -383,6 +427,7 @@ export function createDefaultEditState(): EditState {
     grain: { ...DEFAULT_GRAIN },
     vignette: { ...DEFAULT_VIGNETTE },
     splitTone: { ...DEFAULT_SPLIT_TONE },
+    colorGrading: { ...DEFAULT_COLOR_GRADING },
     blur: { ...DEFAULT_BLUR },
     border: { ...DEFAULT_BORDER },
     bloom: { ...DEFAULT_BLOOM },
@@ -393,6 +438,7 @@ export function createDefaultEditState(): EditState {
     grayMixer: { ...DEFAULT_GRAY_MIXER },
     sharpening: { ...DEFAULT_SHARPENING },
     noiseReduction: { ...DEFAULT_NOISE_REDUCTION },
+    chromaticAberration: { ...DEFAULT_CHROMATIC_ABERRATION },
     lutId: null,
     lutIntensity: 100,
     crop: null,

@@ -6,7 +6,8 @@ import { AdjustmentSlider, sliderPresets } from '@/components/ui/adjustment-slid
 import { PanelSection, PanelContainer, PanelDivider } from '@/components/ui/panel-section';
 import { Slider } from '@/components/ui/slider';
 import { Button } from '@/components/ui/button';
-import { BlurSettings, BorderSettings, BloomSettings, HalationSettings, EditState } from '@/types/editor';
+import { BlurSettings, BorderSettings, BloomSettings, HalationSettings, EditState, ColorGradingSettings, ColorWheelSettings } from '@/types/editor';
+import { ColorWheel } from '@/components/ui/color-wheel';
 
 // Color presets for split tone hue picker
 const HUE_PRESETS = [
@@ -105,6 +106,7 @@ export function EffectsPanel() {
   const grain = editState.grain;
   const vignette = editState.vignette;
   const splitTone = editState.splitTone;
+  const colorGrading = editState.colorGrading;
   const blur = editState.blur;
   const border = editState.border;
   const bloom = editState.bloom;
@@ -170,6 +172,54 @@ export function EffectsPanel() {
         editState: {
           ...state.editState,
           splitTone: { ...state.editState.splitTone, [key]: value },
+        },
+      }));
+    }
+  };
+
+  const handleColorGradingUpdate = <K extends keyof ColorGradingSettings>(
+    key: K,
+    value: ColorGradingSettings[K]
+  ) => {
+    if (isGalleryMode) {
+      selectedGalleryImages.forEach((img) => {
+        updateImageEditState(img.id, {
+          ...img.editState,
+          colorGrading: { ...img.editState.colorGrading, [key]: value },
+        });
+      });
+    } else {
+      useEditorStore.setState((state) => ({
+        editState: {
+          ...state.editState,
+          colorGrading: { ...state.editState.colorGrading, [key]: value },
+        },
+      }));
+    }
+  };
+
+  const handleColorWheelUpdate = (
+    wheel: 'shadows' | 'midtones' | 'highlights' | 'global',
+    updates: Partial<ColorWheelSettings>
+  ) => {
+    if (isGalleryMode) {
+      selectedGalleryImages.forEach((img) => {
+        updateImageEditState(img.id, {
+          ...img.editState,
+          colorGrading: {
+            ...img.editState.colorGrading,
+            [wheel]: { ...img.editState.colorGrading[wheel], ...updates },
+          },
+        });
+      });
+    } else {
+      useEditorStore.setState((state) => ({
+        editState: {
+          ...state.editState,
+          colorGrading: {
+            ...state.editState.colorGrading,
+            [wheel]: { ...state.editState.colorGrading[wheel], ...updates },
+          },
         },
       }));
     }
@@ -288,6 +338,104 @@ export function EffectsPanel() {
           defaultValue={0}
           onChange={(v) => handleSplitToneUpdate('balance', v)}
         />
+      </PanelSection>
+
+      <PanelDivider />
+
+      {/* Color Grading */}
+      <PanelSection title="Color Grading" collapsible>
+        <div className="grid grid-cols-2 gap-4">
+          {/* Shadows */}
+          <div className="flex flex-col items-center gap-2">
+            <span className="text-xs text-neutral-400">Shadows</span>
+            <ColorWheel
+              hue={colorGrading.shadows.hue}
+              saturation={colorGrading.shadows.saturation}
+              onHueChange={(v) => handleColorWheelUpdate('shadows', { hue: v })}
+              onSatChange={(v) => handleColorWheelUpdate('shadows', { saturation: v })}
+              size={70}
+            />
+            <AdjustmentSlider
+              label="Lum"
+              value={colorGrading.shadows.luminance}
+              min={-100}
+              max={100}
+              defaultValue={0}
+              onChange={(v) => handleColorWheelUpdate('shadows', { luminance: v })}
+            />
+          </div>
+
+          {/* Midtones */}
+          <div className="flex flex-col items-center gap-2">
+            <span className="text-xs text-neutral-400">Midtones</span>
+            <ColorWheel
+              hue={colorGrading.midtones.hue}
+              saturation={colorGrading.midtones.saturation}
+              onHueChange={(v) => handleColorWheelUpdate('midtones', { hue: v })}
+              onSatChange={(v) => handleColorWheelUpdate('midtones', { saturation: v })}
+              size={70}
+            />
+            <AdjustmentSlider
+              label="Lum"
+              value={colorGrading.midtones.luminance}
+              min={-100}
+              max={100}
+              defaultValue={0}
+              onChange={(v) => handleColorWheelUpdate('midtones', { luminance: v })}
+            />
+          </div>
+
+          {/* Highlights */}
+          <div className="flex flex-col items-center gap-2">
+            <span className="text-xs text-neutral-400">Highlights</span>
+            <ColorWheel
+              hue={colorGrading.highlights.hue}
+              saturation={colorGrading.highlights.saturation}
+              onHueChange={(v) => handleColorWheelUpdate('highlights', { hue: v })}
+              onSatChange={(v) => handleColorWheelUpdate('highlights', { saturation: v })}
+              size={70}
+            />
+            <AdjustmentSlider
+              label="Lum"
+              value={colorGrading.highlights.luminance}
+              min={-100}
+              max={100}
+              defaultValue={0}
+              onChange={(v) => handleColorWheelUpdate('highlights', { luminance: v })}
+            />
+          </div>
+
+          {/* Global */}
+          <div className="flex flex-col items-center gap-2">
+            <span className="text-xs text-neutral-400">Global</span>
+            <ColorWheel
+              hue={colorGrading.global.hue}
+              saturation={colorGrading.global.saturation}
+              onHueChange={(v) => handleColorWheelUpdate('global', { hue: v })}
+              onSatChange={(v) => handleColorWheelUpdate('global', { saturation: v })}
+              size={70}
+            />
+            <AdjustmentSlider
+              label="Lum"
+              value={colorGrading.global.luminance}
+              min={-100}
+              max={100}
+              defaultValue={0}
+              onChange={(v) => handleColorWheelUpdate('global', { luminance: v })}
+            />
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <AdjustmentSlider
+            label="Blending"
+            value={colorGrading.blending}
+            min={0}
+            max={100}
+            defaultValue={50}
+            onChange={(v) => handleColorGradingUpdate('blending', v)}
+          />
+        </div>
       </PanelSection>
 
       <PanelDivider />

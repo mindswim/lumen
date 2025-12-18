@@ -161,13 +161,29 @@ export function AdjustPanel() {
 
       <PanelDivider />
 
-      {/* Effects Section */}
-      <PanelSection title="Effects" collapsible>
+      {/* Presence Section */}
+      <PanelSection title="Presence" collapsible>
         <AdjustmentSlider
           label="Clarity"
           value={editState.clarity}
           {...sliderPresets.clarity}
           onChange={(v) => handleBatchUpdate('clarity', v)}
+        />
+        <AdjustmentSlider
+          label="Texture"
+          value={editState.texture}
+          min={-100}
+          max={100}
+          defaultValue={0}
+          onChange={(v) => handleBatchUpdate('texture', v)}
+        />
+        <AdjustmentSlider
+          label="Dehaze"
+          value={editState.dehaze}
+          min={-100}
+          max={100}
+          defaultValue={0}
+          onChange={(v) => handleBatchUpdate('dehaze', v)}
         />
       </PanelSection>
     </PanelContainer>

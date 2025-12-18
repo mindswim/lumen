@@ -9,7 +9,7 @@ import {
   PanelDivider,
   PanelHint,
 } from '@/components/ui/panel-section';
-import { SharpeningSettings, NoiseReductionSettings } from '@/types/editor';
+import { SharpeningSettings, NoiseReductionSettings, ChromaticAberrationSettings } from '@/types/editor';
 
 export function DetailPanel() {
   const image = useEditorStore((state) => state.image);
@@ -31,6 +31,7 @@ export function DetailPanel() {
 
   const sharpening = editState.sharpening;
   const noiseReduction = editState.noiseReduction;
+  const chromaticAberration = editState.chromaticAberration;
 
   const handleSharpeningUpdate = (key: keyof SharpeningSettings, value: number) => {
     if (isGalleryMode) {
@@ -63,6 +64,24 @@ export function DetailPanel() {
         editState: {
           ...state.editState,
           noiseReduction: { ...state.editState.noiseReduction, [key]: value },
+        },
+      }));
+    }
+  };
+
+  const handleChromaticAberrationUpdate = (key: keyof ChromaticAberrationSettings, value: number) => {
+    if (isGalleryMode) {
+      selectedGalleryImages.forEach((img) => {
+        updateImageEditState(img.id, {
+          ...img.editState,
+          chromaticAberration: { ...img.editState.chromaticAberration, [key]: value },
+        });
+      });
+    } else {
+      useEditorStore.setState((state) => ({
+        editState: {
+          ...state.editState,
+          chromaticAberration: { ...state.editState.chromaticAberration, [key]: value },
         },
       }));
     }
@@ -128,8 +147,21 @@ export function DetailPanel() {
         />
       </PanelSection>
 
+      <PanelDivider />
+
+      <PanelSection title="Lens Corrections" collapsible>
+        <AdjustmentSlider
+          label="Remove Fringing"
+          value={chromaticAberration.amount}
+          min={0}
+          max={100}
+          defaultValue={0}
+          onChange={(v) => handleChromaticAberrationUpdate('amount', v)}
+        />
+      </PanelSection>
+
       <PanelHint>
-        Sharpening enhances edge definition. Noise reduction smooths out grain and artifacts.
+        Sharpening enhances edge definition. Noise reduction smooths out grain. Remove Fringing fixes purple/green color edges.
       </PanelHint>
     </PanelContainer>
   );

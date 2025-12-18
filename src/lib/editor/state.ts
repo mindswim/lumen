@@ -36,6 +36,8 @@ interface EditorStore {
   setTemperature: (value: number) => void;
   setTint: (value: number) => void;
   setClarity: (value: number) => void;
+  setTexture: (value: number) => void;
+  setDehaze: (value: number) => void;
   setVibrance: (value: number) => void;
   setSaturation: (value: number) => void;
 
@@ -52,6 +54,9 @@ interface EditorStore {
   // Effects
   setGrain: (updates: Partial<EditState['grain']>) => void;
   setVignette: (updates: Partial<EditState['vignette']>) => void;
+  setChromaticAberration: (updates: Partial<EditState['chromaticAberration']>) => void;
+  setColorGrading: (updates: Partial<EditState['colorGrading']>) => void;
+  setColorGradingWheel: (wheel: 'shadows' | 'midtones' | 'highlights' | 'global', updates: Partial<EditState['colorGrading']['shadows']>) => void;
 
   // Masks
   addMask: (mask: Mask) => void;
@@ -170,6 +175,14 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     get().pushHistory();
     set((state) => ({ editState: { ...state.editState, clarity: value } }));
   },
+  setTexture: (value) => {
+    get().pushHistory();
+    set((state) => ({ editState: { ...state.editState, texture: value } }));
+  },
+  setDehaze: (value) => {
+    get().pushHistory();
+    set((state) => ({ editState: { ...state.editState, dehaze: value } }));
+  },
   setVibrance: (value) => {
     get().pushHistory();
     set((state) => ({ editState: { ...state.editState, vibrance: value } }));
@@ -230,6 +243,36 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
       editState: {
         ...state.editState,
         vignette: { ...state.editState.vignette, ...updates },
+      },
+    }));
+  },
+  setChromaticAberration: (updates) => {
+    get().pushHistory();
+    set((state) => ({
+      editState: {
+        ...state.editState,
+        chromaticAberration: { ...state.editState.chromaticAberration, ...updates },
+      },
+    }));
+  },
+  setColorGrading: (updates) => {
+    get().pushHistory();
+    set((state) => ({
+      editState: {
+        ...state.editState,
+        colorGrading: { ...state.editState.colorGrading, ...updates },
+      },
+    }));
+  },
+  setColorGradingWheel: (wheel, updates) => {
+    get().pushHistory();
+    set((state) => ({
+      editState: {
+        ...state.editState,
+        colorGrading: {
+          ...state.editState.colorGrading,
+          [wheel]: { ...state.editState.colorGrading[wheel], ...updates },
+        },
       },
     }));
   },
