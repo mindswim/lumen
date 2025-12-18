@@ -91,10 +91,8 @@ export function Sidebar() {
   useEffect(() => {
     const isTransform = activePanel === 'transform';
     setIsTransformPanelActive(isTransform);
-    // Auto-enable cropping when entering transform tab
-    if (isTransform) {
-      setIsCropping(true);
-    }
+    // Auto-enable cropping when entering transform tab, disable when leaving
+    setIsCropping(isTransform);
   }, [activePanel, setIsTransformPanelActive, setIsCropping]);
 
   return (
