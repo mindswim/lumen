@@ -25,6 +25,7 @@ export function Canvas({ className }: CanvasProps) {
   const { image, editState } = useEditorStore();
   const selectedMaskId = useEditorStore((state) => state.selectedMaskId);
   const isCropping = useEditorStore((state) => state.isCropping);
+  const isTransformPanelActive = useEditorStore((state) => state.isTransformPanelActive);
   const comparisonMode = useEditorStore((state) => state.comparisonMode);
   const splitPosition = useEditorStore((state) => state.comparisonSplitPosition);
   const isHoldingOriginal = useEditorStore((state) => state.isHoldingOriginal);
@@ -114,6 +115,9 @@ export function Canvas({ className }: CanvasProps) {
       }
     };
   }, [editState, image, showHistogram, setHistogramData]);
+
+  // Show overlay when Transform panel is active (which auto-enables cropping)
+  const showTransformOverlay = isTransformPanelActive || isCropping;
 
   // Calculate transform styles for rotation, flip, and perspective
   const transformStyle = useMemo(() => {
@@ -259,48 +263,58 @@ export function Canvas({ className }: CanvasProps) {
                   height: image.height,
                 }}
               >
+                {/* Outer wrapper - stays fixed, provides the frame */}
                 <div
                   ref={wrapperRef}
                   className="relative"
                   style={{
                     width: image.width,
                     height: image.height,
-                    transform: transformStyle,
+                    overflow: showTransformOverlay ? 'hidden' : 'visible',
                   }}
                 >
-                  {/* Original image layer (shown for comparison modes) */}
-                  {(comparisonMode === 'hold' && isHoldingOriginal) && (
-                    <img
-                      src={image.preview.src}
-                      alt="Original"
-                      className="absolute inset-0 shadow-2xl"
-                      style={{ width: image.width, height: image.height }}
-                    />
-                  )}
-
-                  {/* Split mode: Original on left */}
-                  {comparisonMode === 'split' && (
-                    <img
-                      src={image.preview.src}
-                      alt="Original"
-                      className="absolute inset-0 shadow-2xl"
-                      style={{ width: image.width, height: image.height }}
-                    />
-                  )}
-
-                  {/* Edited canvas */}
-                  <canvas
-                    ref={canvasRef}
-                    className="shadow-2xl"
+                  {/* Inner wrapper - applies transforms to image only */}
+                  <div
+                    className="absolute inset-0"
                     style={{
-                      width: image.width,
-                      height: image.height,
-                      opacity: (comparisonMode === 'hold' && isHoldingOriginal) ? 0 : 1,
-                      clipPath: comparisonMode === 'split'
-                        ? `inset(0 0 0 ${splitPosition * 100}%)`
-                        : undefined,
+                      transform: transformStyle,
+                      transformOrigin: 'center center',
                     }}
-                  />
+                  >
+                    {/* Original image layer (shown for comparison modes) */}
+                    {(comparisonMode === 'hold' && isHoldingOriginal) && (
+                      <img
+                        src={image.preview.src}
+                        alt="Original"
+                        className="absolute inset-0 shadow-2xl"
+                        style={{ width: image.width, height: image.height }}
+                      />
+                    )}
+
+                    {/* Split mode: Original on left */}
+                    {comparisonMode === 'split' && (
+                      <img
+                        src={image.preview.src}
+                        alt="Original"
+                        className="absolute inset-0 shadow-2xl"
+                        style={{ width: image.width, height: image.height }}
+                      />
+                    )}
+
+                    {/* Edited canvas */}
+                    <canvas
+                      ref={canvasRef}
+                      className="shadow-2xl"
+                      style={{
+                        width: image.width,
+                        height: image.height,
+                        opacity: (comparisonMode === 'hold' && isHoldingOriginal) ? 0 : 1,
+                        clipPath: comparisonMode === 'split'
+                          ? `inset(0 0 0 ${splitPosition * 100}%)`
+                          : undefined,
+                      }}
+                    />
+                  </div>
 
                   {/* Comparison overlay for split mode */}
                   {comparisonMode === 'split' && (
@@ -312,20 +326,20 @@ export function Canvas({ className }: CanvasProps) {
 
                   {/* Hold mode hint */}
                   {comparisonMode === 'hold' && !isHoldingOriginal && (
-                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-black/60 text-white text-xs rounded">
+                    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-black/60 text-white text-xs rounded z-30">
                       Hold Space for original
                     </div>
                   )}
 
                   {/* Showing original indicator */}
                   {comparisonMode === 'hold' && isHoldingOriginal && (
-                    <div className="absolute top-4 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-black/60 text-white text-xs rounded">
+                    <div className="absolute top-4 left-1/2 -translate-x-1/2 px-3 py-1.5 bg-black/60 text-white text-xs rounded z-30">
                       Original
                     </div>
                   )}
 
-                  {/* Crop overlay when in crop mode */}
-                  {isCropping && (
+                  {/* Crop/Transform overlay - stays fixed while image transforms inside */}
+                  {showTransformOverlay && (
                     <CropOverlay
                       canvasWidth={image.width}
                       canvasHeight={image.height}
@@ -335,7 +349,7 @@ export function Canvas({ className }: CanvasProps) {
                   )}
 
                   {/* Mask overlay for interactive mask editing */}
-                  {selectedMaskId && !isCropping && (
+                  {selectedMaskId && !showTransformOverlay && (
                     <MaskOverlay
                       canvasWidth={image.width}
                       canvasHeight={image.height}

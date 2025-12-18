@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AdjustPanel } from './AdjustPanel';
 import { CurvePanel } from './CurvePanel';
 import { HSLPanel } from './HSLPanel';
@@ -9,8 +9,9 @@ import { DetailPanel } from './DetailPanel';
 import { PresetPanel } from './PresetPanel';
 import { MaskPanel } from './MaskPanel';
 import { TransformPanel } from './TransformPanel';
+import { useEditorStore } from '@/lib/editor/state';
 
-type PanelType = 'presets' | 'tools' | 'hsl' | 'effects' | 'export';
+type PanelType = 'presets' | 'tools' | 'hsl' | 'effects' | 'transform';
 
 // Tab icons
 const PresetsIcon = () => (
@@ -44,11 +45,10 @@ const EffectsIcon = () => (
   </svg>
 );
 
-const ExportIcon = () => (
+const TransformIcon = () => (
   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-    <polyline points="17,8 12,3 7,8" />
-    <line x1="12" y1="3" x2="12" y2="15" />
+    <path d="M6 3H3v3M18 3h3v3M6 21H3v-3M18 21h3v-3" />
+    <rect x="6" y="6" width="12" height="12" rx="1" />
   </svg>
 );
 
@@ -76,14 +76,26 @@ function TabButton({ icon, label, active, onClick }: TabButtonProps) {
 
 const PANEL_TITLES: Record<PanelType, string> = {
   presets: 'Presets',
-  tools: 'Tools',
+  tools: 'Adjust',
   hsl: 'HSL',
   effects: 'Effects',
-  export: 'Export',
+  transform: 'Transform',
 };
 
 export function Sidebar() {
   const [activePanel, setActivePanel] = useState<PanelType>('presets');
+  const setIsTransformPanelActive = useEditorStore((state) => state.setIsTransformPanelActive);
+  const setIsCropping = useEditorStore((state) => state.setIsCropping);
+
+  // Sync transform panel state with store
+  useEffect(() => {
+    const isTransform = activePanel === 'transform';
+    setIsTransformPanelActive(isTransform);
+    // Auto-enable cropping when entering transform tab
+    if (isTransform) {
+      setIsCropping(true);
+    }
+  }, [activePanel, setIsTransformPanelActive, setIsCropping]);
 
   return (
     <aside className="w-80 bg-neutral-950 border-l border-neutral-800 flex h-full overflow-hidden">
@@ -109,7 +121,6 @@ export function Sidebar() {
               <AdjustPanel />
               <DetailPanel />
               <CurvePanel />
-              <TransformPanel />
             </div>
           )}
           {activePanel === 'hsl' && <HSLPanel />}
@@ -119,11 +130,7 @@ export function Sidebar() {
               <MaskPanel />
             </div>
           )}
-          {activePanel === 'export' && (
-            <div className="p-4 text-neutral-400 text-sm">
-              Use the export button in the toolbar or press Cmd+E
-            </div>
-          )}
+          {activePanel === 'transform' && <TransformPanel />}
         </div>
       </div>
 
@@ -137,7 +144,7 @@ export function Sidebar() {
         />
         <TabButton
           icon={<ToolsIcon />}
-          label="Tools"
+          label="Adjust"
           active={activePanel === 'tools'}
           onClick={() => setActivePanel('tools')}
         />
@@ -153,12 +160,11 @@ export function Sidebar() {
           active={activePanel === 'effects'}
           onClick={() => setActivePanel('effects')}
         />
-        <div className="flex-1" />
         <TabButton
-          icon={<ExportIcon />}
-          label="Export"
-          active={activePanel === 'export'}
-          onClick={() => setActivePanel('export')}
+          icon={<TransformIcon />}
+          label="Transform"
+          active={activePanel === 'transform'}
+          onClick={() => setActivePanel('transform')}
         />
       </div>
     </aside>

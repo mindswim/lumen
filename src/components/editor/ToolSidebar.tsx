@@ -14,7 +14,6 @@ import {
   Undo2,
   Redo2,
   RotateCcw,
-  Crop,
   Copy,
   ClipboardPaste,
   Columns2,
@@ -89,8 +88,6 @@ export function ToolSidebar({ mode, onExport, onAddPhotos }: ToolSidebarProps) {
   const setZoomLevel = useEditorStore((state) => state.setZoomLevel);
   const zoomToFit = useEditorStore((state) => state.zoomToFit);
   const setZoomToFit = useEditorStore((state) => state.setZoomToFit);
-  const isCropping = useEditorStore((state) => state.isCropping);
-  const setIsCropping = useEditorStore((state) => state.setIsCropping);
   const comparisonMode = useEditorStore((state) => state.comparisonMode);
   const setComparisonMode = useEditorStore((state) => state.setComparisonMode);
   const editorImage = useEditorStore((state) => state.image);
@@ -213,12 +210,6 @@ export function ToolSidebar({ mode, onExport, onAddPhotos }: ToolSidebarProps) {
 
             {/* Tools - Editor only */}
             <div className="flex flex-col items-center gap-1">
-              <ToolButton
-                icon={<Crop className="w-[18px] h-[18px]" />}
-                label="Crop & Transform"
-                onClick={() => setIsCropping(!isCropping)}
-                active={isCropping}
-              />
               <ToolButton
                 icon={<Copy className="w-[18px] h-[18px]" />}
                 label="Copy Settings (Cmd+C)"

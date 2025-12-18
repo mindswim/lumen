@@ -79,6 +79,8 @@ interface EditorStore {
   setIsCropping: (isCropping: boolean) => void;
   cropAspectRatio: number | null;
   setCropAspectRatio: (ratio: number | null) => void;
+  isTransformPanelActive: boolean;
+  setIsTransformPanelActive: (active: boolean) => void;
 
   // Comparison state
   comparisonMode: 'off' | 'split' | 'hold';
@@ -338,6 +340,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   setIsCropping: (isCropping) => set({ isCropping }),
   cropAspectRatio: null,
   setCropAspectRatio: (ratio) => set({ cropAspectRatio: ratio }),
+  isTransformPanelActive: false,
+  setIsTransformPanelActive: (active) => set({ isTransformPanelActive: active }),
 
   // Comparison state
   comparisonMode: 'off',
