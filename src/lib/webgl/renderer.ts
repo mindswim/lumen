@@ -660,22 +660,25 @@ vec3 applySkinTone(vec3 color) {
 }
 
 // Sharpening using unsharp mask technique
-// NOTE: Simplified single-pass version. Professional needs multi-pass with larger kernels
+// Uses larger kernel and proper Gaussian for visible results
 vec3 applySharpening(vec3 color, vec2 uv) {
   if (u_sharpeningAmount == 0.0) return color;
 
   vec2 texelSize = 1.0 / u_resolution;
-  float radius = u_sharpeningRadius;
+
+  // Radius controls the blur spread (0.5-3.0 maps to actual pixel coverage)
+  float sigma = u_sharpeningRadius * 1.5;
 
   // Sample surrounding pixels for blur (unsharp mask base)
+  // Use 9x9 kernel for better quality
   vec3 blurred = vec3(0.0);
   float totalWeight = 0.0;
 
-  // Use a 5x5 kernel scaled by radius
-  for (int x = -2; x <= 2; x++) {
-    for (int y = -2; y <= 2; y++) {
-      vec2 offset = vec2(float(x), float(y)) * texelSize * radius;
-      float weight = exp(-float(x*x + y*y) / (2.0 * radius * radius));
+  for (int x = -4; x <= 4; x++) {
+    for (int y = -4; y <= 4; y++) {
+      vec2 offset = vec2(float(x), float(y)) * texelSize * u_sharpeningRadius;
+      float dist2 = float(x*x + y*y);
+      float weight = exp(-dist2 / (2.0 * sigma * sigma));
       blurred += texture(u_image, uv + offset).rgb * weight;
       totalWeight += weight;
     }
@@ -685,13 +688,14 @@ vec3 applySharpening(vec3 color, vec2 uv) {
   // Calculate the mask (difference between original and blurred)
   vec3 mask = color - blurred;
 
-  // Detail preservation: reduce sharpening in low-contrast areas
+  // Detail preservation: controls which edges get sharpened
+  // Low detail = only strong edges, High detail = all edges including fine details
   float maskStrength = length(mask);
-  float detailThreshold = (100.0 - u_sharpeningDetail) / 100.0 * 0.1;
-  float detailFactor = smoothstep(0.0, detailThreshold, maskStrength);
+  float detailThreshold = (100.0 - u_sharpeningDetail) / 100.0 * 0.05;
+  float detailFactor = u_sharpeningDetail >= 99.0 ? 1.0 : smoothstep(0.0, max(detailThreshold, 0.001), maskStrength);
 
-  // Apply sharpening
-  float amount = u_sharpeningAmount / 100.0 * 2.0;
+  // Apply sharpening - amount 100 = strong visible sharpening
+  float amount = u_sharpeningAmount / 100.0 * 3.0;
   return color + mask * amount * detailFactor;
 }
 
