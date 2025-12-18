@@ -903,6 +903,7 @@ void main() {
 }`;
 
 // Composite shader - combines original with bloom/effects
+// Note: FBO textures are Y-flipped, so we flip when sampling
 const COMPOSITE_SHADER = `#version 300 es
 precision highp float;
 
@@ -915,8 +916,10 @@ uniform float u_bloomIntensity;
 uniform vec3 u_bloomTint;  // For halation, tint the bloom color
 
 void main() {
-  vec3 original = texture(u_original, v_texCoord).rgb;
-  vec3 bloom = texture(u_bloom, v_texCoord).rgb;
+  // Flip Y to correct FBO texture orientation
+  vec2 flippedCoord = vec2(v_texCoord.x, 1.0 - v_texCoord.y);
+  vec3 original = texture(u_original, flippedCoord).rgb;
+  vec3 bloom = texture(u_bloom, flippedCoord).rgb;
 
   // Additive blend with tint
   vec3 result = original + bloom * u_bloomTint * u_bloomIntensity;
