@@ -700,55 +700,65 @@ vec3 applySharpening(vec3 color, vec2 uv) {
   return color + mask * amount * detailFactor;
 }
 
-// Noise reduction using bilateral filter approximation
-// NOTE: Simplified single-pass version. Professional needs edge-aware bilateral filtering
+// Noise reduction using bilateral filter
+// Separates luminance and chroma processing for professional results
 vec3 applyNoiseReduction(vec3 color, vec2 uv) {
   if (u_noiseReductionLuminance == 0.0 && u_noiseReductionColor == 0.0) return color;
 
   vec2 texelSize = 1.0 / u_resolution;
   float lumStrength = u_noiseReductionLuminance / 100.0;
   float colorStrength = u_noiseReductionColor / 100.0;
-  float detailPreserve = u_noiseReductionDetail / 100.0;
 
-  // Convert to YCbCr-like space for separate luminance/chroma processing
+  // Detail: 0 = aggressive smoothing, 100 = preserve fine detail
+  // Controls the edge-preservation threshold
+  float edgeThreshold = 0.02 + (100.0 - u_noiseReductionDetail) / 100.0 * 0.15;
+
+  // Convert to luminance + chroma
   float lum = dot(color, vec3(0.2126, 0.7152, 0.0722));
-  vec3 chroma = color - lum;
+  vec3 chroma = color - vec3(lum);
 
-  // Blur for noise reduction (5x5 kernel)
+  // Separate accumulators for luminance and color
   float lumBlurred = 0.0;
+  float lumTotalWeight = 0.0;
   vec3 chromaBlurred = vec3(0.0);
-  float totalWeight = 0.0;
+  float chromaTotalWeight = 0.0;
 
-  for (int x = -2; x <= 2; x++) {
-    for (int y = -2; y <= 2; y++) {
-      vec2 offset = vec2(float(x), float(y)) * texelSize * 1.5;
+  // 7x7 kernel for better noise reduction
+  for (int x = -3; x <= 3; x++) {
+    for (int y = -3; y <= 3; y++) {
+      vec2 offset = vec2(float(x), float(y)) * texelSize * 1.2;
       vec3 sampleColor = texture(u_image, uv + offset).rgb;
       float sampleLum = dot(sampleColor, vec3(0.2126, 0.7152, 0.0722));
-      vec3 sampleChroma = sampleColor - sampleLum;
+      vec3 sampleChroma = sampleColor - vec3(sampleLum);
 
       // Spatial weight (Gaussian)
-      float spatialWeight = exp(-float(x*x + y*y) / 8.0);
+      float dist2 = float(x*x + y*y);
+      float spatialWeight = exp(-dist2 / 12.0);
 
-      // Range weight (bilateral - preserve edges)
+      // Luminance: edge-aware bilateral weight
       float lumDiff = abs(sampleLum - lum);
-      float rangeWeight = exp(-lumDiff * lumDiff / (0.1 * (1.0 - detailPreserve * 0.9) + 0.01));
+      float lumRangeWeight = exp(-lumDiff * lumDiff / (edgeThreshold * edgeThreshold));
+      float lumWeight = spatialWeight * lumRangeWeight;
+      lumBlurred += sampleLum * lumWeight;
+      lumTotalWeight += lumWeight;
 
-      float weight = spatialWeight * rangeWeight;
-
-      lumBlurred += sampleLum * weight;
-      chromaBlurred += sampleChroma * weight;
-      totalWeight += weight;
+      // Color: use chroma difference for edge detection (key fix!)
+      float chromaDiff = length(sampleChroma - chroma);
+      float chromaRangeWeight = exp(-chromaDiff * chromaDiff / (edgeThreshold * edgeThreshold * 4.0));
+      float chromaWeight = spatialWeight * chromaRangeWeight;
+      chromaBlurred += sampleChroma * chromaWeight;
+      chromaTotalWeight += chromaWeight;
     }
   }
 
-  lumBlurred /= totalWeight;
-  chromaBlurred /= totalWeight;
+  lumBlurred /= lumTotalWeight;
+  chromaBlurred /= chromaTotalWeight;
 
   // Blend original and blurred based on strength
   float finalLum = mix(lum, lumBlurred, lumStrength);
   vec3 finalChroma = mix(chroma, chromaBlurred, colorStrength);
 
-  return finalLum + finalChroma;
+  return vec3(finalLum) + finalChroma;
 }
 
 void main() {
