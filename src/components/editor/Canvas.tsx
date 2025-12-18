@@ -128,40 +128,40 @@ export function Canvas({ className }: CanvasProps) {
     const ar = image.width / image.height;
 
     // Straighten (rotation) - calculate scale to fill frame
+    // Formula: scale = max(cos + sin*ar, cos + sin/ar)
+    // This ensures all 4 corners of the frame are covered by the rotated image
     if (editState.straighten !== 0) {
       const theta = Math.abs(editState.straighten) * Math.PI / 180;
       const sin = Math.sin(theta);
       const cos = Math.cos(theta);
 
-      // Scale factor formula: 1 / (cos - sin / aspectRatio) for landscape
-      // This ensures the rotated image completely fills the frame
-      let denom;
-      if (ar >= 1) {
-        denom = cos - sin / ar;
-      } else {
-        denom = cos - sin * ar;
-      }
-
-      // Clamp to prevent infinity at extreme angles
-      if (denom > 0.1) {
-        scale = 1 / denom;
-      } else {
-        scale = 2;
-      }
+      // For landscape (ar > 1): horizontal scale dominates
+      // For portrait (ar < 1): vertical scale dominates
+      const scaleH = cos + sin * ar;
+      const scaleV = cos + sin / ar;
+      scale = Math.max(scaleH, scaleV);
     }
 
-    // Skew also creates gaps - add scale compensation
+    // Skew creates asymmetric distortion - compensate based on the skew angle
+    // For skewX, the image stretches horizontally at top/bottom
+    // For skewY, the image stretches vertically at left/right
     if (editState.perspectiveX !== 0) {
       const skewAngle = Math.abs(editState.perspectiveX * 0.15) * Math.PI / 180;
-      scale *= 1 + Math.tan(skewAngle) * 0.5;
+      // Scale factor for skew: 1 / cos(skewAngle) to maintain coverage
+      scale *= 1 / Math.cos(skewAngle);
     }
 
     if (editState.perspectiveY !== 0) {
       const skewAngle = Math.abs(editState.perspectiveY * 0.15) * Math.PI / 180;
-      scale *= 1 + Math.tan(skewAngle) * 0.5;
+      scale *= 1 / Math.cos(skewAngle);
     }
 
-    return Math.min(scale, 2); // Cap at 2x to prevent extreme zoom
+    // Add small buffer (0.5%) to account for antialiasing and subpixel rendering
+    if (scale > 1) {
+      scale *= 1.005;
+    }
+
+    return Math.min(scale, 2.5); // Cap at 2.5x to prevent extreme zoom
   }, [editState.straighten, editState.perspectiveX, editState.perspectiveY, image]);
 
   // Calculate transform styles for rotation, flip, and perspective
