@@ -85,97 +85,102 @@ export function TransformPanel() {
     setCropAspectRatio(null);
   };
 
-  const startCropping = () => {
-    setIsCropping(true);
-  };
-
-  const applyCrop = () => {
-    setIsCropping(false);
-    // The crop is already stored in editState by CropOverlay
-  };
-
-  const cancelCrop = () => {
-    setIsCropping(false);
-    updateEditState({ crop: null });
-  };
+  const image = useEditorStore((state) => state.image);
 
   const clearCrop = () => {
     pushHistory();
     updateEditState({ crop: null });
     setCropAspectRatio(null);
+    setIsCropping(false);
+  };
+
+  // Apply aspect ratio immediately when selected
+  const handleAspectRatioSelect = (ratio: number | null) => {
+    if (!image) return;
+
+    pushHistory();
+    setCropAspectRatio(ratio);
+    setIsCropping(true);
+
+    const imgWidth = image.width;
+    const imgHeight = image.height;
+
+    if (ratio === null) {
+      // Free crop - reset to full image
+      updateEditState({
+        crop: { top: 0, left: 0, width: imgWidth, height: imgHeight },
+      });
+      return;
+    }
+
+    // Calculate the largest crop rect with this aspect ratio that fits in the image
+    const imageRatio = imgWidth / imgHeight;
+    let cropWidth: number;
+    let cropHeight: number;
+
+    if (ratio > imageRatio) {
+      // Crop is wider than image - fit to width
+      cropWidth = imgWidth;
+      cropHeight = imgWidth / ratio;
+    } else {
+      // Crop is taller than image - fit to height
+      cropHeight = imgHeight;
+      cropWidth = imgHeight * ratio;
+    }
+
+    // Center the crop
+    const cropLeft = (imgWidth - cropWidth) / 2;
+    const cropTop = (imgHeight - cropHeight) / 2;
+
+    updateEditState({
+      crop: {
+        top: cropTop,
+        left: cropLeft,
+        width: cropWidth,
+        height: cropHeight,
+      },
+    });
   };
 
   return (
     <PanelContainer>
       {/* Crop Section */}
       <PanelSection title="Crop" collapsible={false}>
-        {!isCropping ? (
-          <>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={startCropping}
-              className="w-full bg-neutral-800 border-neutral-700 hover:bg-neutral-700 text-white"
-            >
-              {editState.crop ? 'Edit Crop' : 'Start Cropping'}
-            </Button>
-            {editState.crop && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={clearCrop}
-                className="w-full text-neutral-500 hover:text-white"
-              >
-                Clear Crop
-              </Button>
-            )}
-          </>
-        ) : (
-          <>
-            {/* Aspect ratio selector */}
-            <div className="space-y-2">
-              <span className="text-sm text-neutral-400">Aspect Ratio</span>
-              <div className="grid grid-cols-4 gap-2">
-                {ASPECT_RATIOS.map((ratio) => {
-                  const isActive = cropAspectRatio === ratio.value;
-                  return (
-                    <button
-                      key={ratio.label}
-                      onClick={() => setCropAspectRatio(ratio.value)}
-                      className={`
-                        flex flex-col items-center gap-1.5 py-2 px-1 rounded-lg transition-colors
-                        ${isActive ? 'bg-white/10' : 'hover:bg-white/5'}
-                      `}
-                    >
-                      <AspectRatioIcon w={ratio.w} h={ratio.h} active={isActive} />
-                      <span className={`text-xs ${isActive ? 'text-white' : 'text-neutral-400'}`}>
-                        {ratio.label}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+        {/* Aspect ratio selector - always visible */}
+        <div className="space-y-2">
+          <span className="text-xs text-neutral-500">Aspect Ratio</span>
+          <div className="grid grid-cols-4 gap-2">
+            {ASPECT_RATIOS.map((ratio) => {
+              const isActive = cropAspectRatio === ratio.value && isCropping;
+              return (
+                <button
+                  key={ratio.label}
+                  onClick={() => handleAspectRatioSelect(ratio.value)}
+                  className={`
+                    flex flex-col items-center gap-1.5 py-2 px-1 rounded-lg transition-colors
+                    ${isActive ? 'bg-white/10' : 'hover:bg-white/5'}
+                  `}
+                >
+                  <AspectRatioIcon w={ratio.w} h={ratio.h} active={isActive} />
+                  <span className={`text-xs ${isActive ? 'text-white' : 'text-neutral-400'}`}>
+                    {ratio.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={cancelCrop}
-                className="flex-1 bg-neutral-800 border-neutral-700 hover:bg-neutral-700 text-white"
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="default"
-                size="sm"
-                onClick={applyCrop}
-                className="flex-1 bg-white text-black hover:bg-neutral-200"
-              >
-                Apply
-              </Button>
-            </div>
-          </>
+        {/* Clear crop button - only when crop is active */}
+        {(editState.crop || isCropping) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={clearCrop}
+            className="w-full text-neutral-500 hover:text-white mt-2"
+          >
+            Clear Crop
+          </Button>
         )}
       </PanelSection>
 
@@ -299,9 +304,7 @@ export function TransformPanel() {
       </Button>
 
       <PanelHint>
-        {isCropping
-          ? 'Drag the corners or edges to adjust the crop area.'
-          : 'Use crop to remove unwanted areas. Rotation and flip are applied non-destructively.'}
+        Select an aspect ratio to start cropping. Drag corners or edges to adjust.
       </PanelHint>
     </PanelContainer>
   );
