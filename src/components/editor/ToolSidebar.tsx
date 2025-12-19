@@ -117,7 +117,44 @@ export function ToolSidebar({ mode, onExport, onAddPhotos }: ToolSidebarProps) {
     setGridColumns,
     isIsolated,
     toggleIsolate,
+    getImage,
   } = useGalleryStore();
+
+  // Gallery-specific copy/paste handlers
+  const handleGalleryCopy = () => {
+    if (selectedIds.length !== 1) return;
+    const image = getImage(selectedIds[0]);
+    if (image) {
+      // Copy the selected gallery image's edit state (without crop/masks)
+      const settingsToCopy = {
+        ...image.editState,
+        crop: null,
+        masks: [],
+      };
+      // Store in editor store's copiedSettings
+      useEditorStore.setState({ copiedSettings: JSON.parse(JSON.stringify(settingsToCopy)) });
+      useEditorStore.getState().showToast('Settings copied');
+    }
+  };
+
+  const handleGalleryPaste = () => {
+    const copiedSettings = useEditorStore.getState().copiedSettings;
+    if (!copiedSettings || selectedIds.length === 0) return;
+
+    // Apply to all selected gallery images
+    selectedIds.forEach((id) => {
+      const image = getImage(id);
+      if (image) {
+        updateImageEditState(id, {
+          ...copiedSettings,
+          // Preserve image-specific settings
+          crop: image.editState.crop,
+          masks: image.editState.masks,
+        });
+      }
+    });
+    useEditorStore.getState().showToast(`Settings applied to ${selectedIds.length} image${selectedIds.length > 1 ? 's' : ''}`);
+  };
 
   const toggleComparison = () => {
     if (comparisonMode === 'off') {
@@ -263,13 +300,13 @@ export function ToolSidebar({ mode, onExport, onAddPhotos }: ToolSidebarProps) {
               <ToolButton
                 icon={<Copy className="w-[18px] h-[18px]" />}
                 label="Copy Settings"
-                onClick={copySettings}
+                onClick={handleGalleryCopy}
                 disabled={selectedIds.length !== 1}
               />
               <ToolButton
                 icon={<ClipboardPaste className="w-[18px] h-[18px]" />}
                 label="Paste Settings"
-                onClick={pasteSettings}
+                onClick={handleGalleryPaste}
                 disabled={selectedIds.length === 0 || !hasCopiedSettings()}
               />
               <ToolButton
