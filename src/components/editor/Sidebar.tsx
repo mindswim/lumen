@@ -9,6 +9,7 @@ import { DetailPanel } from './DetailPanel';
 import { PresetPanel } from './PresetPanel';
 import { MaskPanel } from './MaskPanel';
 import { TransformPanel } from './TransformPanel';
+import { DevDrawer, DevDrawerIcon } from './DevDrawer';
 import { useEditorStore } from '@/lib/editor/state';
 
 type PanelType = 'presets' | 'tools' | 'hsl' | 'effects' | 'transform';
@@ -90,6 +91,7 @@ const PANEL_TITLES: Record<PanelType, string> = {
 
 export function Sidebar() {
   const [activePanel, setActivePanel] = useState<PanelType>('presets');
+  const [devDrawerOpen, setDevDrawerOpen] = useState(false);
   const setIsTransformPanelActive = useEditorStore((state) => state.setIsTransformPanelActive);
   const setIsCropping = useEditorStore((state) => state.setIsCropping);
 
@@ -145,6 +147,9 @@ export function Sidebar() {
           )}
           {activePanel === 'transform' && <TransformPanel />}
         </div>
+
+        {/* Dev drawer at bottom */}
+        <DevDrawer isOpen={devDrawerOpen} onToggle={() => setDevDrawerOpen(!devDrawerOpen)} />
       </div>
 
       {/* Tab icons on right edge */}
@@ -184,6 +189,17 @@ export function Sidebar() {
           label="Transform"
           active={activePanel === 'transform'}
           onClick={() => setActivePanel('transform')}
+        />
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Dev drawer toggle at bottom */}
+        <TabButton
+          icon={<DevDrawerIcon />}
+          label="JSON"
+          active={devDrawerOpen}
+          onClick={() => setDevDrawerOpen(!devDrawerOpen)}
         />
       </div>
     </aside>
