@@ -54,11 +54,23 @@ function ToolButton({ icon, label, onClick, disabled, active }: ToolButtonProps)
         <button
           onClick={onClick}
           disabled={disabled}
-          className={`
-            w-10 h-10 flex items-center justify-center rounded-lg transition-colors
-            ${active ? 'bg-white/10 text-white' : 'text-neutral-400 hover:text-white hover:bg-white/5'}
-            ${disabled ? 'opacity-30 cursor-not-allowed' : ''}
-          `}
+          className={`w-10 h-10 flex items-center justify-center rounded-lg transition-colors ${disabled ? 'opacity-30 cursor-not-allowed' : ''}`}
+          style={{
+            backgroundColor: active ? 'var(--editor-bg-active)' : 'transparent',
+            color: active ? 'var(--editor-text-primary)' : 'var(--editor-text-tertiary)',
+          }}
+          onMouseEnter={(e) => {
+            if (!disabled && !active) {
+              e.currentTarget.style.backgroundColor = 'var(--editor-bg-hover)';
+              e.currentTarget.style.color = 'var(--editor-text-primary)';
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!active) {
+              e.currentTarget.style.backgroundColor = 'transparent';
+              e.currentTarget.style.color = 'var(--editor-text-tertiary)';
+            }
+          }}
         >
           {icon}
         </button>
@@ -151,7 +163,13 @@ export function ToolSidebar({ mode, onExport, onAddPhotos }: ToolSidebarProps) {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <aside className="w-14 bg-neutral-950 border-r border-neutral-800 flex flex-col items-center py-3">
+      <aside
+        className="w-14 flex flex-col items-center py-3"
+        style={{
+          backgroundColor: 'var(--editor-bg-primary)',
+          borderRight: '1px solid var(--editor-border)'
+        }}
+      >
         {/* Hidden file input */}
         <input
           ref={fileInputRef}
@@ -180,7 +198,7 @@ export function ToolSidebar({ mode, onExport, onAddPhotos }: ToolSidebarProps) {
         </div>
 
         {/* Divider */}
-        <div className="w-6 h-px bg-neutral-700 my-3" />
+        <div className="w-6 h-px my-3" style={{ backgroundColor: 'var(--editor-border)' }} />
 
         {mode === 'editor' ? (
           <>
@@ -206,7 +224,7 @@ export function ToolSidebar({ mode, onExport, onAddPhotos }: ToolSidebarProps) {
             </div>
 
             {/* Divider */}
-            <div className="w-6 h-px bg-neutral-700 my-3" />
+            <div className="w-6 h-px my-3" style={{ backgroundColor: 'var(--editor-border)' }} />
 
             {/* Tools - Editor only */}
             <div className="flex flex-col items-center gap-1">
@@ -279,8 +297,8 @@ export function ToolSidebar({ mode, onExport, onAddPhotos }: ToolSidebarProps) {
                 step="0.1"
                 value={zoomToFit ? 1 : zoomLevel}
                 onChange={(e) => setZoomLevel(parseFloat(e.target.value))}
-                className="w-24 -rotate-90 accent-white"
-                style={{ width: '100px' }}
+                className="w-24 -rotate-90"
+                style={{ width: '100px', accentColor: 'var(--editor-accent)' }}
               />
             </div>
 
@@ -288,7 +306,8 @@ export function ToolSidebar({ mode, onExport, onAddPhotos }: ToolSidebarProps) {
             <div className="relative">
               <button
                 onClick={() => setZoomMenuOpen(!zoomMenuOpen)}
-                className="text-xs text-neutral-300 hover:text-white flex items-center gap-1 px-2 py-1"
+                className="text-xs flex items-center gap-1 px-2 py-1"
+                style={{ color: 'var(--editor-text-secondary)' }}
               >
                 <span className="underline">
                   {zoomToFit ? 'Fit' : `${Math.round(zoomLevel * 100)}%`}
@@ -305,29 +324,41 @@ export function ToolSidebar({ mode, onExport, onAddPhotos }: ToolSidebarProps) {
                     className="fixed inset-0 z-40"
                     onClick={() => setZoomMenuOpen(false)}
                   />
-                  <div className="absolute bottom-full left-0 mb-1 bg-neutral-800 border border-neutral-700 rounded-lg py-1 z-50 min-w-[80px]">
-                    {ZOOM_PRESETS.map((preset) => (
-                      <button
-                        key={preset.label}
-                        onClick={() => {
-                          if (preset.value === 'fit') {
-                            setZoomToFit(true);
-                          } else {
-                            setZoomLevel(preset.value);
-                          }
-                          setZoomMenuOpen(false);
-                        }}
-                        className={`
-                          w-full px-3 py-1.5 text-left text-sm hover:bg-neutral-700
-                          ${(preset.value === 'fit' && zoomToFit) || (!zoomToFit && preset.value === zoomLevel)
-                            ? 'text-white'
-                            : 'text-neutral-400'
-                          }
-                        `}
-                      >
-                        {preset.label}
-                      </button>
-                    ))}
+                  <div
+                    className="absolute bottom-full left-0 mb-1 rounded-lg py-1 z-50 min-w-[80px]"
+                    style={{
+                      backgroundColor: 'var(--editor-bg-tertiary)',
+                      border: '1px solid var(--editor-border)'
+                    }}
+                  >
+                    {ZOOM_PRESETS.map((preset) => {
+                      const isActive = (preset.value === 'fit' && zoomToFit) || (!zoomToFit && preset.value === zoomLevel);
+                      return (
+                        <button
+                          key={preset.label}
+                          onClick={() => {
+                            if (preset.value === 'fit') {
+                              setZoomToFit(true);
+                            } else {
+                              setZoomLevel(preset.value);
+                            }
+                            setZoomMenuOpen(false);
+                          }}
+                          className="w-full px-3 py-1.5 text-left text-sm"
+                          style={{
+                            color: isActive ? 'var(--editor-text-primary)' : 'var(--editor-text-tertiary)'
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = 'var(--editor-bg-hover)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = 'transparent';
+                          }}
+                        >
+                          {preset.label}
+                        </button>
+                      );
+                    })}
                   </div>
                 </>
               )}
@@ -339,7 +370,7 @@ export function ToolSidebar({ mode, onExport, onAddPhotos }: ToolSidebarProps) {
         {mode === 'gallery' && (
           <div className="flex flex-col items-center gap-2 mb-3" title="Grid size">
             {/* Grid icons */}
-            <div className="flex flex-col items-center gap-1 text-neutral-400">
+            <div className="flex flex-col items-center gap-1" style={{ color: 'var(--editor-text-tertiary)' }}>
               <Square className="w-3.5 h-3.5" />
             </div>
 
@@ -352,13 +383,13 @@ export function ToolSidebar({ mode, onExport, onAddPhotos }: ToolSidebarProps) {
                 step="1"
                 value={9 - gridColumns}
                 onChange={(e) => setGridColumns(9 - parseInt(e.target.value))}
-                className="w-24 -rotate-90 accent-white"
-                style={{ width: '100px' }}
+                className="w-24 -rotate-90"
+                style={{ width: '100px', accentColor: 'var(--editor-accent)' }}
               />
             </div>
 
             {/* Grid icons */}
-            <div className="flex flex-col items-center gap-1 text-neutral-400">
+            <div className="flex flex-col items-center gap-1" style={{ color: 'var(--editor-text-tertiary)' }}>
               <Grid2x2 className="w-3.5 h-3.5" />
             </div>
           </div>

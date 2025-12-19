@@ -77,10 +77,11 @@ function PhotoThumbnail({ image, isSelected, onSelect, onDoubleClick, isMobile }
 
   return (
     <div
-      className={`
-        relative cursor-pointer group break-inside-avoid mb-3 md:mb-4
-        ${isSelected ? 'ring-2 ring-white ring-offset-2 ring-offset-neutral-950' : ''}
-      `}
+      className="relative cursor-pointer group break-inside-avoid mb-3 md:mb-4"
+      style={isSelected ? {
+        boxShadow: '0 0 0 2px var(--editor-accent)',
+        borderRadius: '0.125rem'
+      } : undefined}
       onClick={(e) => {
         if (isMobile) {
           // On mobile, single tap opens editor
@@ -120,14 +121,18 @@ function EmptyState({ onAddPhotos }: { onAddPhotos: () => void }) {
     <div className="flex-1 flex flex-col items-center justify-center p-8">
       <button
         onClick={onAddPhotos}
-        className="flex flex-col items-center gap-4 p-8 rounded-2xl border-2 border-dashed border-neutral-700 hover:border-neutral-500 transition-colors"
+        className="flex flex-col items-center gap-4 p-8 rounded-2xl border-2 border-dashed transition-colors"
+        style={{ borderColor: 'var(--editor-border)' }}
       >
-        <div className="w-16 h-16 rounded-full bg-neutral-800 flex items-center justify-center">
-          <PlusCircle className="w-8 h-8 text-neutral-400" />
+        <div
+          className="w-16 h-16 rounded-full flex items-center justify-center"
+          style={{ backgroundColor: 'var(--editor-bg-tertiary)' }}
+        >
+          <PlusCircle className="w-8 h-8" style={{ color: 'var(--editor-text-tertiary)' }} />
         </div>
         <div className="text-center">
-          <p className="text-white font-medium">Add Photos</p>
-          <p className="text-neutral-500 text-sm mt-1">Tap to browse or drag and drop</p>
+          <p className="font-medium" style={{ color: 'var(--editor-text-primary)' }}>Add Photos</p>
+          <p className="text-sm mt-1" style={{ color: 'var(--editor-text-muted)' }}>Tap to browse or drag and drop</p>
         </div>
       </button>
     </div>
@@ -255,7 +260,8 @@ export function Gallery() {
 
   return (
     <div
-      className="h-screen flex flex-col bg-neutral-900 text-white overflow-hidden"
+      className="h-screen flex flex-col overflow-hidden"
+      style={{ backgroundColor: 'var(--editor-canvas-bg)', color: 'var(--editor-text-primary)' }}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -278,16 +284,22 @@ export function Gallery() {
         <div className="flex-1 relative overflow-hidden">
           {/* Drag overlay */}
           {isDragging && (
-            <div className="absolute inset-0 z-50 bg-neutral-900/90 flex items-center justify-center pointer-events-none">
+            <div
+              className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none"
+              style={{ backgroundColor: 'rgba(0,0,0,0.8)' }}
+            >
               <div className="text-center">
-                <div className="w-16 h-16 mx-auto rounded-2xl border-2 border-dashed border-white/50 flex items-center justify-center mb-3">
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white">
+                <div
+                  className="w-16 h-16 mx-auto rounded-2xl border-2 border-dashed flex items-center justify-center mb-3"
+                  style={{ borderColor: 'var(--editor-text-secondary)' }}
+                >
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--editor-text-primary)' }}>
                     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                     <polyline points="17,8 12,3 7,8" />
                     <line x1="12" y1="3" x2="12" y2="15" />
                   </svg>
                 </div>
-                <p className="text-white text-sm font-medium">Drop photos to upload</p>
+                <p className="text-sm font-medium" style={{ color: 'var(--editor-text-primary)' }}>Drop photos to upload</p>
               </div>
             </div>
           )}
@@ -295,7 +307,7 @@ export function Gallery() {
           {/* Content */}
           {!isHydrated ? (
             <div className="flex-1 flex items-center justify-center">
-              <div className="text-neutral-500">Loading...</div>
+              <div style={{ color: 'var(--editor-text-muted)' }}>Loading...</div>
             </div>
           ) : images.length === 0 ? (
             <EmptyState onAddPhotos={handleAddPhotos} />
@@ -343,11 +355,15 @@ export function Gallery() {
       <Sheet open={mobilePanel !== null} onOpenChange={(open) => !open && setMobilePanel(null)}>
         <SheetContent
           side="bottom"
-          className="h-[70vh] bg-neutral-900 border-neutral-800 p-0 rounded-t-2xl"
+          className="h-[70vh] p-0 rounded-t-2xl"
+          style={{ backgroundColor: 'var(--editor-bg-primary)', borderColor: 'var(--editor-border)' }}
         >
           {/* Sheet header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-neutral-800">
-            <SheetTitle className="text-sm font-medium text-white">
+          <div
+            className="flex items-center justify-between px-4 py-3"
+            style={{ borderBottom: '1px solid var(--editor-border)' }}
+          >
+            <SheetTitle className="text-sm font-medium" style={{ color: 'var(--editor-text-primary)' }}>
               {mobilePanel ? PANEL_TITLES[mobilePanel] : 'Panel'}
             </SheetTitle>
           </div>

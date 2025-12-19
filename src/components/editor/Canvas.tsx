@@ -249,7 +249,8 @@ export function Canvas({ className }: CanvasProps) {
   return (
     <div
       ref={containerRef}
-      className={`relative overflow-hidden bg-neutral-900 ${className || ''}`}
+      className={`relative overflow-hidden ${className || ''}`}
+      style={{ backgroundColor: 'var(--editor-canvas-bg)' }}
     >
       {image ? (
         <TransformWrapper
@@ -390,10 +391,10 @@ export function Canvas({ className }: CanvasProps) {
           )}
         </TransformWrapper>
       ) : (
-        <div className="flex-1 flex items-center justify-center h-full text-neutral-600 text-center">
+        <div className="flex-1 flex items-center justify-center h-full text-center" style={{ color: 'var(--editor-text-muted)' }}>
           <div>
             <p className="text-lg">No image loaded</p>
-            <p className="text-sm mt-2 text-neutral-700">Upload an image to start editing</p>
+            <p className="text-sm mt-2" style={{ color: 'var(--editor-text-tertiary)' }}>Upload an image to start editing</p>
           </div>
         </div>
       )}

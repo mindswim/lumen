@@ -25,7 +25,8 @@ export function PanelSection({
       {collapsible ? (
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className="flex items-center gap-2 text-base font-medium text-white hover:text-neutral-300 transition-colors"
+          className="flex items-center gap-2 text-base font-medium transition-colors"
+          style={{ color: 'var(--editor-text-primary)' }}
         >
           <svg
             className={cn(
@@ -40,7 +41,7 @@ export function PanelSection({
           {title}
         </button>
       ) : (
-        <h3 className="text-base font-medium text-white">{title}</h3>
+        <h3 className="text-base font-medium" style={{ color: 'var(--editor-text-primary)' }}>{title}</h3>
       )}
       {(!collapsible || isOpen) && (
         <div className="space-y-4">{children}</div>
@@ -56,7 +57,8 @@ interface PanelDividerProps {
 export function PanelDivider({ className }: PanelDividerProps) {
   return (
     <div
-      className={cn('h-px bg-neutral-800 my-6', className)}
+      className={cn('h-px my-6', className)}
+      style={{ backgroundColor: 'var(--editor-border)' }}
       role="separator"
     />
   );
@@ -90,9 +92,9 @@ export function PanelEmptyState({
 }: PanelEmptyStateProps) {
   return (
     <div className={cn('py-8 text-center', className)}>
-      <p className="text-sm text-neutral-500">{title}</p>
+      <p className="text-sm" style={{ color: 'var(--editor-text-muted)' }}>{title}</p>
       {description && (
-        <p className="text-xs text-neutral-600 mt-1">{description}</p>
+        <p className="text-xs mt-1" style={{ color: 'var(--editor-text-muted)' }}>{description}</p>
       )}
       {action && <div className="mt-4">{action}</div>}
     </div>
@@ -106,7 +108,7 @@ interface PanelHintProps {
 
 export function PanelHint({ children, className }: PanelHintProps) {
   return (
-    <p className={cn('text-xs text-neutral-500', className)}>
+    <p className={cn('text-xs', className)} style={{ color: 'var(--editor-text-muted)' }}>
       {children}
     </p>
   );

@@ -48,17 +48,23 @@ function CurveEditor({ points, onChange, color }: CurveEditorProps) {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    // Get CSS variable values
+    const computedStyle = getComputedStyle(document.documentElement);
+    const bgColor = computedStyle.getPropertyValue('--editor-bg-tertiary').trim() || '#262626';
+    const gridColor = computedStyle.getPropertyValue('--editor-border').trim() || '#404040';
+    const refLineColor = computedStyle.getPropertyValue('--editor-text-muted').trim() || '#525252';
+
     const dpr = window.devicePixelRatio || 1;
     canvas.width = size * dpr;
     canvas.height = size * dpr;
     ctx.scale(dpr, dpr);
 
     // Clear
-    ctx.fillStyle = '#262626';
+    ctx.fillStyle = bgColor;
     ctx.fillRect(0, 0, size, size);
 
     // Grid
-    ctx.strokeStyle = '#404040';
+    ctx.strokeStyle = gridColor;
     ctx.lineWidth = 1;
     for (let i = 1; i < 4; i++) {
       const pos = (size / 4) * i;
@@ -73,7 +79,7 @@ function CurveEditor({ points, onChange, color }: CurveEditorProps) {
     }
 
     // Diagonal reference
-    ctx.strokeStyle = '#525252';
+    ctx.strokeStyle = refLineColor;
     ctx.beginPath();
     ctx.moveTo(0, size);
     ctx.lineTo(size, 0);
@@ -108,7 +114,7 @@ function CurveEditor({ points, onChange, color }: CurveEditorProps) {
       ctx.arc(canvasX, canvasY, 6, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.fillStyle = '#262626';
+      ctx.fillStyle = bgColor;
       ctx.beginPath();
       ctx.arc(canvasX, canvasY, 3, 0, Math.PI * 2);
       ctx.fill();
@@ -291,10 +297,10 @@ export function CurvePanel() {
           value={channel}
           onValueChange={(v) => setChannel(v as CurveChannel)}
         >
-          <TabsList className="bg-neutral-800">
+          <TabsList style={{ backgroundColor: 'var(--editor-bg-tertiary)' }}>
             <TabsTrigger
               value="rgb"
-              className="text-xs px-3 data-[state=active]:bg-neutral-700 data-[state=active]:text-white"
+              className="text-xs px-3 data-[state=active]:bg-[var(--editor-bg-active)] data-[state=active]:text-[var(--editor-text-primary)]"
             >
               RGB
             </TabsTrigger>
@@ -322,7 +328,8 @@ export function CurvePanel() {
           variant="ghost"
           size="sm"
           onClick={resetCurve}
-          className="text-xs text-neutral-500 hover:text-white"
+          className="text-xs"
+          style={{ color: 'var(--editor-text-muted)' }}
         >
           Reset
         </Button>
@@ -334,7 +341,7 @@ export function CurvePanel() {
         color={CHANNEL_COLORS[channel]}
       />
 
-      <p className="text-xs text-neutral-500">
+      <p className="text-xs" style={{ color: 'var(--editor-text-muted)' }}>
         Click to add points. Double-click to remove. Drag to adjust.
       </p>
     </div>

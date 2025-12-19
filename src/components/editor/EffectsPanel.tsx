@@ -48,14 +48,14 @@ function HueSlider({
   return (
     <div className="space-y-3">
       <div className="flex justify-between items-center">
-        <span className="text-sm text-neutral-300">{label}</span>
+        <span className="text-sm" style={{ color: 'var(--editor-text-secondary)' }}>{label}</span>
         <div
-          className="w-4 h-4 rounded-full border border-neutral-600"
-          style={{ backgroundColor: `hsl(${hue}, ${saturation}%, 50%)` }}
+          className="w-4 h-4 rounded-full"
+          style={{ backgroundColor: `hsl(${hue}, ${saturation}%, 50%)`, border: '1px solid var(--editor-border)' }}
         />
       </div>
       <div className="space-y-2">
-        <div className="flex justify-between text-xs text-neutral-500">
+        <div className="flex justify-between text-xs" style={{ color: 'var(--editor-text-muted)' }}>
           <span>Hue</span>
           <span>{Math.round(hue)}</span>
         </div>
@@ -347,7 +347,7 @@ export function EffectsPanel() {
         <div className="grid grid-cols-2 gap-4">
           {/* Shadows */}
           <div className="flex flex-col items-center gap-2">
-            <span className="text-xs text-neutral-400">Shadows</span>
+            <span className="text-xs" style={{ color: 'var(--editor-text-tertiary)' }}>Shadows</span>
             <ColorWheel
               hue={colorGrading.shadows.hue}
               saturation={colorGrading.shadows.saturation}
@@ -367,7 +367,7 @@ export function EffectsPanel() {
 
           {/* Midtones */}
           <div className="flex flex-col items-center gap-2">
-            <span className="text-xs text-neutral-400">Midtones</span>
+            <span className="text-xs" style={{ color: 'var(--editor-text-tertiary)' }}>Midtones</span>
             <ColorWheel
               hue={colorGrading.midtones.hue}
               saturation={colorGrading.midtones.saturation}
@@ -387,7 +387,7 @@ export function EffectsPanel() {
 
           {/* Highlights */}
           <div className="flex flex-col items-center gap-2">
-            <span className="text-xs text-neutral-400">Highlights</span>
+            <span className="text-xs" style={{ color: 'var(--editor-text-tertiary)' }}>Highlights</span>
             <ColorWheel
               hue={colorGrading.highlights.hue}
               saturation={colorGrading.highlights.saturation}
@@ -407,7 +407,7 @@ export function EffectsPanel() {
 
           {/* Global */}
           <div className="flex flex-col items-center gap-2">
-            <span className="text-xs text-neutral-400">Global</span>
+            <span className="text-xs" style={{ color: 'var(--editor-text-tertiary)' }}>Global</span>
             <ColorWheel
               hue={colorGrading.global.hue}
               saturation={colorGrading.global.saturation}
@@ -503,17 +503,18 @@ export function EffectsPanel() {
           onChange={(v) => handleBlurUpdate('amount', v)}
         />
         <div className="space-y-2">
-          <span className="text-sm text-neutral-400">Type</span>
+          <span className="text-sm" style={{ color: 'var(--editor-text-tertiary)' }}>Type</span>
           <div className="flex gap-2">
             <Button
               variant="outline"
               size="sm"
               onClick={() => handleBlurUpdate('type', 'gaussian')}
-              className={`flex-1 text-xs ${
-                blur.type === 'gaussian'
-                  ? 'bg-white text-black border-white hover:bg-neutral-200'
-                  : 'bg-neutral-800 border-neutral-700 hover:bg-neutral-700 text-white'
-              }`}
+              className="flex-1 text-xs"
+              style={{
+                backgroundColor: blur.type === 'gaussian' ? 'var(--editor-accent)' : 'var(--editor-bg-tertiary)',
+                color: blur.type === 'gaussian' ? 'var(--editor-accent-foreground)' : 'var(--editor-text-primary)',
+                borderColor: blur.type === 'gaussian' ? 'var(--editor-accent)' : 'var(--editor-border)'
+              }}
             >
               Gaussian
             </Button>
@@ -521,11 +522,12 @@ export function EffectsPanel() {
               variant="outline"
               size="sm"
               onClick={() => handleBlurUpdate('type', 'lens')}
-              className={`flex-1 text-xs ${
-                blur.type === 'lens'
-                  ? 'bg-white text-black border-white hover:bg-neutral-200'
-                  : 'bg-neutral-800 border-neutral-700 hover:bg-neutral-700 text-white'
-              }`}
+              className="flex-1 text-xs"
+              style={{
+                backgroundColor: blur.type === 'lens' ? 'var(--editor-accent)' : 'var(--editor-bg-tertiary)',
+                color: blur.type === 'lens' ? 'var(--editor-accent-foreground)' : 'var(--editor-text-primary)',
+                borderColor: blur.type === 'lens' ? 'var(--editor-accent)' : 'var(--editor-border)'
+              }}
             >
               Lens
             </Button>
@@ -547,12 +549,13 @@ export function EffectsPanel() {
         />
         <div className="space-y-2">
           <div className="flex justify-between items-center">
-            <span className="text-sm text-neutral-400">Color</span>
+            <span className="text-sm" style={{ color: 'var(--editor-text-tertiary)' }}>Color</span>
             <input
               type="color"
               value={border.color}
               onChange={(e) => handleBorderUpdate('color', e.target.value)}
-              className="w-8 h-8 rounded border border-neutral-600 cursor-pointer bg-transparent"
+              className="w-8 h-8 rounded cursor-pointer bg-transparent"
+              style={{ border: '1px solid var(--editor-border)' }}
             />
           </div>
         </div>
@@ -617,7 +620,7 @@ export function EffectsPanel() {
           onChange={(v) => handleHalationUpdate('threshold', v)}
         />
         <div className="space-y-2">
-          <div className="flex justify-between text-xs text-neutral-500">
+          <div className="flex justify-between text-xs" style={{ color: 'var(--editor-text-muted)' }}>
             <span>Color</span>
             <span>{Math.round(halation.hue)}°</span>
           </div>
@@ -641,7 +644,7 @@ export function EffectsPanel() {
               className="absolute inset-0"
             />
           </div>
-          <div className="flex justify-between text-xs text-neutral-600">
+          <div className="flex justify-between text-xs" style={{ color: 'var(--editor-text-muted)' }}>
             <span>Red</span>
             <span>Orange</span>
             <span>Yellow</span>

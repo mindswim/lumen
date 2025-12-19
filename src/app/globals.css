@@ -124,8 +124,24 @@
   }
 }
 
-/* Editor Design Tokens */
+/* Editor Design Tokens - Light Mode (default) */
 :root {
+  /* Editor theme colors */
+  --editor-bg-primary: #ffffff;
+  --editor-bg-secondary: #fafafa;
+  --editor-bg-tertiary: #f5f5f5;
+  --editor-bg-hover: #f0f0f0;
+  --editor-bg-active: #e5e5e5;
+  --editor-border: #e5e5e5;
+  --editor-border-subtle: #f0f0f0;
+  --editor-text-primary: #171717;
+  --editor-text-secondary: #525252;
+  --editor-text-tertiary: #737373;
+  --editor-text-muted: #a3a3a3;
+  --editor-canvas-bg: #e5e5e5;
+  --editor-scrollbar: rgba(0, 0, 0, 0.15);
+  --editor-scrollbar-hover: rgba(0, 0, 0, 0.25);
+
   /* Neutral colors */
   --editor-neutral-50: #fafafa;
   --editor-neutral-100: #f5f5f5;
@@ -138,10 +154,34 @@
   --editor-neutral-800: #262626;
   --editor-neutral-900: #171717;
 
-  /* Accent */
-  --editor-accent: #171717;
+  /* Accent - softer grey for light mode */
+  --editor-accent: #525252;
   --editor-accent-foreground: #ffffff;
+}
 
+/* Editor Design Tokens - Dark Mode */
+.dark {
+  --editor-bg-primary: #0a0a0a;
+  --editor-bg-secondary: #171717;
+  --editor-bg-tertiary: #262626;
+  --editor-bg-hover: #2a2a2a;
+  --editor-bg-active: #333333;
+  --editor-border: #262626;
+  --editor-border-subtle: #1f1f1f;
+  --editor-text-primary: #ffffff;
+  --editor-text-secondary: #d4d4d4;
+  --editor-text-tertiary: #a3a3a3;
+  --editor-text-muted: #737373;
+  --editor-canvas-bg: #171717;
+  --editor-scrollbar: rgba(255, 255, 255, 0.15);
+  --editor-scrollbar-hover: rgba(255, 255, 255, 0.25);
+
+  --editor-accent: #ffffff;
+  --editor-accent-foreground: #171717;
+}
+
+/* Shared editor constants (same in light/dark) */
+:root {
   /* Semantic */
   --editor-error: #ef4444;
   --editor-success: #22c55e;
@@ -181,13 +221,12 @@
   /* Editor layout */
   --editor-sidebar-width: 320px;
   --editor-toolbar-height: 56px;
-  --editor-canvas-bg: #e5e5e5;
 }
 
 /* Thin scrollbar styling - force overlay style */
 * {
   scrollbar-width: thin !important;
-  scrollbar-color: rgba(255, 255, 255, 0.15) transparent !important;
+  scrollbar-color: var(--editor-scrollbar) transparent !important;
 }
 
 *::-webkit-scrollbar {
@@ -201,12 +240,12 @@
 }
 
 *::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15) !important;
+  background: var(--editor-scrollbar) !important;
   border-radius: 2px !important;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25) !important;
+  background: var(--editor-scrollbar-hover) !important;
 }
 
 *::-webkit-scrollbar-corner {
@@ -218,7 +257,7 @@
 .overflow-auto,
 .overflow-x-auto {
   scrollbar-width: thin !important;
-  scrollbar-color: rgba(255, 255, 255, 0.15) transparent !important;
+  scrollbar-color: var(--editor-scrollbar) transparent !important;
 }
 
 .overflow-y-auto::-webkit-scrollbar,
@@ -231,7 +270,7 @@
 .overflow-y-auto::-webkit-scrollbar-thumb,
 .overflow-auto::-webkit-scrollbar-thumb,
 .overflow-x-auto::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15) !important;
+  background: var(--editor-scrollbar) !important;
   border-radius: 2px !important;
 }
 

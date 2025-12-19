@@ -30,17 +30,21 @@ export function SavePresetDialog({ isOpen, onClose, onSave }: SavePresetDialogPr
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
       onClick={handleBackdropClick}
     >
-      <div className="bg-neutral-900 border border-neutral-800 rounded-lg shadow-xl w-full max-w-sm p-6">
-        <h2 className="text-lg font-medium text-white mb-4">Save Preset</h2>
+      <div
+        className="rounded-lg shadow-xl w-full max-w-sm p-6"
+        style={{ backgroundColor: 'var(--editor-bg-primary)', border: '1px solid var(--editor-border)' }}
+      >
+        <h2 className="text-lg font-medium mb-4" style={{ color: 'var(--editor-text-primary)' }}>Save Preset</h2>
 
         <form onSubmit={handleSubmit}>
           <div className="mb-4">
             <label
               htmlFor="preset-name"
-              className="block text-sm text-neutral-400 mb-2"
+              className="block text-sm mb-2"
+              style={{ color: 'var(--editor-text-muted)' }}
             >
               Preset Name
             </label>
@@ -51,7 +55,12 @@ export function SavePresetDialog({ isOpen, onClose, onSave }: SavePresetDialogPr
               onChange={(e) => setName(e.target.value)}
               placeholder="My Custom Preset"
               autoFocus
-              className="w-full px-3 py-2 bg-neutral-800 border border-neutral-700 rounded-lg text-white placeholder-neutral-500 focus:outline-none focus:border-neutral-600"
+              className="w-full px-3 py-2 rounded-lg focus:outline-none"
+              style={{
+                backgroundColor: 'var(--editor-bg-tertiary)',
+                border: '1px solid var(--editor-border)',
+                color: 'var(--editor-text-primary)'
+              }}
             />
           </div>
 
@@ -59,14 +68,16 @@ export function SavePresetDialog({ isOpen, onClose, onSave }: SavePresetDialogPr
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-sm text-neutral-400 hover:text-white transition-colors"
+              className="px-4 py-2 text-sm transition-colors"
+              style={{ color: 'var(--editor-text-muted)' }}
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={!name.trim()}
-              className="px-4 py-2 text-sm bg-white text-black rounded-lg hover:bg-neutral-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              className="px-4 py-2 text-sm rounded-lg disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              style={{ backgroundColor: 'var(--editor-accent)', color: 'var(--editor-accent-foreground)' }}
             >
               Save
             </button>

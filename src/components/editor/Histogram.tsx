@@ -52,10 +52,11 @@ export function Histogram({
         width={width}
         height={height}
         viewBox={`0 0 ${width} ${height}`}
-        className="bg-neutral-900 rounded"
+        className="rounded"
+        style={{ backgroundColor: 'var(--editor-bg-tertiary)' }}
       >
         {/* Background grid lines */}
-        <g className="text-neutral-700" opacity="0.3">
+        <g style={{ color: 'var(--editor-border)' }} opacity="0.5">
           <line x1={width * 0.25} y1={0} x2={width * 0.25} y2={height} stroke="currentColor" />
           <line x1={width * 0.5} y1={0} x2={width * 0.5} y2={height} stroke="currentColor" />
           <line x1={width * 0.75} y1={0} x2={width * 0.75} y2={height} stroke="currentColor" />
@@ -82,7 +83,7 @@ export function Histogram({
       </svg>
 
       {/* Labels */}
-      <div className="flex justify-between text-[9px] text-neutral-500 mt-1 px-0.5">
+      <div className="flex justify-between text-[9px] mt-1 px-0.5" style={{ color: 'var(--editor-text-muted)' }}>
         <span>0</span>
         <span>128</span>
         <span>255</span>

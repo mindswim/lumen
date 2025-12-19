@@ -18,8 +18,8 @@ export default function EditorPage() {
 
   if (!image) {
     return (
-      <div className="h-screen bg-neutral-950 flex items-center justify-center">
-        <div className="text-neutral-400">Loading...</div>
+      <div className="h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--editor-canvas-bg)' }}>
+        <div style={{ color: 'var(--editor-text-muted)' }}>Loading...</div>
       </div>
     );
   }

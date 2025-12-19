@@ -39,11 +39,11 @@ function ToolbarButton({ icon, label, onClick, active, disabled }: ToolbarButton
     <button
       onClick={onClick}
       disabled={disabled}
-      className={`
-        flex flex-col items-center justify-center gap-1 px-3 py-2 rounded-lg transition-colors min-w-[60px]
-        ${active ? 'text-white bg-white/10' : 'text-neutral-400'}
-        ${disabled ? 'opacity-30' : 'active:bg-white/5'}
-      `}
+      className={`flex flex-col items-center justify-center gap-1 px-3 py-2 rounded-lg transition-colors min-w-[60px] ${disabled ? 'opacity-30' : ''}`}
+      style={{
+        color: active ? 'var(--editor-text-primary)' : 'var(--editor-text-tertiary)',
+        backgroundColor: active ? 'var(--editor-bg-active)' : 'transparent'
+      }}
     >
       {icon}
       <span className="text-[10px]">{label}</span>
@@ -65,7 +65,10 @@ export function MobileToolbar({
 
   if (mode === 'editor') {
     return (
-      <div className="fixed bottom-0 left-0 right-0 bg-neutral-950 border-t border-neutral-800 px-2 py-2 z-40">
+      <div
+        className="fixed bottom-0 left-0 right-0 px-2 py-2 z-40"
+        style={{ backgroundColor: 'var(--editor-bg-primary)', borderTop: '1px solid var(--editor-border)' }}
+      >
         <div className="flex items-center justify-between max-w-lg mx-auto">
           <ToolbarButton
             icon={<ArrowLeft className="w-5 h-5" />}
@@ -84,7 +87,7 @@ export function MobileToolbar({
             onClick={redo}
             disabled={!canRedo()}
           />
-          <div className="w-px h-8 bg-neutral-700" />
+          <div className="w-px h-8" style={{ backgroundColor: 'var(--editor-border)' }} />
           <ToolbarButton
             icon={<Image className="w-5 h-5" />}
             label="Presets"
@@ -109,7 +112,7 @@ export function MobileToolbar({
             onClick={() => onOpenPanel('effects')}
             active={activePanel === 'effects'}
           />
-          <div className="w-px h-8 bg-neutral-700" />
+          <div className="w-px h-8" style={{ backgroundColor: 'var(--editor-border)' }} />
           <ToolbarButton
             icon={<Download className="w-5 h-5" />}
             label="Export"
@@ -123,7 +126,10 @@ export function MobileToolbar({
 
   // Gallery mode
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-neutral-900 border-t border-neutral-800 px-2 py-2 z-40">
+    <div
+      className="fixed bottom-0 left-0 right-0 px-2 py-2 z-40"
+      style={{ backgroundColor: 'var(--editor-bg-secondary)', borderTop: '1px solid var(--editor-border)' }}
+    >
       <div className="flex items-center justify-between max-w-lg mx-auto">
         <ToolbarButton
           icon={<PlusCircle className="w-5 h-5" />}
@@ -136,7 +142,7 @@ export function MobileToolbar({
           onClick={() => removeImages(selectedIds)}
           disabled={selectedIds.length === 0}
         />
-        <div className="w-px h-8 bg-neutral-700" />
+        <div className="w-px h-8" style={{ backgroundColor: 'var(--editor-border)' }} />
         <ToolbarButton
           icon={<Image className="w-5 h-5" />}
           label="Presets"
@@ -161,7 +167,7 @@ export function MobileToolbar({
           onClick={() => onOpenPanel('effects')}
           active={activePanel === 'effects'}
         />
-        <div className="w-px h-8 bg-neutral-700" />
+        <div className="w-px h-8" style={{ backgroundColor: 'var(--editor-border)' }} />
         <ToolbarButton
           icon={<Download className="w-5 h-5" />}
           label="Export"

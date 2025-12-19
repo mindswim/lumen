@@ -159,8 +159,8 @@ export function ColorWheel({
 
       {/* Border */}
       <div
-        className="absolute inset-0 rounded-full border border-neutral-600"
-        style={{ pointerEvents: 'none' }}
+        className="absolute inset-0 rounded-full"
+        style={{ pointerEvents: 'none', border: '1px solid var(--editor-border)' }}
       />
 
       {/* Handle */}
@@ -179,12 +179,13 @@ export function ColorWheel({
 
       {/* Center dot for reset */}
       <div
-        className="absolute rounded-full bg-neutral-500 hover:bg-neutral-400 cursor-pointer"
+        className="absolute rounded-full cursor-pointer"
         style={{
           width: 8,
           height: 8,
           left: radius - 4,
           top: radius - 4,
+          backgroundColor: 'var(--editor-text-muted)',
         }}
         onClick={(e) => {
           e.stopPropagation();

@@ -48,15 +48,14 @@ export function AdjustmentSlider({
   return (
     <div className={cn('space-y-2', className)}>
       <div className="flex justify-between items-center">
-        <span className="text-sm text-neutral-300">{label}</span>
+        <span className="text-sm" style={{ color: 'var(--editor-text-secondary)' }}>{label}</span>
         <button
           onClick={handleReset}
-          className={cn(
-            'text-sm tabular-nums transition-colors border-b',
-            isDefault
-              ? 'text-neutral-500 border-transparent'
-              : 'text-white border-neutral-600 hover:border-neutral-400'
-          )}
+          className="text-sm tabular-nums transition-colors border-b"
+          style={{
+            color: isDefault ? 'var(--editor-text-muted)' : 'var(--editor-text-primary)',
+            borderColor: isDefault ? 'transparent' : 'var(--editor-border)'
+          }}
         >
           {displayValue}
         </button>

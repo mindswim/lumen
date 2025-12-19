@@ -25,18 +25,21 @@ export function Toolbar({ onExport }: ToolbarProps) {
   const histogramData = useEditorStore((state) => state.histogramData);
 
   return (
-    <header className="h-14 border-b border-neutral-200 bg-white flex items-center justify-between px-4">
+    <header
+      className="h-14 flex items-center justify-between px-4"
+      style={{ backgroundColor: 'var(--editor-bg-primary)', borderBottom: '1px solid var(--editor-border)' }}
+    >
       <div className="flex items-center gap-2">
         <Button
           variant="ghost"
           size="sm"
           onClick={() => router.push('/')}
-          className="text-neutral-600 hover:text-neutral-900"
+          style={{ color: 'var(--editor-text-secondary)' }}
         >
           Back
         </Button>
         {image && (
-          <span className="text-sm text-neutral-500 ml-2">
+          <span className="text-sm ml-2" style={{ color: 'var(--editor-text-muted)' }}>
             {image.fileName}
           </span>
         )}
@@ -48,7 +51,8 @@ export function Toolbar({ onExport }: ToolbarProps) {
           size="sm"
           onClick={undo}
           disabled={!canUndo()}
-          className="text-neutral-600 hover:text-neutral-900 disabled:opacity-30"
+          className="disabled:opacity-30"
+          style={{ color: 'var(--editor-text-secondary)' }}
         >
           Undo
         </Button>
@@ -57,7 +61,8 @@ export function Toolbar({ onExport }: ToolbarProps) {
           size="sm"
           onClick={redo}
           disabled={!canRedo()}
-          className="text-neutral-600 hover:text-neutral-900 disabled:opacity-30"
+          className="disabled:opacity-30"
+          style={{ color: 'var(--editor-text-secondary)' }}
         >
           Redo
         </Button>
@@ -65,26 +70,27 @@ export function Toolbar({ onExport }: ToolbarProps) {
           variant="ghost"
           size="sm"
           onClick={resetEditState}
-          className="text-neutral-600 hover:text-neutral-900"
+          style={{ color: 'var(--editor-text-secondary)' }}
         >
           Reset
         </Button>
 
-        <div className="w-px h-6 bg-neutral-200 mx-1" />
+        <div className="w-px h-6 mx-1" style={{ backgroundColor: 'var(--editor-border)' }} />
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
               size="sm"
-              className={`text-neutral-600 hover:text-neutral-900 ${
-                comparisonMode !== 'off' ? 'bg-neutral-100' : ''
-              }`}
+              style={{
+                color: 'var(--editor-text-secondary)',
+                backgroundColor: comparisonMode !== 'off' ? 'var(--editor-bg-active)' : 'transparent'
+              }}
               disabled={!image}
             >
               Compare
               {comparisonMode !== 'off' && (
-                <span className="ml-1 text-xs text-neutral-400">
+                <span className="ml-1 text-xs" style={{ color: 'var(--editor-text-muted)' }}>
                   ({comparisonMode === 'split' ? 'Split' : 'Hold'})
                 </span>
               )}
@@ -93,19 +99,19 @@ export function Toolbar({ onExport }: ToolbarProps) {
           <DropdownMenuContent align="center">
             <DropdownMenuItem
               onClick={() => setComparisonMode('off')}
-              className={comparisonMode === 'off' ? 'bg-neutral-100' : ''}
+              style={comparisonMode === 'off' ? { backgroundColor: 'var(--editor-bg-active)' } : undefined}
             >
               Off
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => setComparisonMode('split')}
-              className={comparisonMode === 'split' ? 'bg-neutral-100' : ''}
+              style={comparisonMode === 'split' ? { backgroundColor: 'var(--editor-bg-active)' } : undefined}
             >
               Split View
             </DropdownMenuItem>
             <DropdownMenuItem
               onClick={() => setComparisonMode('hold')}
-              className={comparisonMode === 'hold' ? 'bg-neutral-100' : ''}
+              style={comparisonMode === 'hold' ? { backgroundColor: 'var(--editor-bg-active)' } : undefined}
             >
               Hold Space
             </DropdownMenuItem>
@@ -120,9 +126,10 @@ export function Toolbar({ onExport }: ToolbarProps) {
             variant="ghost"
             size="sm"
             onClick={() => setShowHistogram(!showHistogram)}
-            className={`text-neutral-600 hover:text-neutral-900 ${
-              showHistogram ? 'bg-neutral-100' : ''
-            }`}
+            style={{
+              color: 'var(--editor-text-secondary)',
+              backgroundColor: showHistogram ? 'var(--editor-bg-active)' : 'transparent'
+            }}
             disabled={!image}
           >
             Histogram
@@ -137,7 +144,7 @@ export function Toolbar({ onExport }: ToolbarProps) {
           size="sm"
           onClick={onExport}
           disabled={!image}
-          className="bg-neutral-900 text-white hover:bg-neutral-800"
+          style={{ backgroundColor: 'var(--editor-accent)', color: 'var(--editor-accent-foreground)' }}
         >
           Export
         </Button>

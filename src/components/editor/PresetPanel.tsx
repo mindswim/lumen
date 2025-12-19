@@ -44,20 +44,25 @@ function PresetPill({ code, category, isActive, onClick }: PresetPillProps) {
   return (
     <button
       onClick={onClick}
-      className={`
-        w-full flex items-center gap-3 px-2 py-1.5 rounded-lg transition-colors
-        ${isActive ? 'bg-white/10' : 'hover:bg-white/5'}
-      `}
+      className="w-full flex items-center gap-3 px-2 py-1.5 rounded-lg transition-colors"
+      style={{ backgroundColor: isActive ? 'var(--editor-bg-active)' : 'transparent' }}
+      onMouseEnter={(e) => {
+        if (!isActive) e.currentTarget.style.backgroundColor = 'var(--editor-bg-hover)';
+      }}
+      onMouseLeave={(e) => {
+        if (!isActive) e.currentTarget.style.backgroundColor = 'transparent';
+      }}
     >
-      <span
-        className={`
-          px-3 py-1 rounded text-xs font-medium min-w-[60px] text-center
-          ${colors.bg} ${colors.text}
-        `}
-      >
+      <span className={`px-3 py-1 rounded text-xs font-medium min-w-[60px] text-center ${colors.bg} ${colors.text}`}>
         {code}
       </span>
-      <span className={`text-sm ${isActive ? 'text-white font-medium' : 'text-neutral-400'}`}>
+      <span
+        className="text-sm"
+        style={{
+          color: isActive ? 'var(--editor-text-primary)' : 'var(--editor-text-tertiary)',
+          fontWeight: isActive ? 500 : 400
+        }}
+      >
         {category}
       </span>
     </button>
@@ -77,15 +82,25 @@ function UserPresetPill({ preset, isActive, onClick, onDelete }: UserPresetPillP
     <div className="relative group">
       <button
         onClick={onClick}
-        className={`
-          w-full flex items-center gap-3 px-2 py-1.5 rounded-lg transition-colors
-          ${isActive ? 'bg-white/10' : 'hover:bg-white/5'}
-        `}
+        className="w-full flex items-center gap-3 px-2 py-1.5 rounded-lg transition-colors"
+        style={{ backgroundColor: isActive ? 'var(--editor-bg-active)' : 'transparent' }}
+        onMouseEnter={(e) => {
+          if (!isActive) e.currentTarget.style.backgroundColor = 'var(--editor-bg-hover)';
+        }}
+        onMouseLeave={(e) => {
+          if (!isActive) e.currentTarget.style.backgroundColor = 'transparent';
+        }}
       >
         <span className="px-3 py-1 rounded text-xs font-medium min-w-[60px] text-center bg-emerald-600 text-white">
           {preset.name.substring(0, 3).toUpperCase()}
         </span>
-        <span className={`text-sm flex-1 text-left ${isActive ? 'text-white font-medium' : 'text-neutral-400'}`}>
+        <span
+          className="text-sm flex-1 text-left"
+          style={{
+            color: isActive ? 'var(--editor-text-primary)' : 'var(--editor-text-tertiary)',
+            fontWeight: isActive ? 500 : 400
+          }}
+        >
           {preset.name}
         </span>
       </button>
@@ -94,7 +109,8 @@ function UserPresetPill({ preset, isActive, onClick, onDelete }: UserPresetPillP
           e.stopPropagation();
           onDelete();
         }}
-        className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center text-neutral-500 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity"
+        className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+        style={{ color: 'var(--editor-text-muted)' }}
         title="Delete preset"
       >
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -273,19 +289,21 @@ export function PresetPanel() {
       {userPresets.length > 0 && (
         <div className="px-2 py-2">
           <div className="flex items-center justify-between px-2 mb-2">
-            <span className="text-xs font-medium text-neutral-500 uppercase tracking-wider">
+            <span className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--editor-text-muted)' }}>
               My Presets
             </span>
             <div className="flex gap-1">
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="text-xs text-neutral-500 hover:text-white px-2 py-1"
+                className="text-xs px-2 py-1"
+                style={{ color: 'var(--editor-text-muted)' }}
               >
                 Import
               </button>
               <button
                 onClick={handleExportPresets}
-                className="text-xs text-neutral-500 hover:text-white px-2 py-1"
+                className="text-xs px-2 py-1"
+                style={{ color: 'var(--editor-text-muted)' }}
               >
                 Export
               </button>
@@ -309,10 +327,11 @@ export function PresetPanel() {
       )}
 
       {/* Save preset button */}
-      <div className="px-4 py-2 border-b border-neutral-800">
+      <div className="px-4 py-2" style={{ borderBottom: '1px solid var(--editor-border)' }}>
         <button
           onClick={() => setIsSaveDialogOpen(true)}
-          className="w-full py-2 text-sm text-neutral-400 hover:text-white border border-neutral-700 hover:border-neutral-600 rounded-lg transition-colors"
+          className="w-full py-2 text-sm rounded-lg transition-colors"
+          style={{ color: 'var(--editor-text-tertiary)', border: '1px solid var(--editor-border)' }}
         >
           + Save Current as Preset
         </button>
@@ -321,7 +340,7 @@ export function PresetPanel() {
       {/* Preset list by category */}
       {Object.entries(presetsByCategory).map(([category, presets]) => (
         <div key={category} className="px-2 py-2">
-          <span className="block px-2 mb-2 text-xs font-medium text-neutral-500 uppercase tracking-wider">
+          <span className="block px-2 mb-2 text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--editor-text-muted)' }}>
             {category}
           </span>
           <div className="space-y-0.5">

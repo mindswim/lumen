@@ -51,18 +51,14 @@ function Slider({
     >
       <SliderPrimitive.Track
         data-slot="slider-track"
-        className={cn(
-          "relative grow overflow-hidden rounded-full data-[orientation=horizontal]:h-1 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1",
-          !gradient && "bg-neutral-700"
-        )}
-        style={gradient ? { background: GRADIENT_TRACKS[gradient] } : undefined}
+        className="relative grow overflow-hidden rounded-full data-[orientation=horizontal]:h-1 data-[orientation=horizontal]:w-full data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1"
+        style={gradient ? { background: GRADIENT_TRACKS[gradient] } : { backgroundColor: 'var(--editor-neutral-300)' }}
       >
         {!gradient && (
           <SliderPrimitive.Range
             data-slot="slider-range"
-            className={cn(
-              "bg-white absolute data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full"
-            )}
+            className="absolute data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full"
+            style={{ backgroundColor: 'var(--editor-accent)' }}
           />
         )}
       </SliderPrimitive.Track>
@@ -70,7 +66,8 @@ function Slider({
         <SliderPrimitive.Thumb
           data-slot="slider-thumb"
           key={index}
-          className="ring-white/20 block size-4 shrink-0 rounded-full bg-white shadow-sm transition-[color,box-shadow] hover:ring-4 focus-visible:ring-4 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50"
+          className="block size-4 shrink-0 rounded-full shadow-sm transition-[color,box-shadow] hover:ring-4 focus-visible:ring-4 focus-visible:outline-hidden disabled:pointer-events-none disabled:opacity-50"
+          style={{ backgroundColor: 'var(--editor-accent)', boxShadow: '0 0 0 0 var(--editor-accent-foreground)' }}
         />
       ))}
     </SliderPrimitive.Root>

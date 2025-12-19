@@ -64,10 +64,16 @@ function TabButton({ icon, label, active, onClick }: TabButtonProps) {
     <button
       onClick={onClick}
       title={label}
-      className={`
-        w-10 h-10 flex items-center justify-center transition-colors
-        ${active ? 'text-white' : 'text-neutral-500 hover:text-neutral-300'}
-      `}
+      className="w-10 h-10 flex items-center justify-center transition-colors"
+      style={{
+        color: active ? 'var(--editor-text-primary)' : 'var(--editor-text-muted)'
+      }}
+      onMouseEnter={(e) => {
+        if (!active) e.currentTarget.style.color = 'var(--editor-text-secondary)';
+      }}
+      onMouseLeave={(e) => {
+        if (!active) e.currentTarget.style.color = 'var(--editor-text-muted)';
+      }}
     >
       {icon}
     </button>
@@ -96,13 +102,22 @@ export function Sidebar() {
   }, [activePanel, setIsTransformPanelActive, setIsCropping]);
 
   return (
-    <aside className="w-80 bg-neutral-950 border-l border-neutral-800 flex h-full overflow-hidden">
+    <aside
+      className="w-80 flex h-full overflow-hidden"
+      style={{
+        backgroundColor: 'var(--editor-bg-primary)',
+        borderLeft: '1px solid var(--editor-border)'
+      }}
+    >
       {/* Panel content */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="h-12 flex items-center justify-between px-4 border-b border-neutral-800 flex-shrink-0">
-          <h2 className="text-sm font-medium text-white">{PANEL_TITLES[activePanel]}</h2>
-          <button className="text-neutral-500 hover:text-neutral-300">
+        <div
+          className="h-12 flex items-center justify-between px-4 flex-shrink-0"
+          style={{ borderBottom: '1px solid var(--editor-border)' }}
+        >
+          <h2 className="text-sm font-medium" style={{ color: 'var(--editor-text-primary)' }}>{PANEL_TITLES[activePanel]}</h2>
+          <button style={{ color: 'var(--editor-text-muted)' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
               <circle cx="12" cy="5" r="2" />
               <circle cx="12" cy="12" r="2" />
@@ -133,7 +148,13 @@ export function Sidebar() {
       </div>
 
       {/* Tab icons on right edge */}
-      <div className="w-12 bg-neutral-950 border-l border-neutral-800 flex flex-col items-center py-2">
+      <div
+        className="w-12 flex flex-col items-center py-2"
+        style={{
+          backgroundColor: 'var(--editor-bg-primary)',
+          borderLeft: '1px solid var(--editor-border)'
+        }}
+      >
         <TabButton
           icon={<PresetsIcon />}
           label="Presets"

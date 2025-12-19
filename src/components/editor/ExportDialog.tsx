@@ -161,23 +161,26 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-neutral-900 border-neutral-800 text-white sm:max-w-md">
+      <DialogContent
+        className="sm:max-w-md"
+        style={{ backgroundColor: 'var(--editor-bg-primary)', borderColor: 'var(--editor-border)', color: 'var(--editor-text-primary)' }}
+      >
         <DialogHeader>
-          <DialogTitle className="text-white">Export Image</DialogTitle>
-          <DialogDescription className="text-neutral-400">
+          <DialogTitle style={{ color: 'var(--editor-text-primary)' }}>Export Image</DialogTitle>
+          <DialogDescription style={{ color: 'var(--editor-text-muted)' }}>
             Configure export settings for your edited image.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6 py-4">
           {/* Output dimensions */}
-          <div className="p-3 bg-neutral-800/50 rounded-lg">
-            <div className="text-sm text-neutral-400">Output size</div>
-            <div className="text-lg font-medium text-white">
+          <div className="p-3 rounded-lg" style={{ backgroundColor: 'var(--editor-bg-tertiary)' }}>
+            <div className="text-sm" style={{ color: 'var(--editor-text-muted)' }}>Output size</div>
+            <div className="text-lg font-medium" style={{ color: 'var(--editor-text-primary)' }}>
               {outputDimensions.width} x {outputDimensions.height} px
             </div>
             {image && (outputDimensions.width !== image.width || outputDimensions.height !== image.height) && (
-              <div className="text-xs text-neutral-500 mt-1">
+              <div className="text-xs mt-1" style={{ color: 'var(--editor-text-muted)' }}>
                 Original: {image.width} x {image.height} px
               </div>
             )}
@@ -185,7 +188,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
 
           {/* Resolution selection */}
           <div className="space-y-2">
-            <Label className="text-white">Resolution</Label>
+            <Label style={{ color: 'var(--editor-text-primary)' }}>Resolution</Label>
             <div className="grid grid-cols-4 gap-2">
               {resolutionOptions.map((option) => (
                 <Button
@@ -193,10 +196,10 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
                   variant={resolution === option.value ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => setResolution(option.value)}
-                  className={
+                  style={
                     resolution === option.value
-                      ? 'bg-white text-black hover:bg-neutral-200'
-                      : 'bg-neutral-800 border-neutral-700 hover:bg-neutral-700 text-white'
+                      ? { backgroundColor: 'var(--editor-accent)', color: 'var(--editor-accent-foreground)' }
+                      : { backgroundColor: 'var(--editor-bg-tertiary)', borderColor: 'var(--editor-border)', color: 'var(--editor-text-primary)' }
                   }
                 >
                   {option.label}
@@ -209,8 +212,8 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
           {resolution === 'custom' && (
             <div className="space-y-2">
               <div className="flex justify-between">
-                <Label className="text-white">Max dimension</Label>
-                <span className="text-sm text-neutral-400">{maxDimension} px</span>
+                <Label style={{ color: 'var(--editor-text-primary)' }}>Max dimension</Label>
+                <span className="text-sm" style={{ color: 'var(--editor-text-muted)' }}>{maxDimension} px</span>
               </div>
               <Slider
                 value={[maxDimension]}
@@ -219,7 +222,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
                 step={256}
                 onValueChange={([v]) => setMaxDimension(v)}
               />
-              <div className="flex justify-between text-xs text-neutral-500">
+              <div className="flex justify-between text-xs" style={{ color: 'var(--editor-text-muted)' }}>
                 <span>512</span>
                 <span>8192</span>
               </div>
@@ -228,7 +231,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
 
           {/* Format selection */}
           <div className="space-y-2">
-            <Label className="text-white">Format</Label>
+            <Label style={{ color: 'var(--editor-text-primary)' }}>Format</Label>
             <div className="grid grid-cols-3 gap-2">
               {(['jpeg', 'png', 'webp'] as ExportFormat[]).map((f) => (
                 <Button
@@ -236,17 +239,17 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
                   variant={format === f ? 'default' : 'outline'}
                   size="sm"
                   onClick={() => setFormat(f)}
-                  className={
+                  style={
                     format === f
-                      ? 'bg-white text-black hover:bg-neutral-200'
-                      : 'bg-neutral-800 border-neutral-700 hover:bg-neutral-700 text-white'
+                      ? { backgroundColor: 'var(--editor-accent)', color: 'var(--editor-accent-foreground)' }
+                      : { backgroundColor: 'var(--editor-bg-tertiary)', borderColor: 'var(--editor-border)', color: 'var(--editor-text-primary)' }
                   }
                 >
                   {f.toUpperCase()}
                 </Button>
               ))}
             </div>
-            <p className="text-xs text-neutral-500">
+            <p className="text-xs" style={{ color: 'var(--editor-text-muted)' }}>
               {format === 'png' && 'Lossless, larger files, supports transparency'}
               {format === 'jpeg' && 'Best for photos, smaller files, no transparency'}
               {format === 'webp' && 'Modern format, great compression, wide support'}
@@ -257,8 +260,8 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
           {format !== 'png' && (
             <div className="space-y-2">
               <div className="flex justify-between">
-                <Label className="text-white">Quality</Label>
-                <span className="text-sm text-neutral-400">{quality}%</span>
+                <Label style={{ color: 'var(--editor-text-primary)' }}>Quality</Label>
+                <span className="text-sm" style={{ color: 'var(--editor-text-muted)' }}>{quality}%</span>
               </div>
               <Slider
                 value={[quality]}
@@ -267,7 +270,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
                 step={5}
                 onValueChange={([v]) => setQuality(v)}
               />
-              <div className="flex justify-between text-xs text-neutral-500">
+              <div className="flex justify-between text-xs" style={{ color: 'var(--editor-text-muted)' }}>
                 <span>Smaller file</span>
                 <span>Higher quality</span>
               </div>
@@ -276,8 +279,8 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
 
           {/* Estimated size */}
           <div className="flex justify-between text-sm">
-            <span className="text-neutral-400">Estimated file size</span>
-            <span className="text-white">{estimatedSize}</span>
+            <span style={{ color: 'var(--editor-text-muted)' }}>Estimated file size</span>
+            <span style={{ color: 'var(--editor-text-primary)' }}>{estimatedSize}</span>
           </div>
 
           {/* Error message */}
@@ -293,14 +296,15 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            className="bg-neutral-800 border-neutral-700 hover:bg-neutral-700 text-white"
+            style={{ backgroundColor: 'var(--editor-bg-tertiary)', borderColor: 'var(--editor-border)', color: 'var(--editor-text-primary)' }}
           >
             Cancel
           </Button>
           <Button
             onClick={handleExport}
             disabled={isExporting || !image || !exportFunction}
-            className="bg-white text-black hover:bg-neutral-200 min-w-[100px]"
+            className="min-w-[100px]"
+            style={{ backgroundColor: 'var(--editor-accent)', color: 'var(--editor-accent-foreground)' }}
           >
             {isExporting ? (
               <span className="flex items-center gap-2">
