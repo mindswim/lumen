@@ -19,7 +19,8 @@ interface ExportDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-type ExportFormat = 'jpeg' | 'png' | 'webp';
+type ExportTier = 'web' | 'print';
+type ExportFormat = 'jpeg' | 'png' | 'webp' | 'tiff';
 type ResolutionOption = 'full' | '75' | '50' | 'custom';
 
 export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
@@ -28,12 +29,30 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
   const showToast = useEditorStore((state) => state.showToast);
   const { exportFunction } = useExport();
 
+  const [tier, setTier] = useState<ExportTier>('web');
   const [format, setFormat] = useState<ExportFormat>('jpeg');
   const [quality, setQuality] = useState(95);
   const [resolution, setResolution] = useState<ResolutionOption>('full');
   const [maxDimension, setMaxDimension] = useState(2048);
   const [isExporting, setIsExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Available formats depend on tier
+  const availableFormats: ExportFormat[] = tier === 'print'
+    ? ['jpeg', 'png', 'tiff']
+    : ['jpeg', 'png', 'webp'];
+
+  // Reset format when changing tier if current format not available
+  const handleTierChange = (newTier: ExportTier) => {
+    setTier(newTier);
+    if (newTier === 'print') {
+      if (format === 'webp') setFormat('jpeg');
+      setQuality(100); // Default to max quality for print
+      setResolution('full'); // Default to full resolution for print
+    } else {
+      if (format === 'tiff') setFormat('jpeg');
+    }
+  };
 
   // Calculate output dimensions based on settings
   const outputDimensions = useMemo(() => {
@@ -78,6 +97,17 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
     };
   }, [image, editState.crop, editState.rotation, resolution, maxDimension]);
 
+  // Calculate print size at 300 DPI
+  const printSize = useMemo(() => {
+    const dpi = 300;
+    const widthInches = outputDimensions.width / dpi;
+    const heightInches = outputDimensions.height / dpi;
+    return {
+      width: widthInches.toFixed(1),
+      height: heightInches.toFixed(1),
+    };
+  }, [outputDimensions]);
+
   // Estimate file size
   const estimatedSize = useMemo(() => {
     const pixels = outputDimensions.width * outputDimensions.height;
@@ -85,10 +115,14 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
 
     if (format === 'png') {
       bytesPerPixel = 3;
+    } else if (format === 'tiff') {
+      bytesPerPixel = 4; // Uncompressed-ish
     } else if (format === 'webp') {
       bytesPerPixel = 0.5 + (quality / 100) * 1.5;
     } else {
-      bytesPerPixel = 0.3 + (quality / 100) * 2;
+      // JPEG - print tier uses better encoder so slightly larger
+      const baseRatio = tier === 'print' ? 0.4 : 0.3;
+      bytesPerPixel = baseRatio + (quality / 100) * 2;
     }
 
     const bytes = pixels * bytesPerPixel;
@@ -96,7 +130,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
     if (bytes < 1024) return `~${Math.round(bytes)} B`;
     if (bytes < 1024 * 1024) return `~${Math.round(bytes / 1024)} KB`;
     return `~${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }, [outputDimensions, format, quality]);
+  }, [outputDimensions, format, quality, tier]);
 
   const handleExport = useCallback(async () => {
     if (!image || !exportFunction) {
@@ -124,25 +158,70 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
           break;
       }
 
-      const blob = await exportFunction(editState, image.original, {
-        format,
-        quality: quality / 100,
-        scale,
-        maxDimension: maxDim,
-      });
+      let finalBlob: Blob;
+      const baseName = image.fileName?.replace(/\.[^/.]+$/, '') || 'photo';
+
+      if (tier === 'print') {
+        // Print tier: Render to PNG first, then send to server for high-quality encode
+        const pngBlob = await exportFunction(editState, image.original, {
+          format: 'png', // Lossless intermediate
+          quality: 1,
+          scale,
+          maxDimension: maxDim,
+        });
+
+        // Convert blob to base64
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(pngBlob);
+        });
+
+        // Send to server for high-quality encode
+        const response = await fetch('/api/export/print', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            imageData: base64,
+            options: {
+              format: format === 'tiff' ? 'tiff' : format,
+              quality,
+              dpi: 300,
+            },
+          }),
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Server export failed');
+        }
+
+        finalBlob = await response.blob();
+      } else {
+        // Web tier: Direct browser export
+        finalBlob = await exportFunction(editState, image.original, {
+          format: format as 'jpeg' | 'png' | 'webp',
+          quality: quality / 100,
+          scale,
+          maxDimension: maxDim,
+        });
+      }
 
       // Create download link
-      const url = URL.createObjectURL(blob);
+      const url = URL.createObjectURL(finalBlob);
       const a = document.createElement('a');
-      const baseName = image.fileName?.replace(/\.[^/.]+$/, '') || 'photo';
+      const ext = format === 'jpeg' ? 'jpg' : format;
+      const suffix = tier === 'print' ? '-print' : '-web';
       a.href = url;
-      a.download = `${baseName}-edited.${format}`;
+      a.download = `${baseName}${suffix}.${ext}`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      showToast(`Exported ${outputDimensions.width} x ${outputDimensions.height}`);
+      const tierLabel = tier === 'print' ? 'Print quality' : 'Web';
+      showToast(`${tierLabel} export: ${outputDimensions.width} x ${outputDimensions.height}`);
       onOpenChange(false);
     } catch (err) {
       console.error('Export failed:', err);
@@ -150,7 +229,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
     } finally {
       setIsExporting(false);
     }
-  }, [image, editState, exportFunction, format, quality, resolution, maxDimension, outputDimensions, onOpenChange, showToast]);
+  }, [image, editState, exportFunction, format, quality, resolution, maxDimension, outputDimensions, onOpenChange, showToast, tier]);
 
   const resolutionOptions: { value: ResolutionOption; label: string }[] = [
     { value: 'full', label: 'Full' },
@@ -168,17 +247,53 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
         <DialogHeader>
           <DialogTitle style={{ color: 'var(--editor-text-primary)' }}>Export Image</DialogTitle>
           <DialogDescription style={{ color: 'var(--editor-text-muted)' }}>
-            Configure export settings for your edited image.
+            Choose export quality and format.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6 py-4">
+          {/* Export Tier Selection */}
+          <div className="space-y-2">
+            <Label style={{ color: 'var(--editor-text-primary)' }}>Quality Tier</Label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => handleTierChange('web')}
+                className="p-3 rounded-lg text-left transition-colors"
+                style={{
+                  backgroundColor: tier === 'web' ? 'var(--editor-accent)' : 'var(--editor-bg-tertiary)',
+                  color: tier === 'web' ? 'var(--editor-accent-foreground)' : 'var(--editor-text-primary)',
+                  border: `1px solid ${tier === 'web' ? 'var(--editor-accent)' : 'var(--editor-border)'}`,
+                }}
+              >
+                <div className="font-medium text-sm">Web / Social</div>
+                <div className="text-xs mt-1 opacity-70">Fast, smaller files</div>
+              </button>
+              <button
+                onClick={() => handleTierChange('print')}
+                className="p-3 rounded-lg text-left transition-colors"
+                style={{
+                  backgroundColor: tier === 'print' ? 'var(--editor-accent)' : 'var(--editor-bg-tertiary)',
+                  color: tier === 'print' ? 'var(--editor-accent-foreground)' : 'var(--editor-text-primary)',
+                  border: `1px solid ${tier === 'print' ? 'var(--editor-accent)' : 'var(--editor-border)'}`,
+                }}
+              >
+                <div className="font-medium text-sm">Print</div>
+                <div className="text-xs mt-1 opacity-70">ICC profile, 300 DPI</div>
+              </button>
+            </div>
+          </div>
+
           {/* Output dimensions */}
           <div className="p-3 rounded-lg" style={{ backgroundColor: 'var(--editor-bg-tertiary)' }}>
             <div className="text-sm" style={{ color: 'var(--editor-text-muted)' }}>Output size</div>
             <div className="text-lg font-medium" style={{ color: 'var(--editor-text-primary)' }}>
               {outputDimensions.width} x {outputDimensions.height} px
             </div>
+            {tier === 'print' && (
+              <div className="text-xs mt-1" style={{ color: 'var(--editor-text-muted)' }}>
+                Print size at 300 DPI: {printSize.width}" x {printSize.height}"
+              </div>
+            )}
             {image && (outputDimensions.width !== image.width || outputDimensions.height !== image.height) && (
               <div className="text-xs mt-1" style={{ color: 'var(--editor-text-muted)' }}>
                 Original: {image.width} x {image.height} px
@@ -232,8 +347,8 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
           {/* Format selection */}
           <div className="space-y-2">
             <Label style={{ color: 'var(--editor-text-primary)' }}>Format</Label>
-            <div className="grid grid-cols-3 gap-2">
-              {(['jpeg', 'png', 'webp'] as ExportFormat[]).map((f) => (
+            <div className={`grid gap-2 ${availableFormats.length === 3 ? 'grid-cols-3' : 'grid-cols-4'}`}>
+              {availableFormats.map((f) => (
                 <Button
                   key={f}
                   variant={format === f ? 'default' : 'outline'}
@@ -251,13 +366,16 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
             </div>
             <p className="text-xs" style={{ color: 'var(--editor-text-muted)' }}>
               {format === 'png' && 'Lossless, larger files, supports transparency'}
-              {format === 'jpeg' && 'Best for photos, smaller files, no transparency'}
+              {format === 'jpeg' && (tier === 'print'
+                ? 'High-quality JPEG with ICC profile, no chroma subsampling'
+                : 'Best for photos, smaller files, no transparency')}
               {format === 'webp' && 'Modern format, great compression, wide support'}
+              {format === 'tiff' && 'Archival format, maximum quality, very large files'}
             </p>
           </div>
 
-          {/* Quality slider (not for PNG) */}
-          {format !== 'png' && (
+          {/* Quality slider (not for PNG or TIFF) */}
+          {format !== 'png' && format !== 'tiff' && (
             <div className="space-y-2">
               <div className="flex justify-between">
                 <Label style={{ color: 'var(--editor-text-primary)' }}>Quality</Label>
@@ -282,6 +400,13 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
             <span style={{ color: 'var(--editor-text-muted)' }}>Estimated file size</span>
             <span style={{ color: 'var(--editor-text-primary)' }}>{estimatedSize}</span>
           </div>
+
+          {/* Print tier info */}
+          {tier === 'print' && (
+            <div className="p-3 rounded-lg text-xs" style={{ backgroundColor: 'var(--editor-bg-tertiary)', color: 'var(--editor-text-secondary)' }}>
+              Print export includes: sRGB ICC profile, 300 DPI metadata, no chroma subsampling (4:4:4), mozjpeg encoder for optimal quality.
+            </div>
+          )}
 
           {/* Error message */}
           {error && (
@@ -324,7 +449,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
                     d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                   />
                 </svg>
-                Exporting
+                {tier === 'print' ? 'Processing...' : 'Exporting'}
               </span>
             ) : (
               'Export'
