@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useEditorStore } from '@/lib/editor/state';
 import { useGalleryStore } from '@/lib/gallery/store';
+import { ensureCompleteEditState } from '@/types/editor';
 import {
   Tooltip,
   TooltipContent,
@@ -145,12 +146,12 @@ export function ToolSidebar({ mode, onExport, onAddPhotos }: ToolSidebarProps) {
     selectedIds.forEach((id) => {
       const image = getImage(id);
       if (image) {
-        updateImageEditState(id, {
+        updateImageEditState(id, ensureCompleteEditState({
           ...copiedSettings,
           // Preserve image-specific settings
           crop: image.editState.crop,
           masks: image.editState.masks,
-        });
+        }));
       }
     });
     useEditorStore.getState().showToast(`Settings applied to ${selectedIds.length} image${selectedIds.length > 1 ? 's' : ''}`);

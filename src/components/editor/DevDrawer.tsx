@@ -2,7 +2,7 @@
 
 import { useState, useRef } from 'react';
 import { useEditorStore } from '@/lib/editor/state';
-import { EditState } from '@/types/editor';
+import { EditState, ensureCompleteEditState } from '@/types/editor';
 
 interface DevDrawerProps {
   isOpen: boolean;
@@ -42,9 +42,11 @@ export function DevDrawer({ isOpen, onToggle }: DevDrawerProps) {
 
   const handleApply = () => {
     try {
-      const parsed = JSON.parse(jsonValue || formattedJson) as EditState;
+      const parsed = JSON.parse(jsonValue || formattedJson) as Partial<EditState>;
+      // Ensure all properties exist by merging with defaults
+      const complete = ensureCompleteEditState(parsed);
       pushHistory();
-      setEditState(parsed);
+      setEditState(complete);
       setError(null);
       showToast('Edit state applied');
     } catch (e) {

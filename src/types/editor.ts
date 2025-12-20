@@ -392,6 +392,53 @@ export const DEFAULT_LOCAL_ADJUSTMENTS: LocalAdjustments = {
   clarity: 0,
 };
 
+// Deep merge edit state with defaults to ensure all properties exist
+export function ensureCompleteEditState(partial: Partial<EditState>): EditState {
+  const defaults = createDefaultEditState();
+  return {
+    ...defaults,
+    ...partial,
+    // Ensure nested objects are complete
+    curve: {
+      rgb: partial.curve?.rgb ?? defaults.curve.rgb,
+      red: partial.curve?.red ?? defaults.curve.red,
+      green: partial.curve?.green ?? defaults.curve.green,
+      blue: partial.curve?.blue ?? defaults.curve.blue,
+    },
+    hsl: {
+      red: { ...defaults.hsl.red, ...partial.hsl?.red },
+      orange: { ...defaults.hsl.orange, ...partial.hsl?.orange },
+      yellow: { ...defaults.hsl.yellow, ...partial.hsl?.yellow },
+      green: { ...defaults.hsl.green, ...partial.hsl?.green },
+      aqua: { ...defaults.hsl.aqua, ...partial.hsl?.aqua },
+      blue: { ...defaults.hsl.blue, ...partial.hsl?.blue },
+      purple: { ...defaults.hsl.purple, ...partial.hsl?.purple },
+      magenta: { ...defaults.hsl.magenta, ...partial.hsl?.magenta },
+    },
+    grain: { ...defaults.grain, ...partial.grain },
+    vignette: { ...defaults.vignette, ...partial.vignette },
+    splitTone: { ...defaults.splitTone, ...partial.splitTone },
+    colorGrading: {
+      shadows: { ...defaults.colorGrading.shadows, ...partial.colorGrading?.shadows },
+      midtones: { ...defaults.colorGrading.midtones, ...partial.colorGrading?.midtones },
+      highlights: { ...defaults.colorGrading.highlights, ...partial.colorGrading?.highlights },
+      global: { ...defaults.colorGrading.global, ...partial.colorGrading?.global },
+      blending: partial.colorGrading?.blending ?? defaults.colorGrading.blending,
+    },
+    blur: { ...defaults.blur, ...partial.blur },
+    border: { ...defaults.border, ...partial.border },
+    bloom: { ...defaults.bloom, ...partial.bloom },
+    halation: { ...defaults.halation, ...partial.halation },
+    skinTone: { ...defaults.skinTone, ...partial.skinTone },
+    calibration: { ...defaults.calibration, ...partial.calibration },
+    grayMixer: { ...defaults.grayMixer, ...partial.grayMixer },
+    sharpening: { ...defaults.sharpening, ...partial.sharpening },
+    noiseReduction: { ...defaults.noiseReduction, ...partial.noiseReduction },
+    chromaticAberration: { ...defaults.chromaticAberration, ...partial.chromaticAberration },
+    masks: partial.masks ?? defaults.masks,
+  };
+}
+
 export function createDefaultEditState(): EditState {
   return {
     exposure: 0,

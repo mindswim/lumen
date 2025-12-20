@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { EditState, createDefaultEditState } from '@/types/editor';
+import { EditState, createDefaultEditState, ensureCompleteEditState } from '@/types/editor';
 import {
   saveImage,
   saveImages,
@@ -114,7 +114,8 @@ export const useGalleryStore = create<GalleryStore>()(
           const storedImages = await getAllImages();
           const images: GalleryImage[] = storedImages.map((img: StoredImage) => ({
             ...img,
-            editState: img.editState as EditState,
+            // Ensure edit state has all required properties (for older stored images)
+            editState: ensureCompleteEditState(img.editState as Partial<EditState>),
           }));
           // Sort by createdAt descending (newest first)
           images.sort((a, b) => b.createdAt - a.createdAt);

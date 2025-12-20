@@ -7,6 +7,7 @@ import {
   HSLAdjustment,
   ColorRange,
   createDefaultEditState,
+  ensureCompleteEditState,
 } from '@/types/editor';
 import { HistogramData, createEmptyHistogram } from '@/lib/histogram';
 
@@ -424,12 +425,12 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     if (copiedSettings) {
       pushHistory();
       set((state) => ({
-        editState: {
+        editState: ensureCompleteEditState({
           ...copiedSettings,
           // Preserve image-specific settings
           crop: state.editState.crop,
           masks: state.editState.masks,
-        },
+        }),
       }));
       showToast('Settings applied');
     }
