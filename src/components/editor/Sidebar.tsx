@@ -9,10 +9,11 @@ import { DetailPanel } from './DetailPanel';
 import { PresetPanel } from './PresetPanel';
 import { MaskPanel } from './MaskPanel';
 import { TransformPanel } from './TransformPanel';
+import { AIPanel } from './AIPanel';
 import { DevDrawer, DevDrawerIcon } from './DevDrawer';
 import { useEditorStore } from '@/lib/editor/state';
 
-type PanelType = 'presets' | 'tools' | 'hsl' | 'effects' | 'transform';
+type PanelType = 'presets' | 'tools' | 'hsl' | 'effects' | 'transform' | 'ai';
 
 // Tab icons
 const PresetsIcon = () => (
@@ -53,6 +54,14 @@ const TransformIcon = () => (
   </svg>
 );
 
+const AIIcon = () => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+    <path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3z" />
+    <path d="M5 19l1 3 1-3 3-1-3-1-1-3-1 3-3 1 3 1z" />
+    <path d="M19 11l1 2 1-2 2-1-2-1-1-2-1 2-2 1 2 1z" />
+  </svg>
+);
+
 interface TabButtonProps {
   icon: React.ReactNode;
   label: string;
@@ -87,6 +96,7 @@ const PANEL_TITLES: Record<PanelType, string> = {
   hsl: 'HSL',
   effects: 'Effects',
   transform: 'Transform',
+  ai: 'AI Assistant',
 };
 
 export function Sidebar() {
@@ -146,6 +156,7 @@ export function Sidebar() {
             </div>
           )}
           {activePanel === 'transform' && <TransformPanel />}
+          {activePanel === 'ai' && <AIPanel />}
         </div>
 
         {/* Dev drawer at bottom */}
@@ -189,6 +200,12 @@ export function Sidebar() {
           label="Transform"
           active={activePanel === 'transform'}
           onClick={() => setActivePanel('transform')}
+        />
+        <TabButton
+          icon={<AIIcon />}
+          label="AI"
+          active={activePanel === 'ai'}
+          onClick={() => setActivePanel('ai')}
         />
 
         {/* Spacer */}
