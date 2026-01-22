@@ -1,7 +1,9 @@
 {
   "name": "lumen",
   "version": "0.1.0",
-  "private": true,
+  "description": "Professional photo editor with AI-powered editing and image generation",
+  "author": "Juan",
+  "license": "MIT",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

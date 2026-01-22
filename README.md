@@ -1,36 +1,151 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Lumen
+
+A professional-grade photo editor with AI-powered editing and image generation, built entirely in the browser.
+
+![Lumen Screenshot](docs/screenshot.png)
+
+## Features
+
+### Photo Editing
+- **Basic Adjustments** - Exposure, contrast, highlights, shadows, whites, blacks
+- **White Balance** - Temperature and tint controls
+- **Presence** - Clarity, texture, dehaze, vibrance, saturation
+- **Tone Curves** - RGB + individual channel curves with point-based editor
+- **HSL** - Per-color hue, saturation, and luminance (8 color ranges)
+- **Effects** - Grain, vignette, bloom, halation, fade, blur, borders
+- **Color Grading** - Split toning, 3-way color wheels, camera calibration
+- **Detail** - Sharpening, noise reduction, chromatic aberration removal
+- **Transform** - Crop, rotate, straighten, perspective correction, flip
+- **Local Adjustments** - Brush, radial, and linear gradient masks
+
+### AI-Powered
+- **Natural Language Editing** - Describe edits like "make it warmer" or "film look"
+- **Auto-Enhance** - One-click intelligent optimization
+- **Image Generation** - Create images from text prompts using Flux models
+- **Contextual Chat** - Multi-turn conversations with edit history
+
+### Workflow
+- **Gallery** - Masonry grid with real-time edit previews
+- **Presets** - Built-in film looks (Portra, Kodak Gold, Fuji) + custom presets
+- **History** - 50-level undo/redo
+- **Export** - Print-quality output with sRGB ICC profiles (JPEG, PNG, TIFF)
+- **Offline-First** - All data stored locally in IndexedDB
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|------------|
+| Framework | Next.js 16 |
+| UI | React 19, Radix UI, Tailwind CSS v4 |
+| Rendering | WebGL2 (custom GLSL shaders) |
+| State | Zustand |
+| AI | Anthropic Claude, Fal.ai Flux |
+| Image Processing | Sharp (server-side export) |
+| Storage | IndexedDB |
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- Node.js 18+
+- npm or pnpm
+
+### Installation
+
+```bash
+git clone https://github.com/yourusername/lumen.git
+cd lumen
+npm install
+```
+
+### Environment Variables
+
+Create a `.env.local` file (or export in your shell):
+
+```bash
+ANTHROPIC_API_KEY=your_anthropic_key
+FAL_KEY=your_fal_key
+```
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `ANTHROPIC_API_KEY` | Yes (for AI features) | Get from [console.anthropic.com](https://console.anthropic.com) |
+| `FAL_KEY` | Yes (for image generation) | Get from [fal.ai](https://fal.ai) |
+
+> Note: The app works without API keys, but AI editing and image generation will be unavailable.
+
+### Run Development Server
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000)
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Build for Production
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build
+npm start
+```
 
-## Learn More
+## Project Structure
 
-To learn more about Next.js, take a look at the following resources:
+```
+src/
+├── app/                    # Next.js app router
+│   ├── api/               # API routes (AI, export)
+│   ├── editor/            # Editor page
+│   └── page.tsx           # Gallery home
+├── components/
+│   ├── editor/            # Editor UI panels
+│   ├── gallery/           # Gallery components
+│   └── ui/                # Shared UI components
+├── lib/
+│   ├── ai/                # Claude + Fal integrations
+│   ├── editor/            # State, presets
+│   ├── gallery/           # Gallery store
+│   ├── webgl/             # Rendering engine
+│   └── storage/           # IndexedDB persistence
+└── types/                 # TypeScript definitions
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Roadmap
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### Working Now
+- [x] Full parametric editing (40+ adjustments)
+- [x] Real-time WebGL rendering
+- [x] AI natural language editing
+- [x] AI image generation (Flux)
+- [x] Gallery with persistence
+- [x] Print-quality export
+- [x] Presets system
+- [x] Undo/redo history
+- [x] Dark/light mode
 
-## Deploy on Vercel
+### Planned
+- [ ] Cloud sync (Supabase integration)
+- [ ] RAW file support
+- [ ] Batch editing
+- [ ] More AI models (DALL-E, Stable Diffusion)
+- [ ] Preset marketplace
+- [ ] Collaborative editing
+- [ ] Mobile app (React Native)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Browser Support
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Requires WebGL2. Works on:
+- Chrome 56+
+- Firefox 51+
+- Safari 15+
+- Edge 79+
+
+## License
+
+MIT License - see [LICENSE](LICENSE)
+
+## Acknowledgments
+
+- Inspired by Lightroom, VSCO, and Darkroom
+- AI editing powered by [Anthropic Claude](https://anthropic.com)
+- Image generation by [Fal.ai](https://fal.ai) Flux models
