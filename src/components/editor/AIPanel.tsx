@@ -453,40 +453,42 @@ export function AIPanel() {
             '--tw-ring-offset-color': 'var(--editor-bg-primary)',
           } as React.CSSProperties}
         >
-          <textarea
-            ref={textareaRef}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={hasImage ? 'Describe your edit...' : 'Load an image first'}
-            disabled={!hasImage || isLoading}
-            rows={1}
-            className="w-full px-3 py-3 text-sm resize-none bg-transparent outline-none disabled:opacity-50"
-            style={{ color: 'var(--editor-text-primary)', minHeight: '44px', maxHeight: '120px' }}
-          />
-          <div className="px-3 pb-2 flex items-center justify-between">
-            <div className="flex gap-1.5 flex-wrap">
-              {suggestions.slice(0, 4).map((s) => (
-                <button
-                  key={s}
-                  onClick={() => setPrompt(s)}
-                  disabled={!hasImage}
-                  className="px-2 py-0.5 rounded-md text-xs transition-colors disabled:opacity-50"
-                  style={{ backgroundColor: 'var(--editor-bg-tertiary)', color: 'var(--editor-text-muted)' }}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
+          <div className="flex items-end gap-2 p-2">
+            <textarea
+              ref={textareaRef}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={hasImage ? 'Describe your edit...' : 'Load an image first'}
+              disabled={!hasImage || isLoading}
+              rows={1}
+              className="flex-1 px-2 py-1.5 text-sm resize-none bg-transparent outline-none disabled:opacity-50"
+              style={{ color: 'var(--editor-text-primary)', minHeight: '36px', maxHeight: '120px' }}
+            />
             <button
               onClick={() => handleSubmit()}
               disabled={!prompt.trim() || !hasImage || isLoading}
-              className="p-1.5 rounded-lg transition-all disabled:opacity-30"
+              className="p-2 rounded-lg transition-all disabled:opacity-30 flex-shrink-0"
               style={{ backgroundColor: prompt.trim() ? 'var(--editor-accent)' : 'transparent', color: prompt.trim() ? 'white' : 'var(--editor-text-muted)' }}
             >
               <ArrowUpIcon />
             </button>
           </div>
+        </div>
+
+        {/* Suggestions */}
+        <div className="flex gap-1.5 flex-wrap mt-2">
+          {suggestions.map((s) => (
+            <button
+              key={s}
+              onClick={() => setPrompt(s)}
+              disabled={!hasImage}
+              className="px-2.5 py-1 rounded-full text-xs transition-colors disabled:opacity-50"
+              style={{ backgroundColor: 'var(--editor-bg-secondary)', color: 'var(--editor-text-muted)', border: '1px solid var(--editor-border)' }}
+            >
+              {s}
+            </button>
+          ))}
         </div>
 
         {messages.length > 0 && (
