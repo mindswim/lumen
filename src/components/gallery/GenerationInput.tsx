@@ -4,41 +4,29 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { useGalleryStore } from '@/lib/gallery/store';
 
 type ImageSize = 'square' | 'landscape_4_3' | 'landscape_16_9' | 'portrait_4_3' | 'portrait_16_9';
+type FluxModel = 'schnell' | 'dev' | 'pro';
 
-const SIZE_OPTIONS: { value: ImageSize; label: string; icon: React.ReactNode }[] = [
-  { value: 'landscape_4_3', label: '4:3', icon: <RatioIcon w={16} h={12} /> },
-  { value: 'landscape_16_9', label: '16:9', icon: <RatioIcon w={16} h={9} /> },
-  { value: 'square', label: '1:1', icon: <RatioIcon w={12} h={12} /> },
-  { value: 'portrait_4_3', label: '3:4', icon: <RatioIcon w={12} h={16} /> },
-  { value: 'portrait_16_9', label: '9:16', icon: <RatioIcon w={9} h={16} /> },
+const SIZE_OPTIONS: { value: ImageSize; label: string }[] = [
+  { value: 'landscape_4_3', label: '4:3' },
+  { value: 'landscape_16_9', label: '16:9' },
+  { value: 'square', label: '1:1' },
+  { value: 'portrait_4_3', label: '3:4' },
+  { value: 'portrait_16_9', label: '9:16' },
 ];
 
-function RatioIcon({ w, h }: { w: number; h: number }) {
-  const scale = 14 / Math.max(w, h);
-  return (
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-      <rect
-        x={(20 - w * scale) / 2}
-        y={(20 - h * scale) / 2}
-        width={w * scale}
-        height={h * scale}
-        rx="1"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        fill="none"
-      />
-    </svg>
-  );
-}
+const MODEL_OPTIONS: { value: FluxModel; label: string; description: string }[] = [
+  { value: 'schnell', label: 'Fast', description: 'Quick generation' },
+  { value: 'dev', label: 'Quality', description: 'Better details' },
+  { value: 'pro', label: 'Pro', description: 'Best quality' },
+];
 
 export function GenerationInput() {
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [imageSize, setImageSize] = useState<ImageSize>('landscape_4_3');
-  const [showSizeMenu, setShowSizeMenu] = useState(false);
+  const [model, setModel] = useState<FluxModel>('schnell');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const sizeMenuRef = useRef<HTMLDivElement>(null);
 
   const addImageFromUrl = useGalleryStore((state) => state.addImageFromUrl);
 
@@ -47,24 +35,13 @@ export function GenerationInput() {
     const textarea = textareaRef.current;
     if (textarea) {
       textarea.style.height = 'auto';
-      textarea.style.height = `${Math.min(textarea.scrollHeight, 120)}px`;
+      textarea.style.height = `${Math.min(textarea.scrollHeight, 100)}px`;
     }
   }, []);
 
   useEffect(() => {
     adjustTextareaHeight();
   }, [prompt, adjustTextareaHeight]);
-
-  // Close size menu when clicking outside
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (sizeMenuRef.current && !sizeMenuRef.current.contains(e.target as Node)) {
-        setShowSizeMenu(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   const handleGenerate = async () => {
     if (!prompt.trim() || isGenerating) return;
@@ -78,7 +55,7 @@ export function GenerationInput() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: prompt.trim(),
-          model: 'schnell',
+          model,
           imageSize,
           numImages: 1,
         }),
@@ -91,14 +68,12 @@ export function GenerationInput() {
 
       const result = await response.json();
 
-      // Add each generated image to the gallery
       for (const image of result.images) {
         const timestamp = Date.now();
         const fileName = `generated-${timestamp}.png`;
         await addImageFromUrl(image.url, fileName);
       }
 
-      // Clear prompt on success
       setPrompt('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Generation failed');
@@ -114,108 +89,116 @@ export function GenerationInput() {
     }
   };
 
-  const currentSize = SIZE_OPTIONS.find((s) => s.value === imageSize);
-
   return (
-    <div className="px-4 md:px-6 py-4">
-      <div
-        className="max-w-2xl mx-auto rounded-xl overflow-hidden transition-shadow focus-within:ring-2 focus-within:ring-offset-1"
-        style={{
-          backgroundColor: 'var(--editor-bg-secondary)',
-          border: '1px solid var(--editor-border)',
-          '--tw-ring-color': 'var(--editor-accent)',
-          '--tw-ring-offset-color': 'var(--editor-canvas-bg)',
-        } as React.CSSProperties}
-      >
-        <div className="flex items-end gap-2 p-3">
-          {/* Size selector */}
-          <div className="relative" ref={sizeMenuRef}>
-            <button
-              onClick={() => setShowSizeMenu(!showSizeMenu)}
-              className="p-2 rounded-lg transition-colors flex-shrink-0"
+    <div className="px-4 md:px-6 pt-4 pb-2">
+      <div className="max-w-2xl mx-auto space-y-3">
+        {/* Main input */}
+        <div
+          className="rounded-xl overflow-hidden transition-all focus-within:ring-2 focus-within:ring-offset-2"
+          style={{
+            backgroundColor: 'var(--editor-bg-secondary)',
+            border: '1px solid var(--editor-border)',
+            '--tw-ring-color': 'var(--editor-accent)',
+            '--tw-ring-offset-color': 'var(--editor-canvas-bg)',
+          } as React.CSSProperties}
+        >
+          <div className="flex items-end">
+            <textarea
+              ref={textareaRef}
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Describe the image you want to create..."
+              disabled={isGenerating}
+              rows={1}
+              className="flex-1 px-4 py-3 text-sm resize-none bg-transparent outline-none disabled:opacity-50"
               style={{
-                backgroundColor: showSizeMenu ? 'var(--editor-bg-tertiary)' : 'transparent',
-                color: 'var(--editor-text-muted)',
+                color: 'var(--editor-text-primary)',
+                minHeight: '48px',
+                maxHeight: '100px',
               }}
-              title={`Aspect ratio: ${currentSize?.label}`}
+            />
+            <button
+              onClick={handleGenerate}
+              disabled={!prompt.trim() || isGenerating}
+              className="m-2 px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-2 flex-shrink-0"
+              style={{
+                backgroundColor: 'var(--editor-accent)',
+                color: 'white',
+              }}
             >
-              {currentSize?.icon}
+              {isGenerating ? (
+                <>
+                  <LoadingSpinner />
+                  <span>Creating</span>
+                </>
+              ) : (
+                <>
+                  <SparklesIcon />
+                  <span>Create</span>
+                </>
+              )}
             </button>
+          </div>
+        </div>
 
-            {showSizeMenu && (
-              <div
-                className="absolute bottom-full left-0 mb-2 rounded-lg shadow-xl overflow-hidden z-10"
-                style={{
-                  backgroundColor: 'var(--editor-bg-primary)',
-                  border: '1px solid var(--editor-border)',
-                }}
-              >
-                {SIZE_OPTIONS.map((size) => (
-                  <button
-                    key={size.value}
-                    onClick={() => {
-                      setImageSize(size.value);
-                      setShowSizeMenu(false);
-                    }}
-                    className="flex items-center gap-2 px-3 py-2 w-full transition-colors"
-                    style={{
-                      backgroundColor: imageSize === size.value ? 'var(--editor-bg-secondary)' : 'transparent',
-                      color: imageSize === size.value ? 'var(--editor-text-primary)' : 'var(--editor-text-muted)',
-                    }}
-                  >
-                    {size.icon}
-                    <span className="text-sm">{size.label}</span>
-                  </button>
-                ))}
-              </div>
-            )}
+        {/* Settings row */}
+        <div className="flex items-center justify-center gap-6">
+          {/* Model selector */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs" style={{ color: 'var(--editor-text-muted)' }}>Model</span>
+            <div
+              className="flex rounded-lg overflow-hidden"
+              style={{ border: '1px solid var(--editor-border)' }}
+            >
+              {MODEL_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => setModel(option.value)}
+                  className="px-3 py-1.5 text-xs font-medium transition-colors"
+                  style={{
+                    backgroundColor: model === option.value ? 'var(--editor-accent)' : 'var(--editor-bg-secondary)',
+                    color: model === option.value ? 'white' : 'var(--editor-text-muted)',
+                  }}
+                  title={option.description}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          {/* Prompt input */}
-          <textarea
-            ref={textareaRef}
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Describe the image you want to create..."
-            disabled={isGenerating}
-            rows={1}
-            className="flex-1 px-2 py-2 text-sm resize-none bg-transparent outline-none disabled:opacity-50"
-            style={{
-              color: 'var(--editor-text-primary)',
-              minHeight: '40px',
-              maxHeight: '120px',
-            }}
-          />
+          {/* Divider */}
+          <div className="w-px h-4" style={{ backgroundColor: 'var(--editor-border)' }} />
 
-          {/* Generate button */}
-          <button
-            onClick={handleGenerate}
-            disabled={!prompt.trim() || isGenerating}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 flex-shrink-0"
-            style={{
-              backgroundColor: prompt.trim() ? 'var(--editor-accent)' : 'var(--editor-bg-tertiary)',
-              color: prompt.trim() ? 'white' : 'var(--editor-text-muted)',
-            }}
-          >
-            {isGenerating ? (
-              <>
-                <LoadingSpinner />
-                <span>Creating...</span>
-              </>
-            ) : (
-              <>
-                <SparklesIcon />
-                <span>Create</span>
-              </>
-            )}
-          </button>
+          {/* Size selector */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs" style={{ color: 'var(--editor-text-muted)' }}>Size</span>
+            <div
+              className="flex rounded-lg overflow-hidden"
+              style={{ border: '1px solid var(--editor-border)' }}
+            >
+              {SIZE_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  onClick={() => setImageSize(option.value)}
+                  className="px-2.5 py-1.5 text-xs font-medium transition-colors"
+                  style={{
+                    backgroundColor: imageSize === option.value ? 'var(--editor-accent)' : 'var(--editor-bg-secondary)',
+                    color: imageSize === option.value ? 'white' : 'var(--editor-text-muted)',
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* Error message */}
         {error && (
           <div
-            className="px-4 py-2 text-sm"
+            className="text-center text-sm py-2 rounded-lg"
             style={{ backgroundColor: 'rgba(239,68,68,0.1)', color: '#ef4444' }}
           >
             {error}
