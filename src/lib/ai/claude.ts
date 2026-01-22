@@ -90,10 +90,14 @@ Format: hsl.red.saturation, hsl.blue.hue, etc.
 
 ## Response Format
 
-Always respond with ONLY a valid JSON object containing the adjustments. No explanation, no markdown, just the JSON.
+Always respond with a valid JSON object containing two fields:
+1. "adjustments" - the parameter changes to apply
+2. "reasoning" - a brief (1-2 sentence) explanation of what you changed and why, written conversationally
 
 Example response:
-{"temperature": 15, "contrast": 8, "fade": 10, "hsl": {"orange": {"saturation": 10}}}
+{"adjustments": {"temperature": 15, "contrast": 8, "fade": 10}, "reasoning": "Added warmth and a subtle fade to create that classic film look. Bumped contrast slightly to maintain punch."}
+
+No markdown, no extra text outside the JSON.
 
 ## Guidelines
 
@@ -105,26 +109,42 @@ Example response:
 6. If the request is vague, make tasteful professional choices`;
 
 /**
- * Calls Claude API to get photo editing adjustments
+ * Response from the AI with adjustments and reasoning
+ */
+export interface AIResponse {
+  adjustments: Partial<EditState>;
+  reasoning: string;
+}
+
+/**
+ * Calls Claude API to get photo editing adjustments with reasoning
  */
 export async function getAIAdjustments(
   prompt: string,
-  currentState?: Partial<EditState>
-): Promise<Partial<EditState>> {
+  currentState?: Partial<EditState>,
+  conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>
+): Promise<AIResponse> {
   const userMessage = currentState
     ? `Current edit state context (non-default values): ${JSON.stringify(currentState, null, 2)}\n\nUser request: ${prompt}`
     : prompt;
+
+  // Build messages array with conversation history for context
+  const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+
+  if (conversationHistory && conversationHistory.length > 0) {
+    messages.push(...conversationHistory);
+  }
+
+  messages.push({
+    role: 'user',
+    content: userMessage,
+  });
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 1024,
     system: PHOTO_EDITOR_SYSTEM_PROMPT,
-    messages: [
-      {
-        role: 'user',
-        content: userMessage,
-      },
-    ],
+    messages,
   });
 
   // Extract text content
@@ -135,13 +155,34 @@ export async function getAIAdjustments(
 
   // Parse JSON response
   try {
-    const adjustments = JSON.parse(textContent.text);
-    return adjustments;
+    const parsed = JSON.parse(textContent.text);
+    // Handle both new format (with reasoning) and old format (just adjustments)
+    if (parsed.adjustments) {
+      return {
+        adjustments: parsed.adjustments,
+        reasoning: parsed.reasoning || 'Adjustments applied.',
+      };
+    }
+    // Fallback for old format
+    return {
+      adjustments: parsed,
+      reasoning: 'Adjustments applied.',
+    };
   } catch {
     // Try to extract JSON from the response if it has extra text
     const jsonMatch = textContent.text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed.adjustments) {
+        return {
+          adjustments: parsed.adjustments,
+          reasoning: parsed.reasoning || 'Adjustments applied.',
+        };
+      }
+      return {
+        adjustments: parsed,
+        reasoning: 'Adjustments applied.',
+      };
     }
     throw new Error('Invalid JSON response from AI');
   }
@@ -163,4 +204,6 @@ Return subtle, professional adjustments. This is a one-click "auto" enhance, so:
 - Keep changes moderate (exposure within -0.5 to +0.5)
 - Don't add stylistic effects (no grain, vignette, etc.)
 - Focus on technical correction, not creative style
-- Make the image look its best while staying natural`;
+- Make the image look its best while staying natural
+
+In your reasoning, briefly explain what you corrected (e.g., "Brightened the exposure and recovered shadow detail for better balance.").`;

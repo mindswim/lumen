@@ -7,11 +7,11 @@ export async function POST(request: NextRequest) {
     const { currentState } = body;
 
     // Get AI-generated adjustments for auto-enhance
-    const adjustments = await getAIAdjustments(AUTO_ENHANCE_PROMPT, currentState);
+    const response = await getAIAdjustments(AUTO_ENHANCE_PROMPT, currentState);
 
     return NextResponse.json({
-      adjustments,
-      reasoning: 'Auto-enhancement applied based on image analysis',
+      adjustments: response.adjustments,
+      reasoning: response.reasoning,
     });
   } catch (error) {
     console.error('AI enhance error:', error);

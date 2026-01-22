@@ -3,13 +3,78 @@
 import { useState, useRef, useEffect } from 'react';
 import { useEditorStore } from '@/lib/editor/state';
 import { useGalleryStore } from '@/lib/gallery/store';
-import { PanelSection, PanelContainer, PanelDivider, PanelHint } from '@/components/ui/panel-section';
+import { PanelContainer, PanelHint } from '@/components/ui/panel-section';
+import { Slider } from '@/components/ui/slider';
+import { sliderPresets } from '@/components/ui/adjustment-slider';
 import { EditState, ensureCompleteEditState } from '@/types/editor';
 
-interface AIEdit {
+// Parameter metadata for display
+const PARAM_LABELS: Record<string, string> = {
+  exposure: 'Exposure',
+  contrast: 'Contrast',
+  highlights: 'Highlights',
+  shadows: 'Shadows',
+  whites: 'Whites',
+  blacks: 'Blacks',
+  temperature: 'Temperature',
+  tint: 'Tint',
+  clarity: 'Clarity',
+  texture: 'Texture',
+  dehaze: 'Dehaze',
+  vibrance: 'Vibrance',
+  saturation: 'Saturation',
+  fade: 'Fade',
+  sharpening: 'Sharpening',
+  noiseReduction: 'Noise Reduction',
+};
+
+// Get slider config for a parameter
+function getSliderConfig(key: string): { min: number; max: number; step: number } {
+  const preset = sliderPresets[key as keyof typeof sliderPresets];
+  if (preset) {
+    return { min: preset.min, max: preset.max, step: preset.step };
+  }
+  // Default for nested/unknown params
+  if (key === 'exposure') return { min: -5, max: 5, step: 0.1 };
+  return { min: -100, max: 100, step: 1 };
+}
+
+// Flatten nested adjustments for display
+function flattenAdjustments(
+  adjustments: Partial<EditState>
+): Array<{ key: string; path: string[]; value: number; label: string }> {
+  const result: Array<{ key: string; path: string[]; value: number; label: string }> = [];
+
+  function recurse(obj: Record<string, unknown>, path: string[] = []) {
+    for (const [key, value] of Object.entries(obj)) {
+      const currentPath = [...path, key];
+
+      if (typeof value === 'number') {
+        const label =
+          path.length > 0
+            ? `${path[path.length - 1]} ${key}`.replace(/([A-Z])/g, ' $1').trim()
+            : PARAM_LABELS[key] || key.replace(/([A-Z])/g, ' $1').trim();
+        result.push({
+          key,
+          path: currentPath,
+          value,
+          label: label.charAt(0).toUpperCase() + label.slice(1),
+        });
+      } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+        recurse(value as Record<string, unknown>, currentPath);
+      }
+    }
+  }
+
+  recurse(adjustments as Record<string, unknown>);
+  return result;
+}
+
+interface ChatMessage {
   id: string;
-  prompt: string;
-  adjustments: Partial<EditState>;
+  role: 'user' | 'assistant';
+  content: string;
+  adjustments?: Partial<EditState>;
   timestamp: number;
 }
 
@@ -25,16 +90,46 @@ export function AIPanel() {
   // Local state
   const [prompt, setPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isEnhancing, setIsEnhancing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [recentEdits, setRecentEdits] = useState<AIEdit[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Determine mode
   const isGalleryMode = !image && selectedIds.length > 0;
   const hasImage = !!image || selectedIds.length > 0;
 
-  // Apply adjustments to current image(s)
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  // Update a single parameter value (for inline slider editing)
+  const updateParameter = (path: string[], value: number) => {
+    // Build the nested update object
+    let update: Record<string, unknown> = {};
+    let current = update;
+
+    for (let i = 0; i < path.length - 1; i++) {
+      current[path[i]] = {};
+      current = current[path[i]] as Record<string, unknown>;
+    }
+    current[path[path.length - 1]] = value;
+
+    // Apply to edit state
+    if (isGalleryMode) {
+      const selectedImages = galleryImages.filter((img) => selectedIds.includes(img.id));
+      selectedImages.forEach((img) => {
+        const newState = deepMerge(img.editState, update);
+        updateImageEditState(img.id, ensureCompleteEditState(newState));
+      });
+    } else {
+      const newState = deepMerge(editState, update);
+      setEditState(ensureCompleteEditState(newState));
+    }
+  };
+
+  // Apply full adjustments
   const applyAdjustments = (adjustments: Partial<EditState>) => {
     if (isGalleryMode) {
       const selectedImages = galleryImages.filter((img) => selectedIds.includes(img.id));
@@ -53,109 +148,131 @@ export function AIPanel() {
   const handleAutoEnhance = async () => {
     if (!hasImage) return;
 
-    setIsEnhancing(true);
+    setIsLoading(true);
     setError(null);
+
+    // Add user message
+    const userMsg: ChatMessage = {
+      id: `msg-${Date.now()}`,
+      role: 'user',
+      content: 'Auto-enhance this photo',
+      timestamp: Date.now(),
+    };
+    setMessages((prev) => [...prev, userMsg]);
 
     try {
       const response = await fetch('/api/ai/enhance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          // For now, send current state - later we can add histogram
-          currentState: editState,
-        }),
+        body: JSON.stringify({ currentState: editState }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to enhance image');
-      }
+      if (!response.ok) throw new Error('Failed to enhance image');
 
       const data = await response.json();
       applyAdjustments(data.adjustments);
 
-      // Add to recent edits
-      setRecentEdits((prev) => [
-        {
-          id: `edit-${Date.now()}`,
-          prompt: 'Auto-Enhance',
-          adjustments: data.adjustments,
-          timestamp: Date.now(),
-        },
-        ...prev.slice(0, 9), // Keep last 10
-      ]);
+      // Add assistant message
+      const assistantMsg: ChatMessage = {
+        id: `msg-${Date.now() + 1}`,
+        role: 'assistant',
+        content: data.reasoning || 'Applied automatic enhancements.',
+        adjustments: data.adjustments,
+        timestamp: Date.now(),
+      };
+      setMessages((prev) => [...prev, assistantMsg]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Enhancement failed');
     } finally {
-      setIsEnhancing(false);
+      setIsLoading(false);
     }
   };
 
   // Natural language edit handler
   const handlePromptSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!prompt.trim() || !hasImage) return;
+    if (!prompt.trim() || !hasImage || isLoading) return;
 
+    const userPrompt = prompt.trim();
+    setPrompt('');
     setIsLoading(true);
     setError(null);
 
+    // Add user message
+    const userMsg: ChatMessage = {
+      id: `msg-${Date.now()}`,
+      role: 'user',
+      content: userPrompt,
+      timestamp: Date.now(),
+    };
+    setMessages((prev) => [...prev, userMsg]);
+
     try {
+      // Build conversation history for context
+      const conversationHistory = messages.map((m) => ({
+        role: m.role,
+        content:
+          m.role === 'assistant' && m.adjustments
+            ? JSON.stringify({ adjustments: m.adjustments, reasoning: m.content })
+            : m.content,
+      }));
+
       const response = await fetch('/api/ai/edit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prompt: prompt.trim(),
+          prompt: userPrompt,
           currentState: editState,
+          conversationHistory,
         }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to process edit');
-      }
+      if (!response.ok) throw new Error('Failed to process edit');
 
       const data = await response.json();
       applyAdjustments(data.adjustments);
 
-      // Add to recent edits
-      setRecentEdits((prev) => [
-        {
-          id: `edit-${Date.now()}`,
-          prompt: prompt.trim(),
-          adjustments: data.adjustments,
-          timestamp: Date.now(),
-        },
-        ...prev.slice(0, 9),
-      ]);
-
-      setPrompt('');
+      // Add assistant message
+      const assistantMsg: ChatMessage = {
+        id: `msg-${Date.now() + 1}`,
+        role: 'assistant',
+        content: data.reasoning || 'Adjustments applied.',
+        adjustments: data.adjustments,
+        timestamp: Date.now(),
+      };
+      setMessages((prev) => [...prev, assistantMsg]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Edit failed');
+      // Remove the user message if there was an error
+      setMessages((prev) => prev.filter((m) => m.id !== userMsg.id));
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Re-apply a recent edit
-  const handleReapplyEdit = (edit: AIEdit) => {
-    applyAdjustments(edit.adjustments);
+  // Clear chat
+  const handleClearChat = () => {
+    setMessages([]);
+    setError(null);
   };
 
   return (
-    <PanelContainer>
-      {/* Quick Actions */}
-      <PanelSection title="Quick Actions">
+    <PanelContainer className="flex flex-col h-full">
+      {/* Header with Auto-Enhance */}
+      <div className="flex-shrink-0 pb-4">
         <button
           onClick={handleAutoEnhance}
-          disabled={!hasImage || isEnhancing}
-          className="w-full py-3 px-4 rounded-lg text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={!hasImage || isLoading}
+          className="w-full py-2.5 px-4 rounded-lg text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           style={{
             backgroundColor: 'var(--editor-accent)',
             color: 'white',
           }}
         >
-          {isEnhancing ? (
+          {isLoading ? (
             <span className="flex items-center justify-center gap-2">
               <LoadingSpinner />
-              Analyzing...
+              Thinking...
             </span>
           ) : (
             <span className="flex items-center justify-center gap-2">
@@ -164,111 +281,222 @@ export function AIPanel() {
             </span>
           )}
         </button>
-        <PanelHint>
-          Automatically optimize exposure, contrast, and color balance
-        </PanelHint>
-      </PanelSection>
+      </div>
 
-      <PanelDivider />
-
-      {/* Natural Language Input */}
-      <PanelSection title="Describe Your Edit">
-        <form onSubmit={handlePromptSubmit} className="space-y-3">
-          <div className="relative">
-            <input
-              ref={inputRef}
-              type="text"
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="e.g., make it warmer with a film look"
-              disabled={!hasImage || isLoading}
-              className="w-full py-2.5 px-3 pr-10 rounded-lg text-sm transition-colors disabled:opacity-50"
-              style={{
-                backgroundColor: 'var(--editor-bg-secondary)',
-                color: 'var(--editor-text-primary)',
-                border: '1px solid var(--editor-border)',
-              }}
-            />
-            <button
-              type="submit"
-              disabled={!prompt.trim() || !hasImage || isLoading}
-              className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded transition-colors disabled:opacity-30"
-              style={{ color: 'var(--editor-accent)' }}
-            >
-              {isLoading ? <LoadingSpinner /> : <SendIcon />}
-            </button>
-          </div>
-        </form>
-
-        {error && (
-          <p className="text-xs mt-2" style={{ color: 'var(--editor-error, #ef4444)' }}>
-            {error}
-          </p>
-        )}
-
-        <div className="mt-3 flex flex-wrap gap-2">
-          {['warmer', 'cooler', 'more contrast', 'film look', 'cinematic'].map((suggestion) => (
-            <button
-              key={suggestion}
-              onClick={() => setPrompt(suggestion)}
-              disabled={!hasImage}
-              className="px-2.5 py-1 rounded-full text-xs transition-colors disabled:opacity-50"
-              style={{
-                backgroundColor: 'var(--editor-bg-tertiary)',
-                color: 'var(--editor-text-secondary)',
-              }}
-            >
-              {suggestion}
-            </button>
-          ))}
-        </div>
-      </PanelSection>
-
-      {recentEdits.length > 0 && (
-        <>
-          <PanelDivider />
-
-          {/* Recent AI Edits */}
-          <PanelSection title="Recent AI Edits">
-            <div className="space-y-2">
-              {recentEdits.map((edit) => (
-                <div
-                  key={edit.id}
-                  className="flex items-center justify-between py-2 px-3 rounded-lg"
-                  style={{ backgroundColor: 'var(--editor-bg-secondary)' }}
+      {/* Chat Messages */}
+      <div
+        className="flex-1 overflow-y-auto space-y-3 min-h-0"
+        style={{ maxHeight: 'calc(100vh - 320px)' }}
+      >
+        {messages.length === 0 ? (
+          <div className="py-8 text-center">
+            <p className="text-sm mb-2" style={{ color: 'var(--editor-text-muted)' }}>
+              Describe how you want to edit your photo
+            </p>
+            <div className="flex flex-wrap justify-center gap-2 mt-4">
+              {['make it warmer', 'film look', 'more contrast', 'cinematic'].map((suggestion) => (
+                <button
+                  key={suggestion}
+                  onClick={() => setPrompt(suggestion)}
+                  disabled={!hasImage}
+                  className="px-3 py-1.5 rounded-full text-xs transition-colors disabled:opacity-50"
+                  style={{
+                    backgroundColor: 'var(--editor-bg-secondary)',
+                    color: 'var(--editor-text-secondary)',
+                    border: '1px solid var(--editor-border)',
+                  }}
                 >
-                  <span
-                    className="text-sm truncate flex-1"
-                    style={{ color: 'var(--editor-text-primary)' }}
-                  >
-                    {edit.prompt}
-                  </span>
-                  <button
-                    onClick={() => handleReapplyEdit(edit)}
-                    className="ml-2 px-2 py-1 rounded text-xs font-medium transition-colors"
-                    style={{
-                      backgroundColor: 'var(--editor-bg-tertiary)',
-                      color: 'var(--editor-text-secondary)',
-                    }}
-                  >
-                    Apply
-                  </button>
-                </div>
+                  {suggestion}
+                </button>
               ))}
             </div>
-          </PanelSection>
-        </>
+          </div>
+        ) : (
+          messages.map((message) => (
+            <div key={message.id} className="space-y-2">
+              {/* Message bubble */}
+              <div
+                className={`rounded-lg px-3 py-2 ${
+                  message.role === 'user' ? 'ml-4' : 'mr-4'
+                }`}
+                style={{
+                  backgroundColor:
+                    message.role === 'user'
+                      ? 'var(--editor-accent)'
+                      : 'var(--editor-bg-secondary)',
+                  color: message.role === 'user' ? 'white' : 'var(--editor-text-primary)',
+                }}
+              >
+                <p className="text-sm">{message.content}</p>
+              </div>
+
+              {/* Adjustment sliders for assistant messages */}
+              {message.role === 'assistant' && message.adjustments && (
+                <div
+                  className="rounded-lg p-3 mr-4 space-y-3"
+                  style={{
+                    backgroundColor: 'var(--editor-bg-tertiary)',
+                    border: '1px solid var(--editor-border)',
+                  }}
+                >
+                  <div className="flex items-center justify-between">
+                    <span
+                      className="text-xs font-medium uppercase tracking-wide"
+                      style={{ color: 'var(--editor-text-muted)' }}
+                    >
+                      Adjustments
+                    </span>
+                  </div>
+                  {flattenAdjustments(message.adjustments).map((param) => (
+                    <InlineSlider
+                      key={param.path.join('.')}
+                      label={param.label}
+                      value={param.value}
+                      path={param.path}
+                      paramKey={param.key}
+                      onChange={updateParameter}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          ))
+        )}
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Error display */}
+      {error && (
+        <p className="text-xs py-2" style={{ color: 'var(--editor-error, #ef4444)' }}>
+          {error}
+        </p>
       )}
 
-      {!hasImage && (
-        <div className="mt-6 py-8 text-center">
-          <p className="text-sm" style={{ color: 'var(--editor-text-muted)' }}>
-            Load an image to use AI features
-          </p>
-        </div>
-      )}
+      {/* Input area */}
+      <div className="flex-shrink-0 pt-3 space-y-2" style={{ borderTop: '1px solid var(--editor-border)' }}>
+        <form onSubmit={handlePromptSubmit} className="flex gap-2">
+          <input
+            ref={inputRef}
+            type="text"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder={hasImage ? 'Describe your edit...' : 'Load an image first'}
+            disabled={!hasImage || isLoading}
+            className="flex-1 py-2 px-3 rounded-lg text-sm transition-colors disabled:opacity-50"
+            style={{
+              backgroundColor: 'var(--editor-bg-secondary)',
+              color: 'var(--editor-text-primary)',
+              border: '1px solid var(--editor-border)',
+            }}
+          />
+          <button
+            type="submit"
+            disabled={!prompt.trim() || !hasImage || isLoading}
+            className="px-3 py-2 rounded-lg transition-colors disabled:opacity-30"
+            style={{
+              backgroundColor: 'var(--editor-accent)',
+              color: 'white',
+            }}
+          >
+            <SendIcon />
+          </button>
+        </form>
+
+        {messages.length > 0 && (
+          <button
+            onClick={handleClearChat}
+            className="w-full text-xs py-1 transition-colors"
+            style={{ color: 'var(--editor-text-muted)' }}
+          >
+            Clear conversation
+          </button>
+        )}
+      </div>
     </PanelContainer>
   );
+}
+
+// Inline slider component for adjustment cards
+interface InlineSliderProps {
+  label: string;
+  value: number;
+  path: string[];
+  paramKey: string;
+  onChange: (path: string[], value: number) => void;
+}
+
+function InlineSlider({ label, value, path, paramKey, onChange }: InlineSliderProps) {
+  const [localValue, setLocalValue] = useState(value);
+  const config = getSliderConfig(paramKey);
+
+  // Update local value when prop changes
+  useEffect(() => {
+    setLocalValue(value);
+  }, [value]);
+
+  const handleChange = (newValue: number) => {
+    setLocalValue(newValue);
+    onChange(path, newValue);
+  };
+
+  const displayValue =
+    config.step < 1 ? localValue.toFixed(1) : localValue.toFixed(0);
+
+  const isPositive = localValue > 0;
+  const prefix = isPositive ? '+' : '';
+
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between items-center">
+        <span className="text-xs" style={{ color: 'var(--editor-text-secondary)' }}>
+          {label}
+        </span>
+        <span
+          className="text-xs tabular-nums font-medium"
+          style={{ color: 'var(--editor-text-primary)' }}
+        >
+          {prefix}{displayValue}
+        </span>
+      </div>
+      <Slider
+        value={[localValue]}
+        min={config.min}
+        max={config.max}
+        step={config.step}
+        onValueChange={([v]) => handleChange(v)}
+        className="w-full"
+      />
+    </div>
+  );
+}
+
+// Deep merge utility
+function deepMerge<T>(target: T, source: Record<string, unknown>): T {
+  const result = { ...target } as Record<string, unknown>;
+  const targetRecord = target as Record<string, unknown>;
+
+  for (const key of Object.keys(source)) {
+    const sourceVal = source[key];
+    const targetVal = targetRecord[key];
+
+    if (
+      sourceVal !== null &&
+      typeof sourceVal === 'object' &&
+      !Array.isArray(sourceVal) &&
+      targetVal !== null &&
+      typeof targetVal === 'object' &&
+      !Array.isArray(targetVal)
+    ) {
+      result[key] = deepMerge(
+        targetVal as Record<string, unknown>,
+        sourceVal as Record<string, unknown>
+      );
+    } else {
+      result[key] = sourceVal;
+    }
+  }
+
+  return result as T;
 }
 
 // Icons

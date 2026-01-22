@@ -4,7 +4,7 @@ import { getAIAdjustments } from '@/lib/ai/claude';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { prompt, currentState } = body;
+    const { prompt, currentState, conversationHistory } = body;
 
     if (!prompt || typeof prompt !== 'string') {
       return NextResponse.json(
@@ -14,10 +14,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Get AI-generated adjustments based on natural language prompt
-    const adjustments = await getAIAdjustments(prompt, currentState);
+    const response = await getAIAdjustments(prompt, currentState, conversationHistory);
 
     return NextResponse.json({
-      adjustments,
+      adjustments: response.adjustments,
+      reasoning: response.reasoning,
       prompt,
     });
   } catch (error) {
