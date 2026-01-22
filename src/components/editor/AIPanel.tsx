@@ -308,7 +308,6 @@ export function AIPanel() {
     setError(null);
   };
 
-  const suggestions = ['warmer', 'cooler', 'film look', 'cinematic', 'more contrast', 'softer'];
 
   return (
     <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--editor-bg-primary)' }}>
@@ -317,11 +316,10 @@ export function AIPanel() {
         <button
           onClick={handleAutoEnhance}
           disabled={!hasImage || isLoading}
-          className="w-full py-2.5 px-4 rounded-xl text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          className="w-full py-2.5 px-4 rounded-lg text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           style={{
-            background: 'linear-gradient(135deg, var(--editor-accent) 0%, color-mix(in srgb, var(--editor-accent) 80%, purple) 100%)',
+            backgroundColor: 'var(--editor-accent)',
             color: 'white',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
           }}
         >
           <SparklesIcon />
@@ -386,7 +384,7 @@ export function AIPanel() {
           </div>
 
           {isTrayExpanded && (
-            <div className="px-3 pb-3 space-y-2.5 max-h-40 overflow-y-auto">
+            <div className="px-3 pb-3 space-y-3">
               {Array.from(trackedAdjustments.values()).map((adj) => (
                 <DeltaSlider
                   key={adj.path}
@@ -474,21 +472,6 @@ export function AIPanel() {
               <ArrowUpIcon />
             </button>
           </div>
-        </div>
-
-        {/* Suggestions */}
-        <div className="flex gap-1.5 flex-wrap mt-2">
-          {suggestions.map((s) => (
-            <button
-              key={s}
-              onClick={() => setPrompt(s)}
-              disabled={!hasImage}
-              className="px-2.5 py-1 rounded-full text-xs transition-colors disabled:opacity-50"
-              style={{ backgroundColor: 'var(--editor-bg-secondary)', color: 'var(--editor-text-muted)', border: '1px solid var(--editor-border)' }}
-            >
-              {s}
-            </button>
-          ))}
         </div>
 
         {messages.length > 0 && (

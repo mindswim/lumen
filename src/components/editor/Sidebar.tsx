@@ -115,7 +115,7 @@ export function Sidebar() {
 
   return (
     <aside
-      className="w-80 flex h-full overflow-hidden"
+      className="w-96 flex h-full overflow-hidden"
       style={{
         backgroundColor: 'var(--editor-bg-primary)',
         borderLeft: '1px solid var(--editor-border)'
