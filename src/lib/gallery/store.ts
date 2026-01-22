@@ -32,6 +32,7 @@ interface GalleryStore {
 
   // Actions
   addImages: (files: File[]) => Promise<void>;
+  addImageFromUrl: (url: string, fileName: string) => Promise<GalleryImage>;
   removeImages: (ids: string[]) => void;
   selectImage: (id: string, multi?: boolean) => void;
   deselectAll: () => void;
@@ -168,6 +169,55 @@ export const useGalleryStore = create<GalleryStore>()(
         set((state) => ({
           images: [...newImages, ...state.images], // Add new images at the beginning
         }));
+      },
+
+      addImageFromUrl: async (url: string, fileName: string) => {
+        // Load image from URL
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = reject;
+          img.src = url;
+        });
+
+        // Create canvas to get dataUrl
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Failed to get canvas context');
+        ctx.drawImage(img, 0, 0);
+        const dataUrl = canvas.toDataURL('image/png');
+
+        // Create thumbnail
+        const thumbnailUrl = await createThumbnail(img);
+
+        const newImage: GalleryImage = {
+          id: generateId(),
+          fileName,
+          dataUrl,
+          thumbnailUrl,
+          width: img.width,
+          height: img.height,
+          editState: createDefaultEditState(),
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+
+        // Save to IndexedDB
+        try {
+          await saveImage(newImage as StoredImage);
+        } catch (err) {
+          console.error('Failed to save generated image to IndexedDB:', err);
+        }
+
+        set((state) => ({
+          images: [newImage, ...state.images],
+        }));
+
+        return newImage;
       },
 
       removeImages: (ids: string[]) => {

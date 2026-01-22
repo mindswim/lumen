@@ -4,6 +4,7 @@ import { useCallback, useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useGalleryStore, GalleryImage } from '@/lib/gallery/store';
 import { useEditorStore } from '@/lib/editor/state';
+import { GenerationInput } from './GenerationInput';
 import { ToolSidebar } from '@/components/editor/ToolSidebar';
 import { Sidebar } from '@/components/editor/Sidebar';
 import { MobileToolbar } from '@/components/editor/MobileToolbar';
@@ -309,29 +310,37 @@ export function Gallery() {
             <div className="flex-1 flex items-center justify-center">
               <div style={{ color: 'var(--editor-text-muted)' }}>Loading...</div>
             </div>
-          ) : images.length === 0 ? (
-            <EmptyState onAddPhotos={handleAddPhotos} />
           ) : (
-            <div
-              className={`h-full overflow-auto p-3 md:p-6 ${isMobile ? 'pb-20' : ''}`}
-              onClick={handleBackgroundClick}
-            >
-              {/* Masonry-style grid */}
-              <div
-                className="space-y-3 md:space-y-4"
-                style={{ columnCount: effectiveColumns, columnGap: isMobile ? '0.75rem' : '1rem' }}
-              >
-                {visibleImages.map((image) => (
-                  <PhotoThumbnail
-                    key={image.id}
-                    image={image}
-                    isSelected={selectedIds.includes(image.id)}
-                    onSelect={(multi) => selectImage(image.id, multi)}
-                    onDoubleClick={() => handleOpenImage(image.id)}
-                    isMobile={isMobile}
-                  />
-                ))}
-              </div>
+            <div className="h-full flex flex-col overflow-hidden">
+              {/* Generation input at top */}
+              {!isMobile && <GenerationInput />}
+
+              {/* Gallery content */}
+              {images.length === 0 ? (
+                <EmptyState onAddPhotos={handleAddPhotos} />
+              ) : (
+                <div
+                  className={`flex-1 overflow-auto p-3 md:p-6 pt-0 md:pt-0 ${isMobile ? 'pb-20' : ''}`}
+                  onClick={handleBackgroundClick}
+                >
+                  {/* Masonry-style grid */}
+                  <div
+                    className="space-y-3 md:space-y-4"
+                    style={{ columnCount: effectiveColumns, columnGap: isMobile ? '0.75rem' : '1rem' }}
+                  >
+                    {visibleImages.map((image) => (
+                      <PhotoThumbnail
+                        key={image.id}
+                        image={image}
+                        isSelected={selectedIds.includes(image.id)}
+                        onSelect={(multi) => selectImage(image.id, multi)}
+                        onDoubleClick={() => handleOpenImage(image.id)}
+                        isMobile={isMobile}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
