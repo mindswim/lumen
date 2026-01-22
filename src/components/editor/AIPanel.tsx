@@ -1,14 +1,26 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useEditorStore } from '@/lib/editor/state';
 import { useGalleryStore } from '@/lib/gallery/store';
-import { PanelContainer, PanelHint } from '@/components/ui/panel-section';
+import { PanelContainer } from '@/components/ui/panel-section';
 import { Slider } from '@/components/ui/slider';
 import { sliderPresets } from '@/components/ui/adjustment-slider';
-import { EditState, ensureCompleteEditState } from '@/types/editor';
+import { EditState, ensureCompleteEditState, createDefaultEditState } from '@/types/editor';
 
-// Parameter metadata for display
+// All available parameters organized by category
+const PARAMETER_CATEGORIES = {
+  Light: ['exposure', 'contrast', 'highlights', 'shadows', 'whites', 'blacks'],
+  Color: ['temperature', 'tint', 'vibrance', 'saturation'],
+  Presence: ['clarity', 'texture', 'dehaze'],
+  Effects: ['fade', 'grain.amount', 'vignette.amount', 'bloom.amount'],
+  Detail: ['sharpening.amount', 'noiseReduction.luminance'],
+} as const;
+
+// Flat list of all parameters
+const ALL_PARAMETERS: readonly string[] = Object.values(PARAMETER_CATEGORIES).flat();
+
+// Parameter display names
 const PARAM_LABELS: Record<string, string> = {
   exposure: 'Exposure',
   contrast: 'Contrast',
@@ -24,58 +36,88 @@ const PARAM_LABELS: Record<string, string> = {
   vibrance: 'Vibrance',
   saturation: 'Saturation',
   fade: 'Fade',
-  sharpening: 'Sharpening',
-  noiseReduction: 'Noise Reduction',
+  'grain.amount': 'Grain',
+  'vignette.amount': 'Vignette',
+  'bloom.amount': 'Bloom',
+  'sharpening.amount': 'Sharpening',
+  'noiseReduction.luminance': 'Noise Reduction',
 };
 
 // Get slider config for a parameter
-function getSliderConfig(key: string): { min: number; max: number; step: number } {
-  const preset = sliderPresets[key as keyof typeof sliderPresets];
+function getSliderConfig(key: string): { min: number; max: number; step: number; default: number } {
+  const baseKey = key.split('.')[0];
+  const preset = sliderPresets[baseKey as keyof typeof sliderPresets];
   if (preset) {
-    return { min: preset.min, max: preset.max, step: preset.step };
+    return { min: preset.min, max: preset.max, step: preset.step, default: preset.defaultValue };
   }
-  // Default for nested/unknown params
-  if (key === 'exposure') return { min: -5, max: 5, step: 0.1 };
-  return { min: -100, max: 100, step: 1 };
+  if (baseKey === 'exposure') return { min: -5, max: 5, step: 0.1, default: 0 };
+  return { min: -100, max: 100, step: 1, default: 0 };
 }
 
-// Flatten nested adjustments for display
-function flattenAdjustments(
-  adjustments: Partial<EditState>
-): Array<{ key: string; path: string[]; value: number; label: string }> {
-  const result: Array<{ key: string; path: string[]; value: number; label: string }> = [];
+// Get nested value from object using dot notation path
+function getNestedValue(obj: Record<string, unknown>, path: string): number {
+  const keys = path.split('.');
+  let current: unknown = obj;
+  for (const key of keys) {
+    if (current === null || current === undefined || typeof current !== 'object') {
+      return 0;
+    }
+    current = (current as Record<string, unknown>)[key];
+  }
+  return typeof current === 'number' ? current : 0;
+}
 
-  function recurse(obj: Record<string, unknown>, path: string[] = []) {
+// Set nested value in object using dot notation path
+function setNestedValue(obj: Record<string, unknown>, path: string, value: number): Record<string, unknown> {
+  const keys = path.split('.');
+  const result = { ...obj };
+  let current = result;
+
+  for (let i = 0; i < keys.length - 1; i++) {
+    const key = keys[i];
+    current[key] = { ...(current[key] as Record<string, unknown> || {}) };
+    current = current[key] as Record<string, unknown>;
+  }
+
+  current[keys[keys.length - 1]] = value;
+  return result;
+}
+
+// Extract changed parameters from AI adjustments
+function extractChangedParams(adjustments: Partial<EditState>): Map<string, number> {
+  const changes = new Map<string, number>();
+
+  function recurse(obj: Record<string, unknown>, prefix: string = '') {
     for (const [key, value] of Object.entries(obj)) {
-      const currentPath = [...path, key];
+      const path = prefix ? `${prefix}.${key}` : key;
 
       if (typeof value === 'number') {
-        const label =
-          path.length > 0
-            ? `${path[path.length - 1]} ${key}`.replace(/([A-Z])/g, ' $1').trim()
-            : PARAM_LABELS[key] || key.replace(/([A-Z])/g, ' $1').trim();
-        result.push({
-          key,
-          path: currentPath,
-          value,
-          label: label.charAt(0).toUpperCase() + label.slice(1),
-        });
+        // Only track if it's in our known parameters or is a top-level param
+        const isKnown = ALL_PARAMETERS.includes(path) || ALL_PARAMETERS.some(p => p.startsWith(path + '.'));
+        if (isKnown || !path.includes('.')) {
+          changes.set(path, value);
+        }
       } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
-        recurse(value as Record<string, unknown>, currentPath);
+        recurse(value as Record<string, unknown>, path);
       }
     }
   }
 
   recurse(adjustments as Record<string, unknown>);
-  return result;
+  return changes;
 }
 
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
-  adjustments?: Partial<EditState>;
   timestamp: number;
+}
+
+interface TrackedAdjustment {
+  path: string;
+  originalValue: number;
+  currentValue: number;
 }
 
 export function AIPanel() {
@@ -92,6 +134,9 @@ export function AIPanel() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [trackedAdjustments, setTrackedAdjustments] = useState<Map<string, TrackedAdjustment>>(new Map());
+  const [isTrayExpanded, setIsTrayExpanded] = useState(true);
+  const [showAddParam, setShowAddParam] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -99,38 +144,88 @@ export function AIPanel() {
   const isGalleryMode = !image && selectedIds.length > 0;
   const hasImage = !!image || selectedIds.length > 0;
 
+  // Get default edit state for comparison
+  const defaultState = useMemo(() => createDefaultEditState(), []);
+
   // Scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Update a single parameter value (for inline slider editing)
-  const updateParameter = (path: string[], value: number) => {
-    // Build the nested update object
-    let update: Record<string, unknown> = {};
-    let current = update;
+  // Update a parameter value
+  const updateParameter = (path: string, value: number) => {
+    const newEditState = setNestedValue(editState as unknown as Record<string, unknown>, path, value);
 
-    for (let i = 0; i < path.length - 1; i++) {
-      current[path[i]] = {};
-      current = current[path[i]] as Record<string, unknown>;
-    }
-    current[path[path.length - 1]] = value;
-
-    // Apply to edit state
     if (isGalleryMode) {
       const selectedImages = galleryImages.filter((img) => selectedIds.includes(img.id));
       selectedImages.forEach((img) => {
-        const newState = deepMerge(img.editState, update);
-        updateImageEditState(img.id, ensureCompleteEditState(newState));
+        const newState = setNestedValue(img.editState as unknown as Record<string, unknown>, path, value);
+        updateImageEditState(img.id, ensureCompleteEditState(newState as Partial<EditState>));
       });
     } else {
-      const newState = deepMerge(editState, update);
-      setEditState(ensureCompleteEditState(newState));
+      setEditState(ensureCompleteEditState(newEditState as Partial<EditState>));
     }
+
+    // Update tracked adjustment
+    setTrackedAdjustments((prev) => {
+      const updated = new Map(prev);
+      const existing = updated.get(path);
+      if (existing) {
+        updated.set(path, { ...existing, currentValue: value });
+      }
+      return updated;
+    });
   };
 
-  // Apply full adjustments
-  const applyAdjustments = (adjustments: Partial<EditState>) => {
+  // Add a new parameter to track
+  const addParameter = (path: string) => {
+    const currentValue = getNestedValue(editState as unknown as Record<string, unknown>, path);
+    const originalValue = getNestedValue(defaultState as unknown as Record<string, unknown>, path);
+
+    setTrackedAdjustments((prev) => {
+      const updated = new Map(prev);
+      if (!updated.has(path)) {
+        updated.set(path, {
+          path,
+          originalValue,
+          currentValue,
+        });
+      }
+      return updated;
+    });
+    setShowAddParam(false);
+  };
+
+  // Remove a parameter from tracking
+  const removeParameter = (path: string) => {
+    setTrackedAdjustments((prev) => {
+      const updated = new Map(prev);
+      updated.delete(path);
+      return updated;
+    });
+  };
+
+  // Apply AI adjustments and track them
+  const applyAndTrackAdjustments = (adjustments: Partial<EditState>) => {
+    // Extract changed parameters
+    const changes = extractChangedParams(adjustments);
+
+    // Track each change
+    setTrackedAdjustments((prev) => {
+      const updated = new Map(prev);
+      changes.forEach((value, path) => {
+        const existing = updated.get(path);
+        const originalValue = existing?.originalValue ?? getNestedValue(defaultState as unknown as Record<string, unknown>, path);
+        updated.set(path, {
+          path,
+          originalValue,
+          currentValue: value,
+        });
+      });
+      return updated;
+    });
+
+    // Apply to edit state
     if (isGalleryMode) {
       const selectedImages = galleryImages.filter((img) => selectedIds.includes(img.id));
       selectedImages.forEach((img) => {
@@ -144,6 +239,14 @@ export function AIPanel() {
     }
   };
 
+  // Reset all tracked adjustments
+  const handleReset = () => {
+    trackedAdjustments.forEach((adj) => {
+      updateParameter(adj.path, adj.originalValue);
+    });
+    setTrackedAdjustments(new Map());
+  };
+
   // Auto-enhance handler
   const handleAutoEnhance = async () => {
     if (!hasImage) return;
@@ -151,7 +254,6 @@ export function AIPanel() {
     setIsLoading(true);
     setError(null);
 
-    // Add user message
     const userMsg: ChatMessage = {
       id: `msg-${Date.now()}`,
       role: 'user',
@@ -170,17 +272,16 @@ export function AIPanel() {
       if (!response.ok) throw new Error('Failed to enhance image');
 
       const data = await response.json();
-      applyAdjustments(data.adjustments);
+      applyAndTrackAdjustments(data.adjustments);
 
-      // Add assistant message
       const assistantMsg: ChatMessage = {
         id: `msg-${Date.now() + 1}`,
         role: 'assistant',
         content: data.reasoning || 'Applied automatic enhancements.',
-        adjustments: data.adjustments,
         timestamp: Date.now(),
       };
       setMessages((prev) => [...prev, assistantMsg]);
+      setIsTrayExpanded(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Enhancement failed');
     } finally {
@@ -198,7 +299,6 @@ export function AIPanel() {
     setIsLoading(true);
     setError(null);
 
-    // Add user message
     const userMsg: ChatMessage = {
       id: `msg-${Date.now()}`,
       role: 'user',
@@ -208,13 +308,9 @@ export function AIPanel() {
     setMessages((prev) => [...prev, userMsg]);
 
     try {
-      // Build conversation history for context
       const conversationHistory = messages.map((m) => ({
         role: m.role,
-        content:
-          m.role === 'assistant' && m.adjustments
-            ? JSON.stringify({ adjustments: m.adjustments, reasoning: m.content })
-            : m.content,
+        content: m.content,
       }));
 
       const response = await fetch('/api/ai/edit', {
@@ -230,44 +326,41 @@ export function AIPanel() {
       if (!response.ok) throw new Error('Failed to process edit');
 
       const data = await response.json();
-      applyAdjustments(data.adjustments);
+      applyAndTrackAdjustments(data.adjustments);
 
-      // Add assistant message
       const assistantMsg: ChatMessage = {
         id: `msg-${Date.now() + 1}`,
         role: 'assistant',
         content: data.reasoning || 'Adjustments applied.',
-        adjustments: data.adjustments,
         timestamp: Date.now(),
       };
       setMessages((prev) => [...prev, assistantMsg]);
+      setIsTrayExpanded(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Edit failed');
-      // Remove the user message if there was an error
       setMessages((prev) => prev.filter((m) => m.id !== userMsg.id));
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Clear chat
   const handleClearChat = () => {
     setMessages([]);
     setError(null);
   };
 
+  // Get parameters not yet tracked
+  const availableParams = ALL_PARAMETERS.filter((p) => !trackedAdjustments.has(p));
+
   return (
-    <PanelContainer className="flex flex-col h-full">
+    <PanelContainer className="flex flex-col h-full p-0">
       {/* Header with Auto-Enhance */}
-      <div className="flex-shrink-0 pb-4">
+      <div className="flex-shrink-0 p-4 pb-2">
         <button
           onClick={handleAutoEnhance}
           disabled={!hasImage || isLoading}
           className="w-full py-2.5 px-4 rounded-lg text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-          style={{
-            backgroundColor: 'var(--editor-accent)',
-            color: 'white',
-          }}
+          style={{ backgroundColor: 'var(--editor-accent)', color: 'white' }}
         >
           {isLoading ? (
             <span className="flex items-center justify-center gap-2">
@@ -284,16 +377,13 @@ export function AIPanel() {
       </div>
 
       {/* Chat Messages */}
-      <div
-        className="flex-1 overflow-y-auto space-y-3 min-h-0"
-        style={{ maxHeight: 'calc(100vh - 320px)' }}
-      >
+      <div className="flex-1 overflow-y-auto px-4 space-y-2 min-h-0">
         {messages.length === 0 ? (
-          <div className="py-8 text-center">
-            <p className="text-sm mb-2" style={{ color: 'var(--editor-text-muted)' }}>
+          <div className="py-6 text-center">
+            <p className="text-sm mb-3" style={{ color: 'var(--editor-text-muted)' }}>
               Describe how you want to edit your photo
             </p>
-            <div className="flex flex-wrap justify-center gap-2 mt-4">
+            <div className="flex flex-wrap justify-center gap-2">
               {['make it warmer', 'film look', 'more contrast', 'cinematic'].map((suggestion) => (
                 <button
                   key={suggestion}
@@ -313,67 +403,123 @@ export function AIPanel() {
           </div>
         ) : (
           messages.map((message) => (
-            <div key={message.id} className="space-y-2">
-              {/* Message bubble */}
-              <div
-                className={`rounded-lg px-3 py-2 ${
-                  message.role === 'user' ? 'ml-4' : 'mr-4'
-                }`}
-                style={{
-                  backgroundColor:
-                    message.role === 'user'
-                      ? 'var(--editor-accent)'
-                      : 'var(--editor-bg-secondary)',
-                  color: message.role === 'user' ? 'white' : 'var(--editor-text-primary)',
-                }}
-              >
-                <p className="text-sm">{message.content}</p>
-              </div>
-
-              {/* Adjustment sliders for assistant messages */}
-              {message.role === 'assistant' && message.adjustments && (
-                <div
-                  className="rounded-lg p-3 mr-4 space-y-3"
-                  style={{
-                    backgroundColor: 'var(--editor-bg-tertiary)',
-                    border: '1px solid var(--editor-border)',
-                  }}
-                >
-                  <div className="flex items-center justify-between">
-                    <span
-                      className="text-xs font-medium uppercase tracking-wide"
-                      style={{ color: 'var(--editor-text-muted)' }}
-                    >
-                      Adjustments
-                    </span>
-                  </div>
-                  {flattenAdjustments(message.adjustments).map((param) => (
-                    <InlineSlider
-                      key={param.path.join('.')}
-                      label={param.label}
-                      value={param.value}
-                      path={param.path}
-                      paramKey={param.key}
-                      onChange={updateParameter}
-                    />
-                  ))}
-                </div>
-              )}
+            <div
+              key={message.id}
+              className={`rounded-lg px-3 py-2 text-sm ${message.role === 'user' ? 'ml-6' : 'mr-6'}`}
+              style={{
+                backgroundColor: message.role === 'user' ? 'var(--editor-accent)' : 'var(--editor-bg-secondary)',
+                color: message.role === 'user' ? 'white' : 'var(--editor-text-primary)',
+              }}
+            >
+              {message.content}
             </div>
           ))
         )}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Error display */}
       {error && (
-        <p className="text-xs py-2" style={{ color: 'var(--editor-error, #ef4444)' }}>
+        <p className="px-4 text-xs py-1" style={{ color: 'var(--editor-error, #ef4444)' }}>
           {error}
         </p>
       )}
 
-      {/* Input area */}
-      <div className="flex-shrink-0 pt-3 space-y-2" style={{ borderTop: '1px solid var(--editor-border)' }}>
+      {/* Adjustments Tray */}
+      {trackedAdjustments.size > 0 && (
+        <div
+          className="flex-shrink-0"
+          style={{ borderTop: '1px solid var(--editor-border)', backgroundColor: 'var(--editor-bg-tertiary)' }}
+        >
+          {/* Tray Header */}
+          <div
+            className="w-full px-4 py-2 flex items-center justify-between text-xs font-medium cursor-pointer"
+            style={{ color: 'var(--editor-text-secondary)' }}
+          >
+            <span
+              className="flex items-center gap-2"
+              onClick={() => setIsTrayExpanded(!isTrayExpanded)}
+            >
+              <ChevronIcon expanded={isTrayExpanded} />
+              Active Adjustments ({trackedAdjustments.size})
+            </span>
+            <button
+              onClick={handleReset}
+              className="px-2 py-0.5 rounded text-xs transition-colors hover:bg-black/10"
+              style={{ color: 'var(--editor-text-muted)' }}
+            >
+              Reset
+            </button>
+          </div>
+
+          {/* Tray Content */}
+          {isTrayExpanded && (
+            <div className="px-4 pb-3 space-y-3 max-h-48 overflow-y-auto">
+              {Array.from(trackedAdjustments.values()).map((adj) => (
+                <DeltaSlider
+                  key={adj.path}
+                  path={adj.path}
+                  label={PARAM_LABELS[adj.path] || adj.path}
+                  originalValue={adj.originalValue}
+                  currentValue={getNestedValue(editState as unknown as Record<string, unknown>, adj.path)}
+                  onChange={(value) => updateParameter(adj.path, value)}
+                  onRemove={() => removeParameter(adj.path)}
+                />
+              ))}
+
+              {/* Add Parameter Button */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowAddParam(!showAddParam)}
+                  className="w-full py-1.5 rounded text-xs font-medium transition-colors flex items-center justify-center gap-1"
+                  style={{
+                    backgroundColor: 'var(--editor-bg-secondary)',
+                    color: 'var(--editor-text-muted)',
+                    border: '1px dashed var(--editor-border)',
+                  }}
+                >
+                  <PlusIcon /> Add parameter
+                </button>
+
+                {/* Dropdown */}
+                {showAddParam && (
+                  <div
+                    className="absolute bottom-full left-0 right-0 mb-1 rounded-lg shadow-lg overflow-hidden z-10 max-h-48 overflow-y-auto"
+                    style={{ backgroundColor: 'var(--editor-bg-primary)', border: '1px solid var(--editor-border)' }}
+                  >
+                    {Object.entries(PARAMETER_CATEGORIES).map(([category, params]) => {
+                      const available = params.filter((p) => !trackedAdjustments.has(p));
+                      if (available.length === 0) return null;
+                      return (
+                        <div key={category}>
+                          <div
+                            className="px-3 py-1.5 text-xs font-medium"
+                            style={{ backgroundColor: 'var(--editor-bg-secondary)', color: 'var(--editor-text-muted)' }}
+                          >
+                            {category}
+                          </div>
+                          {available.map((param) => (
+                            <button
+                              key={param}
+                              onClick={() => addParameter(param)}
+                              className="w-full px-3 py-2 text-left text-sm transition-colors hover:bg-black/5"
+                              style={{ color: 'var(--editor-text-primary)' }}
+                            >
+                              {PARAM_LABELS[param] || param}
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Input Area */}
+      <div className="flex-shrink-0 p-4 pt-2 space-y-2" style={{ borderTop: trackedAdjustments.size === 0 ? '1px solid var(--editor-border)' : 'none' }}>
         <form onSubmit={handlePromptSubmit} className="flex gap-2">
           <input
             ref={inputRef}
@@ -393,10 +539,7 @@ export function AIPanel() {
             type="submit"
             disabled={!prompt.trim() || !hasImage || isLoading}
             className="px-3 py-2 rounded-lg transition-colors disabled:opacity-30"
-            style={{
-              backgroundColor: 'var(--editor-accent)',
-              color: 'white',
-            }}
+            style={{ backgroundColor: 'var(--editor-accent)', color: 'white' }}
           >
             <SendIcon />
           </button>
@@ -416,87 +559,100 @@ export function AIPanel() {
   );
 }
 
-// Inline slider component for adjustment cards
-interface InlineSliderProps {
+// Delta Slider with visual indicator of change from original
+interface DeltaSliderProps {
+  path: string;
   label: string;
-  value: number;
-  path: string[];
-  paramKey: string;
-  onChange: (path: string[], value: number) => void;
+  originalValue: number;
+  currentValue: number;
+  onChange: (value: number) => void;
+  onRemove: () => void;
 }
 
-function InlineSlider({ label, value, path, paramKey, onChange }: InlineSliderProps) {
-  const [localValue, setLocalValue] = useState(value);
-  const config = getSliderConfig(paramKey);
+function DeltaSlider({ path, label, originalValue, currentValue, onChange, onRemove }: DeltaSliderProps) {
+  const config = getSliderConfig(path);
+  const [localValue, setLocalValue] = useState(currentValue);
 
-  // Update local value when prop changes
   useEffect(() => {
-    setLocalValue(value);
-  }, [value]);
+    setLocalValue(currentValue);
+  }, [currentValue]);
 
-  const handleChange = (newValue: number) => {
-    setLocalValue(newValue);
-    onChange(path, newValue);
+  const handleChange = (value: number) => {
+    setLocalValue(value);
+    onChange(value);
   };
 
-  const displayValue =
-    config.step < 1 ? localValue.toFixed(1) : localValue.toFixed(0);
+  const displayValue = config.step < 1 ? localValue.toFixed(1) : localValue.toFixed(0);
+  const prefix = localValue > 0 ? '+' : '';
+  const delta = localValue - originalValue;
+  const deltaDisplay = delta !== 0 ? ` (${delta > 0 ? '+' : ''}${config.step < 1 ? delta.toFixed(1) : delta.toFixed(0)})` : '';
 
-  const isPositive = localValue > 0;
-  const prefix = isPositive ? '+' : '';
+  // Calculate positions for delta visualization
+  const range = config.max - config.min;
+  const originalPercent = ((originalValue - config.min) / range) * 100;
+  const currentPercent = ((localValue - config.min) / range) * 100;
+  const deltaStart = Math.min(originalPercent, currentPercent);
+  const deltaWidth = Math.abs(currentPercent - originalPercent);
+  const isIncrease = localValue > originalValue;
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-1 group">
       <div className="flex justify-between items-center">
         <span className="text-xs" style={{ color: 'var(--editor-text-secondary)' }}>
           {label}
         </span>
-        <span
-          className="text-xs tabular-nums font-medium"
-          style={{ color: 'var(--editor-text-primary)' }}
-        >
-          {prefix}{displayValue}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs tabular-nums" style={{ color: 'var(--editor-text-primary)' }}>
+            {prefix}{displayValue}
+            <span style={{ color: 'var(--editor-text-muted)' }}>{deltaDisplay}</span>
+          </span>
+          <button
+            onClick={onRemove}
+            className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-black/10"
+            style={{ color: 'var(--editor-text-muted)' }}
+          >
+            <XIcon />
+          </button>
+        </div>
       </div>
-      <Slider
-        value={[localValue]}
-        min={config.min}
-        max={config.max}
-        step={config.step}
-        onValueChange={([v]) => handleChange(v)}
-        className="w-full"
-      />
+
+      {/* Custom slider with delta visualization */}
+      <div className="relative h-5">
+        {/* Delta highlight bar */}
+        {delta !== 0 && (
+          <div
+            className="absolute top-1/2 -translate-y-1/2 h-1.5 rounded-full pointer-events-none"
+            style={{
+              left: `${deltaStart}%`,
+              width: `${deltaWidth}%`,
+              backgroundColor: isIncrease ? 'rgba(59, 130, 246, 0.5)' : 'rgba(249, 115, 22, 0.5)',
+            }}
+          />
+        )}
+
+        {/* Original value marker */}
+        {delta !== 0 && (
+          <div
+            className="absolute top-1/2 -translate-y-1/2 w-0.5 h-3 rounded-full pointer-events-none"
+            style={{
+              left: `${originalPercent}%`,
+              backgroundColor: 'var(--editor-text-muted)',
+              opacity: 0.5,
+            }}
+          />
+        )}
+
+        <Slider
+          value={[localValue]}
+          min={config.min}
+          max={config.max}
+          step={config.step}
+          onValueChange={([v]) => handleChange(v)}
+          className="w-full"
+        />
+      </div>
     </div>
   );
-}
-
-// Deep merge utility
-function deepMerge<T>(target: T, source: Record<string, unknown>): T {
-  const result = { ...target } as Record<string, unknown>;
-  const targetRecord = target as Record<string, unknown>;
-
-  for (const key of Object.keys(source)) {
-    const sourceVal = source[key];
-    const targetVal = targetRecord[key];
-
-    if (
-      sourceVal !== null &&
-      typeof sourceVal === 'object' &&
-      !Array.isArray(sourceVal) &&
-      targetVal !== null &&
-      typeof targetVal === 'object' &&
-      !Array.isArray(targetVal)
-    ) {
-      result[key] = deepMerge(
-        targetVal as Record<string, unknown>,
-        sourceVal as Record<string, unknown>
-      );
-    } else {
-      result[key] = sourceVal;
-    }
-  }
-
-  return result as T;
 }
 
 // Icons
@@ -521,19 +677,40 @@ function SendIcon() {
 function LoadingSpinner() {
   return (
     <svg className="animate-spin" width="16" height="16" viewBox="0 0 24 24" fill="none">
-      <circle
-        className="opacity-25"
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeWidth="4"
-      />
-      <path
-        className="opacity-75"
-        fill="currentColor"
-        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-      />
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+    </svg>
+  );
+}
+
+function ChevronIcon({ expanded }: { expanded: boolean }) {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 12 12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      className={`transition-transform ${expanded ? 'rotate-0' : '-rotate-90'}`}
+    >
+      <path d="M2 4l4 4 4-4" />
+    </svg>
+  );
+}
+
+function PlusIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M6 2v8M2 6h8" />
+    </svg>
+  );
+}
+
+function XIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M2 2l8 8M10 2l-8 8" />
     </svg>
   );
 }
