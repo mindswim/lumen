@@ -53,7 +53,7 @@ A professional-grade photo editor with AI-powered editing and image generation, 
 ### Installation
 
 ```bash
-git clone https://github.com/yourusername/lumen.git
+git clone https://github.com/mindswim/lumen.git
 cd lumen
 npm install
 ```
@@ -124,13 +124,11 @@ src/
 - [x] Dark/light mode
 
 ### Planned
-- [ ] Cloud sync (Supabase integration)
+- [ ] Cloud sync with Supabase (auth, storage, sync)
+- [ ] Blob storage migration (25% space savings)
 - [ ] RAW file support
-- [ ] Batch editing
-- [ ] More AI models (DALL-E, Stable Diffusion)
-- [ ] Preset marketplace
-- [ ] Collaborative editing
-- [ ] Mobile app (React Native)
+- [ ] Background replacement (SAM + inpainting)
+- [ ] Layer system for compositing
 
 ## Browser Support
 
