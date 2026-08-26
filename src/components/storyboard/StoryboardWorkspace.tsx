@@ -40,6 +40,7 @@ import {
   type StoryboardAspect,
   type StoryboardProject,
   type StoryboardShot,
+  type StoryboardStorageStatus,
 } from '@/lib/storyboard/store';
 import {
   Dialog,
@@ -886,8 +887,8 @@ function ShotCard({
           {String(index + 1).padStart(2, '0')}
         </div>
         {shot.selectedTakeId && (
-          <div className="absolute right-2 top-2 flex items-center gap-1 rounded-full bg-emerald-500 px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-white">
-            <Check className="h-2.5 w-2.5" /> Approved
+          <div className="absolute right-2 top-2 flex items-center gap-1 rounded-full bg-white/95 px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-neutral-900 shadow-sm backdrop-blur">
+            <Check className="h-2.5 w-2.5" /> Selected
           </div>
         )}
         <div className="absolute bottom-2 right-2 flex gap-1 opacity-0 transition group-hover:opacity-100">
@@ -951,7 +952,7 @@ function ReviewStage({ project, images }: { project: StoryboardProject; images: 
           const image = imageForTake(shot, images);
           const scene = project.scenes.find((candidate) => candidate.id === shot.sceneId);
           const checks = [
-            ['Approved panel', Boolean(shot.selectedTakeId)],
+            ['Selected panel', Boolean(shot.selectedTakeId)],
             ['Shot description', Boolean(shot.prompt.trim())],
             ['Continuity notes', Boolean(shot.continuityNotes.trim())],
             ['Reference context', shot.referenceIds.length > 0 || Boolean(scene?.referenceIds.length)],
@@ -1018,7 +1019,7 @@ function Board({
               <p className="text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: 'var(--editor-text-muted)' }}>Timing</p>
               <h1 className="mt-1 text-2xl font-semibold tracking-tight">Test the pace before making video.</h1>
               <p className="mt-2 max-w-xl text-xs leading-5" style={{ color: 'var(--editor-text-tertiary)' }}>
-                Approved storyboard panels become timed clips. Adjust duration in the shot inspector; dialogue and voice-over stay attached to the shot.
+                Selected storyboard panels become timed clips. Adjust duration in the shot inspector; dialogue and voice-over stay attached to the shot.
               </p>
             </div>
             <div className="rounded-full border px-3 py-1.5 text-[10px] font-medium" style={{ borderColor: 'var(--editor-border)' }}>
@@ -1067,7 +1068,7 @@ function Board({
             </div>
           </section>
           <div className="mt-4 rounded-2xl border border-dashed px-5 py-4 text-xs leading-5" style={{ borderColor: 'var(--editor-border)', color: 'var(--editor-text-tertiary)' }}>
-            Next: use the approved panel as the shot&apos;s first frame, then add motion direction, an optional ending keyframe, dialogue, voice-over, and sound on this timeline.
+            Next: use the selected panel as the shot&apos;s first frame, then add motion direction, an optional ending keyframe, dialogue, voice-over, and sound on this timeline.
           </div>
         </div>
       </main>
@@ -1085,7 +1086,7 @@ function Board({
           </div>
           <div className="flex items-center gap-3">
             <div className="hidden text-right sm:block">
-              <p className="text-xs font-medium">{completed} of {project.shots.length} approved</p>
+              <p className="text-xs font-medium">{completed} of {project.shots.length} selected</p>
               <div className="mt-2 h-1.5 w-28 overflow-hidden rounded-full bg-neutral-200">
                 <div className="h-full rounded-full bg-neutral-950 transition-all" style={{ width: `${project.shots.length ? (completed / project.shots.length) * 100 : 0}%` }} />
               </div>
@@ -1498,7 +1499,7 @@ function ShotInspector({
             <span>
               <span className="block text-[10px] font-semibold">Use previous panel as reference</span>
               <span className="mt-0.5 block text-[9px] leading-4" style={{ color: 'var(--editor-text-muted)' }}>
-                {previousTake ? `Opt in when ${previousShot.title} is continuous action—not for every cut.` : `${previousShot.title} needs an approved version first.`}
+                {previousTake ? `Opt in when ${previousShot.title} is continuous action—not for every cut.` : `${previousShot.title} needs a selected version first.`}
               </span>
             </span>
           </label>
@@ -1507,7 +1508,7 @@ function ShotInspector({
           <label className="flex cursor-pointer items-start gap-2 rounded-lg border p-2.5" style={{ borderColor: 'var(--editor-border)' }}>
             <input type="checkbox" checked={refineSelected} onChange={(event) => setRefineSelected(event.target.checked)} className="mt-0.5" />
             <span>
-              <span className="block text-[10px] font-semibold">Refine the approved version</span>
+              <span className="block text-[10px] font-semibold">Refine the selected version</span>
               <span className="mt-0.5 block text-[9px] leading-4" style={{ color: 'var(--editor-text-muted)' }}>
                 Preserve what works in this shot while following the revised direction.
               </span>
@@ -1570,7 +1571,7 @@ function ShotInspector({
               <Layers3 className="h-3.5 w-3.5" />
               <p className="text-xs font-semibold">Versions</p>
             </div>
-            <span className="text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>Choose one approved panel</span>
+            <span className="text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>Choose the version used on the board</span>
           </div>
           <div className="mt-3 space-y-2">
             {[...shot.takes].reverse().map((take, reverseIndex) => {
@@ -1582,19 +1583,19 @@ function ShotInspector({
                 <div
                   key={take.id}
                   className="flex gap-2 rounded-xl border p-2"
-                  style={{ borderColor: selected ? '#10b981' : 'var(--editor-border)' }}
+                  style={{ borderColor: selected ? 'var(--editor-text-primary)' : 'var(--editor-border)' }}
                 >
                   <button
                     onClick={() => selectTake(project.id, shot.id, take.id)}
                     className="relative h-20 w-28 shrink-0 overflow-hidden rounded-lg bg-neutral-100"
-                    aria-label={`Approve version ${takeNumber}`}
+                    aria-label={`Select version ${takeNumber}`}
                   >
                     {image && (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={image.thumbnailUrl} alt="" className="h-full w-full object-cover" />
                     )}
                     {selected && (
-                      <span className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white">
+                      <span className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-neutral-950 text-white">
                         <Check className="h-3 w-3" />
                       </span>
                     )}
@@ -1610,7 +1611,7 @@ function ShotInspector({
                           onClick={() => selectTake(project.id, shot.id, take.id)}
                           className="rounded-full bg-neutral-950 px-2.5 py-1 text-[9px] font-medium text-white"
                         >
-                          Approve
+                          Select
                         </button>
                       )}
                       {image && (
@@ -1629,7 +1630,7 @@ function ShotInspector({
                                 imageId: image.id,
                                 name: `${shot.title} reference`,
                                 kind: 'style',
-                                description: `Approved visual reference established in ${shot.title}. Rename it and classify it as a character, location, object, or style reference.`,
+                                description: `Visual reference established in ${shot.title}. Rename it and classify it as a character, location, object, or style reference.`,
                               });
                             }}
                             disabled={isBibleReference}
@@ -1652,11 +1653,163 @@ function ShotInspector({
   );
 }
 
+function StoryboardWorkspaceToolbar({
+  project,
+  projects,
+  view,
+  storageStatus,
+  projectPanelOpen,
+  inspectorOpen,
+  hasShot,
+  onProjectChange,
+  onViewChange,
+  onAspectChange,
+  onNewProject,
+  onToggleProjectPanel,
+  onToggleInspector,
+}: {
+  project: StoryboardProject;
+  projects: StoryboardProject[];
+  view: StoryboardWorkspaceView;
+  storageStatus: StoryboardStorageStatus;
+  projectPanelOpen: boolean;
+  inspectorOpen: boolean;
+  hasShot: boolean;
+  onProjectChange: (projectId: string) => void;
+  onViewChange: (view: StoryboardWorkspaceView | 'references') => void;
+  onAspectChange: (aspect: StoryboardAspect) => void;
+  onNewProject: () => void;
+  onToggleProjectPanel: () => void;
+  onToggleInspector: () => void;
+}) {
+  const storageLabel = storageStatus === 'saving'
+    ? 'Saving…'
+    : storageStatus === 'error'
+      ? 'Save failed'
+      : 'Saved to workspace';
+
+  return (
+    <div
+      className="flex h-14 shrink-0 items-center justify-between gap-2 border-b px-3 md:px-4"
+      style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-primary)' }}
+    >
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-neutral-950 text-xs font-semibold text-white">L</span>
+        <div className="mr-1 hidden 2xl:block">
+          <p className="text-xs font-semibold tracking-[0.2em]">LUMEN</p>
+          <p className="text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>Director workspace</p>
+        </div>
+        <div className="relative">
+          <select
+            value={project.id}
+            onChange={(event) => onProjectChange(event.target.value)}
+            className="max-w-36 appearance-none truncate rounded-full border bg-transparent py-1.5 pl-3 pr-8 text-xs font-semibold outline-none sm:max-w-48 lg:max-w-60"
+            style={{ borderColor: 'var(--editor-border)' }}
+            aria-label="Active storyboard"
+          >
+            {projects.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.title}</option>)}
+          </select>
+          <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3 w-3 -translate-y-1/2" />
+        </div>
+        <button
+          onClick={onNewProject}
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border"
+          style={{ borderColor: 'var(--editor-border)' }}
+          aria-label="New storyboard"
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      <div className="flex shrink-0 rounded-full p-1" style={{ backgroundColor: 'var(--editor-bg-secondary)' }}>
+        {([
+          { value: 'storyboard' as const, label: 'Storyboard' },
+          { value: 'animatic' as const, label: 'Timing' },
+          { value: 'references' as const, label: 'References' },
+        ]).map((item) => (
+          <button
+            key={item.value}
+            type="button"
+            onClick={() => onViewChange(item.value)}
+            className="rounded-full px-2.5 py-1.5 text-[10px] font-medium sm:px-3 sm:text-xs"
+            style={{
+              backgroundColor: view === item.value ? 'var(--editor-bg-primary)' : 'transparent',
+              color: view === item.value ? 'var(--editor-text-primary)' : 'var(--editor-text-muted)',
+              boxShadow: view === item.value ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
+            }}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-1.5">
+        <div
+          className="hidden items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[9px] font-medium xl:flex"
+          style={{
+            backgroundColor: storageStatus === 'error' ? '#fef2f2' : 'var(--editor-bg-secondary)',
+            color: storageStatus === 'error' ? '#b91c1c' : 'var(--editor-text-muted)',
+          }}
+          title="Project data and images are stored in the shared local Lumen workspace and are available to every browser using this server."
+        >
+          {storageStatus === 'saved' ? <CircleCheck className="h-3 w-3" /> : <HardDrive className="h-3 w-3" />}
+          {storageLabel}
+        </div>
+        <div className="hidden items-center gap-1 rounded-full p-1 2xl:flex" style={{ backgroundColor: 'var(--editor-bg-secondary)' }}>
+          {ASPECTS.map((aspect) => (
+            <button
+              key={aspect.value}
+              onClick={() => onAspectChange(aspect.value)}
+              className="rounded-full px-2.5 py-1 text-[10px] font-medium"
+              style={{
+                backgroundColor: project.aspect === aspect.value ? 'var(--editor-bg-primary)' : 'transparent',
+                color: project.aspect === aspect.value ? 'var(--editor-text-primary)' : 'var(--editor-text-muted)',
+                boxShadow: project.aspect === aspect.value ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
+              }}
+            >
+              {aspect.label}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={onToggleProjectPanel}
+          className="flex h-8 items-center gap-1.5 rounded-full border px-3 text-[10px] font-medium"
+          aria-label="Project and scene setup"
+          style={{
+            borderColor: projectPanelOpen ? 'var(--editor-text-primary)' : 'var(--editor-border)',
+            backgroundColor: projectPanelOpen ? 'var(--editor-text-primary)' : 'transparent',
+            color: projectPanelOpen ? 'var(--editor-bg-primary)' : 'var(--editor-text-tertiary)',
+          }}
+        >
+          <PanelLeftOpen className="h-3.5 w-3.5" /> <span className="hidden xl:inline">Project</span>
+        </button>
+        <button
+          type="button"
+          onClick={onToggleInspector}
+          disabled={!hasShot}
+          className="flex h-8 items-center gap-1.5 rounded-full border px-3 text-[10px] font-medium disabled:opacity-40"
+          aria-label="Shot details"
+          style={{
+            borderColor: inspectorOpen ? 'var(--editor-text-primary)' : 'var(--editor-border)',
+            backgroundColor: inspectorOpen ? 'var(--editor-text-primary)' : 'transparent',
+            color: inspectorOpen ? 'var(--editor-bg-primary)' : 'var(--editor-text-tertiary)',
+          }}
+        >
+          <PanelRightOpen className="h-3.5 w-3.5" /> <span className="hidden xl:inline">Shot details</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function StoryboardWorkspace({
   onOpenImage,
+  onViewChange,
   view = 'storyboard',
 }: {
   onOpenImage: (imageId: string) => void;
+  onViewChange: (view: StoryboardWorkspaceView | 'references') => void;
   view?: StoryboardWorkspaceView;
 }) {
   const [newProjectOpen, setNewProjectOpen] = useState(false);
@@ -1673,11 +1826,6 @@ export function StoryboardWorkspace({
     [activeProjectId, projects],
   );
   const shot = project?.shots.find((candidate) => candidate.id === selectedShotId) ?? project?.shots[0] ?? null;
-  const storageLabel = storageStatus === 'saving'
-    ? 'Saving…'
-    : storageStatus === 'error'
-      ? 'Save failed'
-      : 'Saved to workspace';
 
   if (!project) {
     return (
@@ -1690,96 +1838,27 @@ export function StoryboardWorkspace({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div
-        className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-2 md:px-4"
-        style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-primary)' }}
-      >
-        <div className="flex min-w-0 items-center gap-2">
-          <div className="relative">
-            <select
-              value={project.id}
-              onChange={(event) => setActiveProject(event.target.value)}
-              className="max-w-48 appearance-none truncate rounded-full border bg-transparent py-1.5 pl-3 pr-8 text-xs font-semibold outline-none md:max-w-72"
-              style={{ borderColor: 'var(--editor-border)' }}
-              aria-label="Active storyboard"
-            >
-              {projects.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.title}</option>)}
-            </select>
-            <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3 w-3 -translate-y-1/2" />
-          </div>
-          <button
-            onClick={() => setNewProjectOpen(true)}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border"
-            style={{ borderColor: 'var(--editor-border)' }}
-            aria-label="New storyboard"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </button>
-        </div>
-
-        <div className="flex items-center gap-1.5">
-          <div
-            className="hidden items-center gap-1.5 rounded-full px-2.5 py-1.5 text-[9px] font-medium sm:flex"
-            style={{
-              backgroundColor: storageStatus === 'error' ? '#fef2f2' : 'var(--editor-bg-secondary)',
-              color: storageStatus === 'error' ? '#b91c1c' : 'var(--editor-text-muted)',
-            }}
-            title="Project data and images are stored in the shared local Lumen workspace and are available to every browser using this server."
-          >
-            {storageStatus === 'saved' ? <CircleCheck className="h-3 w-3" /> : <HardDrive className="h-3 w-3" />}
-            {storageLabel}
-          </div>
-          <div className="hidden items-center gap-1 rounded-full p-1 md:flex" style={{ backgroundColor: 'var(--editor-bg-secondary)' }}>
-            {ASPECTS.map((aspect) => (
-              <button
-                key={aspect.value}
-                onClick={() => updateProject(project.id, { aspect: aspect.value })}
-                className="rounded-full px-2.5 py-1 text-[10px] font-medium"
-                style={{
-                  backgroundColor: project.aspect === aspect.value ? 'var(--editor-bg-primary)' : 'transparent',
-                  color: project.aspect === aspect.value ? 'var(--editor-text-primary)' : 'var(--editor-text-muted)',
-                  boxShadow: project.aspect === aspect.value ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
-                }}
-              >
-                {aspect.label}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setProjectPanelOpen((open) => !open);
-              setInspectorOpen(false);
-            }}
-            className="flex h-8 items-center gap-1.5 rounded-full border px-3 text-[10px] font-medium"
-            aria-label="Project and scene setup"
-            style={{
-              borderColor: projectPanelOpen ? 'var(--editor-text-primary)' : 'var(--editor-border)',
-              backgroundColor: projectPanelOpen ? 'var(--editor-text-primary)' : 'transparent',
-              color: projectPanelOpen ? 'var(--editor-bg-primary)' : 'var(--editor-text-tertiary)',
-            }}
-          >
-            <PanelLeftOpen className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Project</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setInspectorOpen((open) => !open);
-              setProjectPanelOpen(false);
-            }}
-            disabled={!shot}
-            className="flex h-8 items-center gap-1.5 rounded-full border px-3 text-[10px] font-medium disabled:opacity-40"
-            aria-label="Shot details"
-            style={{
-              borderColor: inspectorOpen ? 'var(--editor-text-primary)' : 'var(--editor-border)',
-              backgroundColor: inspectorOpen ? 'var(--editor-text-primary)' : 'transparent',
-              color: inspectorOpen ? 'var(--editor-bg-primary)' : 'var(--editor-text-tertiary)',
-            }}
-          >
-            <PanelRightOpen className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Shot details</span>
-          </button>
-        </div>
-      </div>
+      <StoryboardWorkspaceToolbar
+        project={project}
+        projects={projects}
+        view={view}
+        storageStatus={storageStatus}
+        projectPanelOpen={projectPanelOpen}
+        inspectorOpen={inspectorOpen}
+        hasShot={Boolean(shot)}
+        onProjectChange={setActiveProject}
+        onViewChange={onViewChange}
+        onAspectChange={(aspect) => updateProject(project.id, { aspect })}
+        onNewProject={() => setNewProjectOpen(true)}
+        onToggleProjectPanel={() => {
+          setProjectPanelOpen((open) => !open);
+          setInspectorOpen(false);
+        }}
+        onToggleInspector={() => {
+          setInspectorOpen((open) => !open);
+          setProjectPanelOpen(false);
+        }}
+      />
 
       <div className={`flex min-h-0 flex-1 flex-col overflow-y-auto lg:grid lg:overflow-hidden ${projectPanelOpen ? 'lg:grid-cols-[300px_minmax(0,1fr)]' : inspectorOpen && shot ? 'lg:grid-cols-[minmax(0,1fr)_360px]' : 'lg:grid-cols-1'}`}>
         {projectPanelOpen && <ProjectPanel project={project} onClose={() => setProjectPanelOpen(false)} />}

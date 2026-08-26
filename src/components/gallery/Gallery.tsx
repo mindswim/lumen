@@ -146,6 +146,7 @@ export function Gallery() {
   const hydrateStoryboards = useStoryboardStore((state) => state.hydrate);
   const projects = useStoryboardStore((state) => state.projects);
   const activeProjectId = useStoryboardStore((state) => state.activeProjectId);
+  const setActiveStoryboardProject = useStoryboardStore((state) => state.setActiveProject);
   const addReference = useStoryboardStore((state) => state.addReference);
   const activeProject = projects.find((project) => project.id === activeProjectId) ?? projects[0];
   const currentProjectId = activeProject?.id;
@@ -272,15 +273,26 @@ export function Gallery() {
     >
       <input ref={fileInputRef} type="file" accept="image/*" multiple onChange={handleFileChange} className="hidden" />
 
-      <header className="flex h-16 flex-shrink-0 items-center justify-between gap-3 px-4 md:px-6" style={{ backgroundColor: 'var(--editor-bg-primary)', borderBottom: '1px solid var(--editor-border)' }}>
-        <div className="flex min-w-0 items-center gap-3 md:gap-5">
-          <div className="flex items-center gap-2">
+      {(workspaceMode === 'references' || !storyboardsHydrated || !activeProject) && <header className="flex h-14 flex-shrink-0 items-center justify-between gap-2 px-3 md:px-4" style={{ backgroundColor: 'var(--editor-bg-primary)', borderBottom: '1px solid var(--editor-border)' }}>
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-neutral-950 text-xs font-semibold text-white">L</span>
-            <div>
+            <div className="hidden 2xl:block">
               <p className="text-xs font-semibold tracking-[0.2em]">LUMEN</p>
-              <p className="hidden text-[10px] md:block" style={{ color: 'var(--editor-text-muted)' }}>Images that belong together</p>
+              <p className="text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>Director workspace</p>
             </div>
           </div>
+          {activeProject && (
+            <select
+              aria-label="Active project"
+              className="hidden max-w-40 rounded-full border bg-transparent px-3 py-1.5 text-xs font-semibold outline-none md:block lg:max-w-52"
+              onChange={(event) => setActiveStoryboardProject(event.target.value)}
+              style={{ borderColor: 'var(--editor-border)' }}
+              value={activeProject.id}
+            >
+              {projects.map((project) => <option key={project.id} value={project.id}>{project.title}</option>)}
+            </select>
+          )}
           <div className="flex rounded-full p-1" style={{ backgroundColor: 'var(--editor-bg-secondary)' }}>
             {WORKSPACES.map((workspace) => (
               <button key={workspace.value} onClick={() => setWorkspaceMode(workspace.value)} className="rounded-full px-2.5 py-1.5 text-[11px] font-medium md:px-3 md:text-xs" style={{ backgroundColor: workspaceMode === workspace.value ? 'var(--editor-bg-primary)' : 'transparent', color: workspaceMode === workspace.value ? 'var(--editor-text-primary)' : 'var(--editor-text-muted)', boxShadow: workspaceMode === workspace.value ? '0 1px 3px rgba(0,0,0,.08)' : 'none' }}>{workspace.label}</button>
@@ -290,9 +302,9 @@ export function Gallery() {
 
         <div className="flex items-center gap-2">
           {workspaceMode === 'references' && visibleImages.length > 0 && (
-            <div className="relative hidden sm:block">
+            <div className="relative hidden lg:block">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" style={{ color: 'var(--editor-text-muted)' }} />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search project references" className="w-44 rounded-full py-2 pl-9 pr-3 text-xs outline-none md:w-56" style={{ backgroundColor: 'var(--editor-bg-secondary)', border: '1px solid var(--editor-border)' }} />
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search project references" className="w-44 rounded-full py-2 pl-9 pr-3 text-xs outline-none xl:w-56" style={{ backgroundColor: 'var(--editor-bg-secondary)', border: '1px solid var(--editor-border)' }} />
             </div>
           )}
           {selectedReferenceIds.length > 0 && workspaceMode === 'references' && (
@@ -309,7 +321,7 @@ export function Gallery() {
             </>
           )}
         </div>
-      </header>
+      </header>}
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <main className="relative flex-1 overflow-hidden">
@@ -322,9 +334,9 @@ export function Gallery() {
           {!isHydrated || !storyboardsHydrated ? (
             <div className="flex h-full items-center justify-center text-sm" style={{ color: 'var(--editor-text-muted)' }}>Opening your workspace…</div>
           ) : workspaceMode === 'storyboard' ? (
-            <StoryboardWorkspace onOpenImage={handleOpenImage} view="storyboard" />
+            <StoryboardWorkspace onOpenImage={handleOpenImage} onViewChange={setWorkspaceMode} view="storyboard" />
           ) : workspaceMode === 'animatic' ? (
-            <StoryboardWorkspace onOpenImage={handleOpenImage} view="animatic" />
+            <StoryboardWorkspace onOpenImage={handleOpenImage} onViewChange={setWorkspaceMode} view="animatic" />
           ) : (
             <div className={`h-full overflow-auto ${isMobile ? 'pb-24' : ''}`} onClick={(event) => { if (event.target === event.currentTarget) deselectAll(); }}>
               {showGenerator && (

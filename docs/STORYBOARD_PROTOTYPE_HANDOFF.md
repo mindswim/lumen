@@ -21,6 +21,20 @@ Read [STORYBOARD_PRODUCT_DESIGN.md](./STORYBOARD_PRODUCT_DESIGN.md) for the rese
 
 Do not mistake polished prototype interactions for production functionality. The prototype intentionally has no store, persistence, generation calls, mutations, or export behavior.
 
+## Active Refactor Branch
+
+Branch: `codex/storyboard-workspace-refactor`
+
+The first production transition is underway on this branch:
+
+- the prototype's two header rows are collapsed into one responsive workspace header;
+- production Storyboard, Timing, and References now share a single visible header instead of stacking a global and local header;
+- the production storyboard toolbar is isolated as its own component boundary inside `StoryboardWorkspace.tsx` while retaining the existing store ownership;
+- visible **Approved** language is replaced with **Selected**, and the decorative green approval treatment is removed;
+- the production reference header now uses the same height, compact project selector, and responsive priorities as the storyboard header.
+
+No persisted schema, workspace API, generation route, image asset, or editor behavior changed in this first slice. The next production step should replace the Project settings rail with an outline and introduce Board, Shot list, and Timing as explicit views over the existing shots.
+
 ## Prototype Source
 
 - `src/app/storyboard-prototype/page.tsx`

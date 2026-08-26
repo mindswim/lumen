@@ -970,37 +970,49 @@ export function StoryboardPrototype() {
 
   return (
     <div className="flex h-dvh min-h-[620px] flex-col overflow-hidden bg-white text-neutral-950">
-      <header className="z-30 flex h-14 shrink-0 items-center border-b bg-white px-3 sm:px-4">
-        <Link className="mr-3 flex items-center gap-2.5 sm:mr-6" href="/">
+      <header className="z-30 flex h-14 shrink-0 items-center gap-1.5 border-b bg-white px-3 sm:gap-2 sm:px-4">
+        <Link className="mr-1 flex shrink-0 items-center gap-2.5" href="/">
           <span className="flex size-8 items-center justify-center rounded-full bg-neutral-950 text-xs font-semibold text-white">L</span>
-          <span className="hidden sm:block"><span className="block text-xs font-semibold tracking-[0.18em]">LUMEN</span><span className="block text-[9px] text-neutral-400">Director workspace</span></span>
+          <span className="hidden 2xl:block"><span className="block text-xs font-semibold tracking-[0.18em]">LUMEN</span><span className="block text-[9px] text-neutral-400">Director workspace</span></span>
         </Link>
-        <button className="hidden max-w-[280px] items-center gap-2 rounded-md px-2.5 py-1.5 text-left hover:bg-neutral-50 md:flex" type="button">
-          <span className="truncate text-xs font-medium">The Great Police Riot — 1857</span><ChevronDown className="size-3 text-neutral-400" />
-        </button>
-        <div className="mx-auto flex h-full items-center">
-          <SectionButton active={section === 'storyboards'} onClick={() => setSection('storyboards')}>Storyboards</SectionButton>
-          <SectionButton active={section === 'references'} onClick={() => setSection('references')}>References</SectionButton>
-        </div>
-        <div className="flex items-center gap-1 sm:gap-2">
-          <span className="hidden rounded-md bg-neutral-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.1em] text-neutral-500 sm:inline">Prototype</span>
-          <Button className="hidden sm:flex" size="sm" variant="ghost">Share</Button>
-          <button className="flex size-8 items-center justify-center rounded-full bg-neutral-200 text-[11px] font-semibold" type="button">J</button>
-        </div>
-      </header>
 
-      {section === 'storyboards' ? (
-        <>
-          <div className="z-20 flex h-14 shrink-0 items-center gap-2 border-b bg-white px-3 sm:px-4">
+        {section === 'storyboards' && (
+          <>
             <button className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 lg:hidden" onClick={() => setMobileOutlineOpen(true)} type="button"><Menu className="size-4" /><span className="sr-only">Open outline</span></button>
             <button className="hidden rounded-md p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 lg:block" onClick={() => setOutlineOpen((current) => !current)} type="button">
               {outlineOpen ? <PanelLeftClose className="size-4" /> : <PanelLeftOpen className="size-4" />}<span className="sr-only">Toggle outline</span>
             </button>
-            <div className="hidden min-w-0 flex-1 md:block">
-              <p className="truncate text-xs font-semibold">Great Police Riot <span className="font-normal text-neutral-400">/ Storyboard 01</span></p>
-            </div>
-            <div className="mx-auto md:mx-0"><ViewTabs onChange={setView} view={view} /></div>
-            <div className="ml-auto flex flex-1 items-center justify-end gap-1 sm:gap-2 md:flex-none">
+          </>
+        )}
+
+        <button className="hidden min-w-0 max-w-[220px] items-center gap-1.5 rounded-md px-2 py-1.5 text-left hover:bg-neutral-50 md:flex" type="button">
+          <span className="truncate text-xs font-semibold">Great Police Riot</span>
+          <span className="hidden shrink-0 text-[10px] font-normal text-neutral-400 xl:inline">/ Storyboard 01</span>
+          <ChevronDown className="size-3 shrink-0 text-neutral-400" />
+        </button>
+
+        <div className="hidden h-full shrink-0 items-center lg:flex">
+          <SectionButton active={section === 'storyboards'} onClick={() => setSection('storyboards')}>Storyboards</SectionButton>
+          <SectionButton active={section === 'references'} onClick={() => setSection('references')}>References</SectionButton>
+        </div>
+
+        <div className="flex items-center rounded-lg bg-neutral-100 p-0.5 lg:hidden">
+          <button aria-label="Storyboards" className={cn('rounded-md p-1.5', section === 'storyboards' ? 'bg-white text-neutral-950 shadow-sm' : 'text-neutral-400')} onClick={() => setSection('storyboards')} type="button"><LayoutGrid className="size-3.5" /></button>
+          <button aria-label="References" className={cn('rounded-md p-1.5', section === 'references' ? 'bg-white text-neutral-950 shadow-sm' : 'text-neutral-400')} onClick={() => setSection('references')} type="button"><FolderOpen className="size-3.5" /></button>
+        </div>
+
+        {section === 'storyboards' ? (
+          <div className="mx-auto"><ViewTabs onChange={setView} view={view} /></div>
+        ) : (
+          <div className="relative mx-auto hidden w-full max-w-xs lg:block">
+            <Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-neutral-400" />
+            <input className="h-8 w-full rounded-md border bg-neutral-50 pl-8 pr-3 text-xs outline-none focus:border-neutral-400" placeholder="Search project references" />
+          </div>
+        )}
+
+        <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
+          {section === 'storyboards' ? (
+            <>
               <Button className="hidden sm:flex" onClick={() => setGenerationOpen(true)} size="sm"><Sparkles className="size-3.5" /> Generate</Button>
               <Button aria-label="Generate" className="sm:hidden" onClick={() => setGenerationOpen(true)} size="icon-sm"><Sparkles className="size-3.5" /></Button>
               <button className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900 xl:hidden" onClick={() => setMobileInspectorOpen(true)} type="button"><PanelRightOpen className="size-4" /><span className="sr-only">Open shot inspector</span></button>
@@ -1008,9 +1020,19 @@ export function StoryboardPrototype() {
                 {inspectorOpen ? <PanelRightClose className="size-4" /> : <PanelRightOpen className="size-4" />}<span className="sr-only">Toggle shot inspector</span>
               </button>
               <button className="rounded-md p-2 text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900" type="button"><MoreHorizontal className="size-4" /><span className="sr-only">Storyboard actions</span></button>
-            </div>
-          </div>
+            </>
+          ) : (
+            <>
+              <Button className="hidden sm:flex" size="sm" variant="outline"><Upload className="size-3.5" /> Import</Button>
+              <Button size="sm"><Plus className="size-3.5" /><span className="hidden sm:inline">Add reference</span></Button>
+            </>
+          )}
+          <button className="flex size-8 items-center justify-center rounded-full bg-neutral-200 text-[11px] font-semibold" type="button">J</button>
+        </div>
+      </header>
 
+      {section === 'storyboards' ? (
+        <>
           <div className="flex min-h-0 flex-1">
             {outlineOpen && <aside className="hidden w-[240px] shrink-0 border-r lg:block"><StoryboardOutline onSelectShot={selectShot} selectedShotId={selectedShotId} /></aside>}
             <main className="min-w-0 flex-1 overflow-y-auto">
@@ -1036,15 +1058,7 @@ export function StoryboardPrototype() {
           <GenerationDialog onOpenChange={setGenerationOpen} open={generationOpen} shot={selectedShot} />
         </>
       ) : (
-        <>
-          <div className="flex h-14 shrink-0 items-center gap-3 border-b bg-white px-3 sm:px-4">
-            <div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">Reference library</p><p className="hidden text-[10px] text-neutral-400 sm:block">Project scope · 3 references</p></div>
-            <div className="relative hidden w-full max-w-xs sm:block"><Search className="absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-neutral-400" /><input className="h-8 w-full rounded-md border bg-neutral-50 pl-8 pr-3 text-xs outline-none focus:border-neutral-400" placeholder="Search references" /></div>
-            <Button size="sm" variant="outline"><Upload className="size-3.5" /><span className="hidden sm:inline">Import</span></Button>
-            <Button size="sm"><Plus className="size-3.5" /><span className="hidden sm:inline">Add reference</span></Button>
-          </div>
-          <ReferenceLibrary onSelectReference={setSelectedReferenceId} selectedReferenceId={selectedReferenceId} />
-        </>
+        <ReferenceLibrary onSelectReference={setSelectedReferenceId} selectedReferenceId={selectedReferenceId} />
       )}
     </div>
   );
