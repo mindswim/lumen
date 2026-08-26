@@ -18,8 +18,11 @@ import {
   MapPin,
   PanelLeftOpen,
   PanelRightOpen,
+  Pause,
   Play,
   Plus,
+  SkipBack,
+  SkipForward,
   Sparkles,
   Trash2,
   Upload,
@@ -50,6 +53,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
+import { StoryboardOutline } from '@/components/storyboard/StoryboardOutline';
 
 const FIELD = 'w-full rounded-lg border bg-transparent px-3 py-2 text-sm outline-none transition focus:border-neutral-500';
 const LABEL = 'mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.14em]';
@@ -123,7 +134,7 @@ interface GeneratedStoryboardBundle {
   shots: GeneratedBundleShot[];
 }
 
-export type StoryboardWorkspaceView = 'storyboard' | 'animatic';
+export type StoryboardWorkspaceView = 'board' | 'shot-list' | 'timing';
 
 function aspectClass(aspect: StoryboardAspect): string {
   if (aspect === 'portrait_16_9') return 'aspect-[9/16]';
@@ -477,7 +488,7 @@ function ProjectPanel({ project, onClose }: { project: StoryboardProject; onClos
 
   return (
     <aside
-      className="fixed inset-x-0 bottom-0 top-[7.5rem] z-30 overflow-y-auto border-t p-4 lg:static lg:order-1 lg:h-full lg:border-r lg:border-t-0"
+      className="h-full overflow-y-auto p-5 md:p-6"
       style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-primary)' }}
     >
       <input
@@ -937,58 +948,6 @@ function ShotCard({
   );
 }
 
-function ReviewStage({ project, images }: { project: StoryboardProject; images: GalleryImage[] }) {
-  return (
-    <div>
-      <div className="mb-5 max-w-2xl">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: 'var(--editor-text-muted)' }}>Continuity review</p>
-        <h2 className="mt-1 text-xl font-semibold tracking-tight">See what is ready—and what could break.</h2>
-        <p className="mt-2 text-xs leading-5" style={{ color: 'var(--editor-text-tertiary)' }}>
-          This preflight checks the structure available today. Automated visual comparison can later verify faces, wardrobe, prop ownership, action, and geography inside the pixels.
-        </p>
-      </div>
-      <div className="space-y-3">
-        {project.shots.map((shot, index) => {
-          const image = imageForTake(shot, images);
-          const scene = project.scenes.find((candidate) => candidate.id === shot.sceneId);
-          const checks = [
-            ['Selected panel', Boolean(shot.selectedTakeId)],
-            ['Shot description', Boolean(shot.prompt.trim())],
-            ['Continuity notes', Boolean(shot.continuityNotes.trim())],
-            ['Reference context', shot.referenceIds.length > 0 || Boolean(scene?.referenceIds.length)],
-          ] as const;
-          const passed = checks.filter(([, ready]) => ready).length;
-          return (
-            <section key={shot.id} className="grid gap-3 rounded-2xl border p-3 md:grid-cols-[160px_1fr_auto] md:items-center" style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-primary)' }}>
-              <div className={`overflow-hidden rounded-xl bg-neutral-900 ${aspectClass(project.aspect)}`}>
-                {image ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={image.dataUrl} alt="" className="h-full w-full object-cover" />
-                ) : <div className="flex h-full items-center justify-center text-[9px] uppercase tracking-wide text-white/40">Unshot</div>}
-              </div>
-              <div>
-                <p className="text-xs font-semibold">{String(index + 1).padStart(2, '0')} · {shot.title}</p>
-                <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2">
-                  {checks.map(([label, ready]) => (
-                    <div key={label} className="flex items-center gap-1.5 text-[9px]">
-                      <span className={`flex h-4 w-4 items-center justify-center rounded-full ${ready ? 'bg-emerald-500 text-white' : 'bg-amber-100 text-amber-700'}`}>{ready ? <Check className="h-2.5 w-2.5" /> : '!'}</span>
-                      <span style={{ color: ready ? 'var(--editor-text-tertiary)' : '#b45309' }}>{label}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="md:text-right">
-                <p className="text-lg font-semibold">{passed}/4</p>
-                <p className={`text-[9px] font-semibold uppercase tracking-wide ${passed === checks.length ? 'text-emerald-600' : 'text-amber-600'}`}>{passed === checks.length ? 'Ready to inspect' : 'Needs setup'}</p>
-              </div>
-            </section>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function Board({
   project,
   selectedShotId,
@@ -1006,13 +965,39 @@ function Board({
   const addScene = useStoryboardStore((state) => state.addScene);
   const selectShot = useStoryboardStore((state) => state.selectShot);
   const images = useGalleryStore((state) => state.images);
-  const [boardMode, setBoardMode] = useState<'boards' | 'continuity'>('boards');
   const completed = project.shots.filter((shot) => shot.selectedTakeId).length;
   const totalDuration = project.shots.reduce((sum, shot) => sum + shot.durationSeconds, 0);
+  const playbackShot = project.shots.find((shot) => shot.id === selectedShotId) ?? project.shots[0];
+  const playbackIndex = playbackShot ? project.shots.findIndex((shot) => shot.id === playbackShot.id) : -1;
+  const playbackImage = playbackShot ? imageForTake(playbackShot, images) : null;
+  const elapsedBeforeShot = playbackIndex > 0
+    ? project.shots.slice(0, playbackIndex).reduce((sum, shot) => sum + shot.durationSeconds, 0)
+    : 0;
+  const [isPlaying, setIsPlaying] = useState(false);
 
-  if (view === 'animatic') {
+  useEffect(() => {
+    if (view !== 'timing' || !isPlaying || !playbackShot) return;
+    const timer = window.setTimeout(() => {
+      const nextShot = project.shots[playbackIndex + 1];
+      if (nextShot) selectShot(nextShot.id);
+      else setIsPlaying(false);
+    }, Math.max(500, playbackShot.durationSeconds * 1000));
+    return () => window.clearTimeout(timer);
+  }, [isPlaying, playbackIndex, playbackShot, project.shots, selectShot, view]);
+
+  const selectPreviousPlaybackShot = () => {
+    const previous = project.shots[Math.max(0, playbackIndex - 1)];
+    if (previous) selectShot(previous.id);
+  };
+
+  const selectNextPlaybackShot = () => {
+    const next = project.shots[Math.min(project.shots.length - 1, playbackIndex + 1)];
+    if (next) selectShot(next.id);
+  };
+
+  if (view === 'timing') {
     return (
-      <main className="order-1 min-w-0 p-4 lg:order-2 lg:h-full lg:overflow-y-auto lg:p-6">
+      <main className="order-1 min-w-0 flex-1 overflow-y-auto p-4 lg:order-2 lg:h-full lg:p-6">
         <div className="mx-auto max-w-6xl">
           <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
             <div>
@@ -1027,14 +1012,59 @@ function Board({
             </div>
           </div>
 
-          <section className="overflow-hidden rounded-2xl border" style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-primary)' }}>
-            <div className="flex items-center gap-2 border-b px-4 py-3" style={{ borderColor: 'var(--editor-border)' }}>
-              <Play className="h-3.5 w-3.5" />
-              <p className="text-xs font-semibold">Storyboard timing</p>
-              <p className="ml-auto text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>Still-image timing preview</p>
+          <section className="overflow-hidden rounded-2xl bg-neutral-950 text-white shadow-xl">
+            <div className="flex items-center gap-2 border-b border-white/10 px-4 py-3">
+              <Film className="h-3.5 w-3.5" />
+              <p className="text-xs font-semibold">Animatic preview</p>
+              <p className="ml-auto text-[9px] text-white/45">Panels timed to shot duration</p>
             </div>
-            <div className="overflow-x-auto p-4">
-              <div className="flex min-w-max gap-1">
+
+            <div className="relative mx-auto flex min-h-[260px] max-h-[58vh] max-w-5xl items-center justify-center overflow-hidden bg-black">
+              {playbackImage && playbackShot ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={playbackImage.dataUrl} alt={playbackShot.title} className="max-h-[58vh] w-full object-contain" />
+              ) : (
+                <div className="flex min-h-[260px] flex-col items-center justify-center text-white/35">
+                  <ImagePlus className="h-7 w-7" />
+                  <p className="mt-3 text-[10px] font-medium uppercase tracking-[0.14em]">No selected panel</p>
+                </div>
+              )}
+              {playbackShot && (
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/80 to-transparent px-5 pb-4 pt-16">
+                  <div>
+                    <p className="font-mono text-[9px] text-white/55">SHOT {String(playbackIndex + 1).padStart(2, '0')}</p>
+                    <p className="mt-1 text-sm font-medium">{playbackShot.title}</p>
+                  </div>
+                  <p className="text-[10px] tabular-nums text-white/60">{playbackShot.durationSeconds.toFixed(1)} sec</p>
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-white/10 px-4 py-3">
+              <div className="mb-3 h-1 overflow-hidden rounded-full bg-white/10">
+                <div className="h-full rounded-full bg-white transition-all" style={{ width: `${totalDuration ? (elapsedBeforeShot / totalDuration) * 100 : 0}%` }} />
+              </div>
+              <div className="flex items-center justify-center gap-3">
+                <button type="button" onClick={selectPreviousPlaybackShot} aria-label="Previous shot" disabled={playbackIndex <= 0} className="flex h-8 w-8 items-center justify-center rounded-full text-white/70 hover:bg-white/10 disabled:opacity-25"><SkipBack className="h-3.5 w-3.5" /></button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isPlaying && playbackIndex === project.shots.length - 1 && project.shots[0]) selectShot(project.shots[0].id);
+                    setIsPlaying((value) => !value);
+                  }}
+                  aria-label={isPlaying ? 'Pause animatic' : 'Play animatic'}
+                  disabled={project.shots.length === 0}
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-black disabled:opacity-30"
+                >
+                  {isPlaying ? <Pause className="h-4 w-4 fill-current" /> : <Play className="ml-0.5 h-4 w-4 fill-current" />}
+                </button>
+                <button type="button" onClick={selectNextPlaybackShot} aria-label="Next shot" disabled={playbackIndex < 0 || playbackIndex >= project.shots.length - 1} className="flex h-8 w-8 items-center justify-center rounded-full text-white/70 hover:bg-white/10 disabled:opacity-25"><SkipForward className="h-3.5 w-3.5" /></button>
+                <span className="ml-2 min-w-24 text-[9px] tabular-nums text-white/45">{elapsedBeforeShot.toFixed(1)} / {totalDuration.toFixed(1)} sec</span>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto border-t border-white/10 p-4">
+              <div className="flex min-w-max gap-1.5">
                 {project.shots.map((timelineShot, index) => {
                   const image = imageForTake(timelineShot, images);
                   const selected = timelineShot.id === selectedShotId;
@@ -1042,12 +1072,12 @@ function Board({
                     <button
                       key={timelineShot.id}
                       type="button"
-                      onClick={() => { selectShot(timelineShot.id); onInspectShot(); }}
-                      className="overflow-hidden rounded-xl border text-left transition"
+                      onClick={() => selectShot(timelineShot.id)}
+                      className="overflow-hidden rounded-lg border text-left text-white transition"
                       style={{
-                        width: `${Math.max(150, timelineShot.durationSeconds * 54)}px`,
-                        borderColor: selected ? 'var(--editor-text-primary)' : 'var(--editor-border)',
-                        boxShadow: selected ? '0 0 0 1px var(--editor-text-primary)' : 'none',
+                        width: `${Math.max(132, timelineShot.durationSeconds * 46)}px`,
+                        borderColor: selected ? 'white' : 'rgba(255,255,255,.12)',
+                        backgroundColor: selected ? 'rgba(255,255,255,.10)' : 'rgba(255,255,255,.04)',
                       }}
                     >
                       <div className={`relative bg-neutral-900 ${aspectClass(project.aspect)}`}>
@@ -1059,7 +1089,7 @@ function Board({
                       </div>
                       <div className="p-2.5">
                         <p className="truncate text-[10px] font-semibold">{timelineShot.title}</p>
-                        <p className="mt-1 text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>{timelineShot.durationSeconds}s · {CAMERA_MOVEMENTS.find((item) => item.value === timelineShot.cameraMovement)?.label}</p>
+                        <p className="mt-1 text-[9px] text-white/45">{timelineShot.durationSeconds}s · {CAMERA_MOVEMENTS.find((item) => item.value === timelineShot.cameraMovement)?.label}</p>
                       </div>
                     </button>
                   );
@@ -1068,7 +1098,102 @@ function Board({
             </div>
           </section>
           <div className="mt-4 rounded-2xl border border-dashed px-5 py-4 text-xs leading-5" style={{ borderColor: 'var(--editor-border)', color: 'var(--editor-text-tertiary)' }}>
-            Next: use the selected panel as the shot&apos;s first frame, then add motion direction, an optional ending keyframe, dialogue, voice-over, and sound on this timeline.
+            An animatic is the storyboard played in sequence with rough timing. It validates pace and coverage before the expensive step of generating motion, dialogue, voice-over, and sound.
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (view === 'shot-list') {
+    return (
+      <main className="order-1 min-w-0 flex-1 overflow-y-auto p-4 lg:order-2 lg:h-full lg:p-6">
+        <div className="mx-auto max-w-7xl">
+          <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: 'var(--editor-text-muted)' }}>Production view</p>
+              <h1 className="mt-1 text-2xl font-semibold tracking-tight">Shot list</h1>
+              <p className="mt-2 max-w-xl text-xs leading-5" style={{ color: 'var(--editor-text-tertiary)' }}>
+                Structured direction for the same {project.shots.length} shots. Select a row to inspect or edit it.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const sceneId = project.scenes[0]?.id;
+                if (!sceneId) return;
+                const shotId = addShot(project.id, undefined, sceneId);
+                selectShot(shotId);
+                onInspectShot();
+              }}
+              className="flex items-center gap-1.5 rounded-full border px-3 py-2 text-[10px] font-medium"
+              style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-primary)' }}
+            >
+              <Plus className="h-3.5 w-3.5" /> Add shot
+            </button>
+          </div>
+
+          <div className="overflow-hidden rounded-2xl border" style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-primary)' }}>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[1240px] border-collapse text-left">
+                <thead style={{ backgroundColor: 'var(--editor-bg-secondary)' }}>
+                  <tr className="text-[9px] font-semibold uppercase tracking-[0.11em]" style={{ color: 'var(--editor-text-muted)' }}>
+                    <th className="w-16 px-4 py-3">Shot</th>
+                    <th className="w-24 px-3 py-3">Panel</th>
+                    <th className="w-40 px-3 py-3">Name</th>
+                    <th className="w-40 px-3 py-3">Scene</th>
+                    <th className="w-[360px] px-3 py-3">Description</th>
+                    <th className="w-36 px-3 py-3">Framing</th>
+                    <th className="w-28 px-3 py-3">Movement</th>
+                    <th className="w-20 px-3 py-3">Duration</th>
+                    <th className="w-24 px-3 py-3">Version</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {project.shots.map((listShot, index) => {
+                    const scene = project.scenes.find((candidate) => candidate.id === listShot.sceneId);
+                    const image = imageForTake(listShot, images);
+                    const isSelected = listShot.id === selectedShotId;
+                    return (
+                      <tr
+                        key={listShot.id}
+                        tabIndex={0}
+                        className="cursor-pointer border-t text-[11px] transition-colors hover:bg-neutral-50"
+                        style={{ borderColor: 'var(--editor-border)', backgroundColor: isSelected ? 'var(--editor-bg-secondary)' : undefined }}
+                        onClick={() => { selectShot(listShot.id); onInspectShot(); }}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            selectShot(listShot.id);
+                            onInspectShot();
+                          }
+                        }}
+                      >
+                        <td className="px-4 py-3 font-mono" style={{ color: 'var(--editor-text-muted)' }}>{String(index + 1).padStart(2, '0')}</td>
+                        <td className="px-3 py-2">
+                          <div className="h-11 w-16 overflow-hidden rounded-md bg-neutral-900">
+                            {image ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={image.thumbnailUrl} alt="" className="h-full w-full object-cover" />
+                            ) : <span className="flex h-full items-center justify-center text-[8px] uppercase text-white/40">Missing</span>}
+                          </div>
+                        </td>
+                        <td className="px-3 py-3 font-semibold">{listShot.title}</td>
+                        <td className="px-3 py-3" style={{ color: 'var(--editor-text-tertiary)' }}>{scene?.title ?? 'Unassigned'}</td>
+                        <td className="w-[360px] max-w-[360px] px-3 py-3 leading-5" style={{ color: 'var(--editor-text-tertiary)' }}>{listShot.beat || listShot.prompt || 'Add shot direction.'}</td>
+                        <td className="px-3 py-3" style={{ color: 'var(--editor-text-tertiary)' }}>{SHOT_SIZES.find((item) => item.value === listShot.shotSize)?.label}</td>
+                        <td className="px-3 py-3" style={{ color: 'var(--editor-text-tertiary)' }}>{CAMERA_MOVEMENTS.find((item) => item.value === listShot.cameraMovement)?.label}</td>
+                        <td className="px-3 py-3 tabular-nums" style={{ color: 'var(--editor-text-tertiary)' }}>{listShot.durationSeconds}s</td>
+                        <td className="px-3 py-3">
+                          {listShot.selectedTakeId ? (
+                            <span className="inline-flex items-center gap-1 text-[10px] font-medium"><Check className="h-3 w-3" /> Selected</span>
+                          ) : <span className="text-[10px]" style={{ color: 'var(--editor-text-muted)' }}>Missing</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       </main>
@@ -1076,7 +1201,7 @@ function Board({
   }
 
   return (
-    <main className="order-1 min-w-0 p-4 lg:order-2 lg:h-full lg:overflow-y-auto lg:p-6">
+    <main className="order-1 min-w-0 flex-1 overflow-y-auto p-4 lg:order-2 lg:h-full lg:p-6">
       <div className="mx-auto max-w-6xl">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -1084,22 +1209,15 @@ function Board({
             <h1 className="mt-1 text-2xl font-semibold tracking-tight">{project.title}</h1>
             <p className="mt-1 text-xs" style={{ color: 'var(--editor-text-tertiary)' }}>{project.scenes.length} scene{project.scenes.length === 1 ? '' : 's'} · {project.shots.length} shots</p>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="hidden text-right sm:block">
-              <p className="text-xs font-medium">{completed} of {project.shots.length} selected</p>
-              <div className="mt-2 h-1.5 w-28 overflow-hidden rounded-full bg-neutral-200">
-                <div className="h-full rounded-full bg-neutral-950 transition-all" style={{ width: `${project.shots.length ? (completed / project.shots.length) * 100 : 0}%` }} />
-              </div>
-            </div>
-            <div className="flex rounded-full p-1" style={{ backgroundColor: 'var(--editor-bg-secondary)' }}>
-              <button type="button" onClick={() => setBoardMode('boards')} className="rounded-full px-3 py-1.5 text-[10px] font-medium" style={{ backgroundColor: boardMode === 'boards' ? 'var(--editor-bg-primary)' : 'transparent', boxShadow: boardMode === 'boards' ? '0 1px 3px rgba(0,0,0,.08)' : 'none' }}>Boards</button>
-              <button type="button" onClick={() => setBoardMode('continuity')} className="rounded-full px-3 py-1.5 text-[10px] font-medium" style={{ backgroundColor: boardMode === 'continuity' ? 'var(--editor-bg-primary)' : 'transparent', boxShadow: boardMode === 'continuity' ? '0 1px 3px rgba(0,0,0,.08)' : 'none' }}>Continuity</button>
+          <div className="hidden text-right sm:block">
+            <p className="text-xs font-medium">{completed} of {project.shots.length} selected</p>
+            <div className="mt-2 h-1.5 w-28 overflow-hidden rounded-full bg-neutral-200">
+              <div className="h-full rounded-full bg-neutral-950 transition-all" style={{ width: `${project.shots.length ? (completed / project.shots.length) * 100 : 0}%` }} />
             </div>
           </div>
         </div>
 
-        {boardMode === 'continuity' ? <ReviewStage project={project} images={images} /> : (
-          <div className="space-y-8">
+        <div className="space-y-8">
             {project.scenes.map((scene, sceneIndex) => {
               const sceneShots = project.shots.filter((shot) => shot.sceneId === scene.id);
               return (
@@ -1140,8 +1258,7 @@ function Board({
             >
               <Plus className="h-4 w-4" /> Add scene
             </button>
-          </div>
-        )}
+        </div>
       </div>
     </main>
   );
@@ -1152,24 +1269,22 @@ function ShotInspector({
   shot,
   onOpenImage,
   onClose,
+  onGenerate,
 }: {
   project: StoryboardProject;
   shot: StoryboardShot;
   onOpenImage: (imageId: string) => void;
   onClose: () => void;
+  onGenerate: () => void;
 }) {
   const takeInput = useRef<HTMLInputElement>(null);
   const images = useGalleryStore((state) => state.images);
   const addImages = useGalleryStore((state) => state.addImages);
-  const addImageFromUrl = useGalleryStore((state) => state.addImageFromUrl);
-  const updateProject = useStoryboardStore((state) => state.updateProject);
   const updateShot = useStoryboardStore((state) => state.updateShot);
   const addTake = useStoryboardStore((state) => state.addTake);
   const selectTake = useStoryboardStore((state) => state.selectTake);
   const addReference = useStoryboardStore((state) => state.addReference);
   const removeShot = useStoryboardStore((state) => state.removeShot);
-  const [refineSelected, setRefineSelected] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
   const [isImportingTake, setIsImportingTake] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1180,8 +1295,6 @@ function ShotInspector({
   const previousCandidate = shotIndex > 0 ? project.shots[shotIndex - 1] : null;
   const previousShot = previousCandidate?.sceneId === shot.sceneId ? previousCandidate : null;
   const previousTake = previousShot ? getSelectedTake(previousShot) : null;
-  const currentTake = getSelectedTake(shot);
-  const renderTier = project.renderTier ?? 'draft';
 
   const toggleReference = (referenceId: string) => {
     const next = shot.referenceIds.includes(referenceId)
@@ -1212,81 +1325,6 @@ function ShotInspector({
     } finally {
       setIsImportingTake(false);
       if (takeInput.current) takeInput.current.value = '';
-    }
-  };
-
-  const generate = async () => {
-    if (!shot.prompt.trim() || isGenerating) return;
-    setIsGenerating(true);
-    setError(null);
-
-    try {
-      const inputs: Array<{ image: GalleryImage; promptReference: PromptReference; referenceId?: string }> = [];
-      for (const referenceId of activeReferenceIds) {
-        const reference = project.references.find((candidate) => candidate.id === referenceId);
-        const image = reference ? images.find((candidate) => candidate.id === reference.imageId) : null;
-        if (reference && image) inputs.push({ image, promptReference: { reference, label: reference.name }, referenceId });
-      }
-
-      if (shot.usePreviousPanel && previousTake && previousShot) {
-        const image = images.find((candidate) => candidate.id === previousTake.imageId);
-        if (image) inputs.push({
-          image,
-          promptReference: { reference: null, label: `PREVIOUS SELECTED SHOT — ${previousShot.title}. Preserve identities, wardrobe, world state, and screen direction without copying its composition.` },
-        });
-      }
-
-      if (refineSelected && currentTake) {
-        const image = images.find((candidate) => candidate.id === currentTake.imageId);
-        if (image) inputs.push({
-          image,
-          promptReference: { reference: null, label: `CURRENT SELECTED TAKE — refine this frame while preserving its successful composition and continuity.` },
-        });
-      }
-
-      const uniqueInputs = inputs
-        .filter((input, index, all) => all.findIndex((candidate) => candidate.image.id === input.image.id) === index)
-        .slice(0, renderTier === 'draft' ? 4 : 10);
-      const prompt = composeStoryboardPrompt(
-        project,
-        shot,
-        shotIndex,
-        uniqueInputs.map((input) => input.promptReference),
-      );
-      const referenceImages = await Promise.all(
-        uniqueInputs.map((input) => createAIImagePreview(input.image.dataUrl)),
-      );
-
-      const response = await fetch('/api/ai/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          engine: 'storyboard',
-          prompt,
-          imageSize: project.aspect,
-          numImages: 1,
-          referenceImages,
-          renderTier,
-        }),
-      });
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'The frame could not be generated.');
-
-      for (const [index, output] of (result.images as Array<{ url: string }>).entries()) {
-        const safeTitle = shot.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `shot-${shotIndex + 1}`;
-        const image = await addImageFromUrl(output.url, `${String(shotIndex + 1).padStart(2, '0')}-${safeTitle}-t${shot.takes.length + index + 1}.jpg`);
-        addTake(project.id, shot.id, {
-          imageId: image.id,
-          prompt,
-          referenceIds: uniqueInputs.flatMap((input) => input.referenceId ? [input.referenceId] : []),
-          model: result.model || 'fal-ai/bytedance/seedream/v4.5',
-          seed: typeof result.seed === 'number' ? result.seed : null,
-        });
-      }
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'The frame could not be generated.');
-    } finally {
-      setIsGenerating(false);
     }
   };
 
@@ -1504,51 +1542,19 @@ function ShotInspector({
             </span>
           </label>
         )}
-        {currentTake && (
-          <label className="flex cursor-pointer items-start gap-2 rounded-lg border p-2.5" style={{ borderColor: 'var(--editor-border)' }}>
-            <input type="checkbox" checked={refineSelected} onChange={(event) => setRefineSelected(event.target.checked)} className="mt-0.5" />
-            <span>
-              <span className="block text-[10px] font-semibold">Refine the selected version</span>
-              <span className="mt-0.5 block text-[9px] leading-4" style={{ color: 'var(--editor-text-muted)' }}>
-                Preserve what works in this shot while following the revised direction.
-              </span>
-            </span>
-          </label>
-        )}
       </div>
 
       {error && (
         <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-[10px] leading-4 text-red-700" role="alert">{error}</p>
       )}
 
-      <div className="mt-4 flex rounded-xl p-1" style={{ backgroundColor: 'var(--editor-bg-secondary)' }}>
-        {([
-          { value: 'draft' as const, label: 'Draft', note: 'Flash · cheap' },
-          { value: 'final' as const, label: 'Final', note: 'Seedream · best' },
-        ]).map((tier) => (
-          <button
-            key={tier.value}
-            type="button"
-            onClick={() => updateProject(project.id, { renderTier: tier.value })}
-            className="flex-1 rounded-lg px-3 py-2 text-left transition"
-            style={{
-              backgroundColor: renderTier === tier.value ? 'var(--editor-bg-primary)' : 'transparent',
-              boxShadow: renderTier === tier.value ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
-            }}
-          >
-            <span className="block text-[10px] font-semibold">{tier.label}</span>
-            <span className="mt-0.5 block text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>{tier.note}</span>
-          </button>
-        ))}
-      </div>
-
       <button
-        onClick={generate}
-        disabled={!shot.prompt.trim() || isGenerating}
+        onClick={onGenerate}
+        disabled={!shot.prompt.trim()}
         className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-neutral-950 px-4 py-3 text-xs font-medium text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-40"
       >
-        {isGenerating ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" /> : <Sparkles className="h-3.5 w-3.5" />}
-        {isGenerating ? 'Generating storyboard panel…' : shot.takes.length ? `Generate another ${renderTier} version` : `Generate ${renderTier} panel`}
+        <Sparkles className="h-3.5 w-3.5" />
+        {shot.takes.length ? 'Generate alternative' : 'Generate panel'}
       </button>
       <button
         type="button"
@@ -1559,9 +1565,7 @@ function ShotInspector({
       >
         <Upload className="h-3.5 w-3.5" /> {isImportingTake ? 'Importing…' : 'Import existing version'}
       </button>
-      <p className="mt-2 text-center text-[9px] leading-4" style={{ color: 'var(--editor-text-muted)' }}>
-        {renderTier === 'draft' ? 'FLUX.2 Flash · $0.005 per input/output MP' : 'Seedream 4.5 · $0.04 per image'} · one complete {ASPECTS.find((item) => item.value === project.aspect)?.label} image · your click starts the paid run
-      </p>
+      <p className="mt-2 text-center text-[9px] leading-4" style={{ color: 'var(--editor-text-muted)' }}>Review the target, references, provider, and price before starting a paid run.</p>
 
       {shot.takes.length > 0 && (
         <>
@@ -1653,33 +1657,276 @@ function ShotInspector({
   );
 }
 
+function StoryboardGenerationDialog({
+  open,
+  onOpenChange,
+  project,
+  shot,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  project: StoryboardProject;
+  shot: StoryboardShot;
+}) {
+  const images = useGalleryStore((state) => state.images);
+  const addImageFromUrl = useGalleryStore((state) => state.addImageFromUrl);
+  const updateProject = useStoryboardStore((state) => state.updateProject);
+  const addTake = useStoryboardStore((state) => state.addTake);
+  const [refineSelected, setRefineSelected] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [generated, setGenerated] = useState(false);
+
+  const shotIndex = project.shots.findIndex((candidate) => candidate.id === shot.id);
+  const scene = project.scenes.find((candidate) => candidate.id === shot.sceneId) ?? project.scenes[0];
+  const sceneReferenceIds = scene?.referenceIds ?? [];
+  const activeReferenceIds = Array.from(new Set([...sceneReferenceIds, ...shot.referenceIds]));
+  const assignedReferences = activeReferenceIds
+    .map((referenceId) => project.references.find((reference) => reference.id === referenceId))
+    .filter((reference): reference is NonNullable<typeof reference> => Boolean(reference));
+  const previousCandidate = shotIndex > 0 ? project.shots[shotIndex - 1] : null;
+  const previousShot = previousCandidate?.sceneId === shot.sceneId ? previousCandidate : null;
+  const previousTake = previousShot ? getSelectedTake(previousShot) : null;
+  const currentTake = getSelectedTake(shot);
+  const currentImage = currentTake ? images.find((image) => image.id === currentTake.imageId) : null;
+  const renderTier = project.renderTier ?? 'draft';
+  const referenceLimit = renderTier === 'draft' ? 4 : 10;
+  const inputCount = assignedReferences.filter((reference) => images.some((image) => image.id === reference.imageId)).length
+    + (shot.usePreviousPanel && previousTake ? 1 : 0)
+    + (refineSelected && currentTake ? 1 : 0);
+
+  const closeDialog = (nextOpen: boolean) => {
+    if (!nextOpen) {
+      setError(null);
+      setGenerated(false);
+      setRefineSelected(false);
+    }
+    onOpenChange(nextOpen);
+  };
+
+  const generate = async () => {
+    if (!shot.prompt.trim() || isGenerating) return;
+    setIsGenerating(true);
+    setError(null);
+    setGenerated(false);
+
+    try {
+      const inputs: Array<{ image: GalleryImage; promptReference: PromptReference; referenceId?: string }> = [];
+      for (const referenceId of activeReferenceIds) {
+        const reference = project.references.find((candidate) => candidate.id === referenceId);
+        const image = reference ? images.find((candidate) => candidate.id === reference.imageId) : null;
+        if (reference && image) inputs.push({ image, promptReference: { reference, label: reference.name }, referenceId });
+      }
+
+      if (shot.usePreviousPanel && previousTake && previousShot) {
+        const image = images.find((candidate) => candidate.id === previousTake.imageId);
+        if (image) inputs.push({
+          image,
+          promptReference: { reference: null, label: `PREVIOUS SELECTED SHOT — ${previousShot.title}. Preserve identities, wardrobe, world state, and screen direction without copying its composition.` },
+        });
+      }
+
+      if (refineSelected && currentTake) {
+        const image = images.find((candidate) => candidate.id === currentTake.imageId);
+        if (image) inputs.push({
+          image,
+          promptReference: { reference: null, label: 'CURRENT SELECTED VERSION — refine this frame while preserving its successful composition and continuity.' },
+        });
+      }
+
+      const uniqueInputs = inputs.filter((input, index, all) => (
+        all.findIndex((candidate) => candidate.image.id === input.image.id) === index
+      ));
+      if (uniqueInputs.length > referenceLimit) {
+        throw new Error(`${renderTier === 'draft' ? 'Draft' : 'Final'} generation supports ${referenceLimit} reference images. Remove or re-scope ${uniqueInputs.length - referenceLimit} before running.`);
+      }
+
+      const prompt = composeStoryboardPrompt(
+        project,
+        shot,
+        shotIndex,
+        uniqueInputs.map((input) => input.promptReference),
+      );
+      const referenceImages = await Promise.all(
+        uniqueInputs.map((input) => createAIImagePreview(input.image.dataUrl)),
+      );
+      const response = await fetch('/api/ai/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          engine: 'storyboard',
+          prompt,
+          imageSize: project.aspect,
+          numImages: 1,
+          referenceImages,
+          renderTier,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'The frame could not be generated.');
+
+      for (const [index, output] of (result.images as Array<{ url: string }>).entries()) {
+        const safeTitle = shot.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `shot-${shotIndex + 1}`;
+        const image = await addImageFromUrl(output.url, `${String(shotIndex + 1).padStart(2, '0')}-${safeTitle}-v${shot.takes.length + index + 1}.jpg`);
+        addTake(project.id, shot.id, {
+          imageId: image.id,
+          prompt,
+          referenceIds: uniqueInputs.flatMap((input) => input.referenceId ? [input.referenceId] : []),
+          model: result.model || 'fal-ai/bytedance/seedream/v4.5',
+          seed: typeof result.seed === 'number' ? result.seed : null,
+        });
+      }
+      setGenerated(true);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'The frame could not be generated.');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={closeDialog}>
+      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <DialogHeader className="border-b px-6 py-5" style={{ borderColor: 'var(--editor-border)' }}>
+          <DialogTitle className="flex items-center gap-2 text-base"><Sparkles className="h-4 w-4" /> {shot.takes.length ? 'Generate alternative' : 'Generate panel'}</DialogTitle>
+          <DialogDescription>Review the target and the exact continuity inputs before starting a paid generation.</DialogDescription>
+        </DialogHeader>
+
+        <div className="max-h-[68vh] overflow-y-auto">
+          <section className="border-b px-6 py-5" style={{ borderColor: 'var(--editor-border)' }}>
+            <div className="mb-3 flex items-center justify-between">
+              <div><p className="text-xs font-semibold">Target</p><p className="mt-0.5 text-[10px]" style={{ color: 'var(--editor-text-muted)' }}>1 shot · 1 new version</p></div>
+              <span className="font-mono text-[10px]" style={{ color: 'var(--editor-text-muted)' }}>SHOT {String(shotIndex + 1).padStart(2, '0')}</span>
+            </div>
+            <div className="flex items-center gap-3 rounded-xl border p-2.5" style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-secondary)' }}>
+              <div className="h-16 w-24 shrink-0 overflow-hidden rounded-lg bg-neutral-900">
+                {currentImage ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={currentImage.thumbnailUrl} alt="" className="h-full w-full object-cover" />
+                ) : <div className="flex h-full items-center justify-center text-[8px] uppercase tracking-wide text-white/40">New panel</div>}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-xs font-semibold">{shot.title}</p>
+                <p className="mt-1 line-clamp-2 text-[10px] leading-4" style={{ color: 'var(--editor-text-tertiary)' }}>{shot.beat || shot.prompt}</p>
+              </div>
+            </div>
+            {!shot.prompt.trim() && <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[10px] text-amber-800">Add a shot description before generating. The action/beat alone is not treated as a complete image direction.</p>}
+          </section>
+
+          <section className="border-b px-6 py-5" style={{ borderColor: 'var(--editor-border)' }}>
+            <div className="mb-3 flex items-center justify-between"><p className="text-xs font-semibold">Reference assignments</p><span className="text-[10px]" style={{ color: inputCount > referenceLimit ? 'var(--editor-error)' : 'var(--editor-text-muted)' }}>{inputCount} of {referenceLimit} inputs</span></div>
+            {assignedReferences.length > 0 ? (
+              <div className="space-y-2">
+                {assignedReferences.map((reference) => {
+                  const image = images.find((candidate) => candidate.id === reference.imageId);
+                  const inherited = sceneReferenceIds.includes(reference.id);
+                  const role = reference.kind === 'character' ? 'Subject identity' : reference.kind === 'location' ? 'Environment' : reference.kind === 'object' ? 'Prop' : reference.kind === 'style' ? 'Look' : 'Research';
+                  return (
+                    <div key={reference.id} className="flex items-center gap-3 rounded-lg border p-2.5" style={{ borderColor: 'var(--editor-border)' }}>
+                      <div className="h-12 w-16 shrink-0 overflow-hidden rounded-md bg-neutral-100">
+                        {image && (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={image.thumbnailUrl} alt="" className="h-full w-full object-cover" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1"><p className="truncate text-xs font-medium">{reference.name}</p><p className="mt-0.5 text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>{role} · {inherited ? 'Scene default' : 'This shot'}</p></div>
+                      <CircleCheck className="h-4 w-4 text-neutral-500" />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="rounded-lg border border-dashed px-3 py-4 text-[10px] leading-4" style={{ borderColor: 'var(--editor-border)', color: 'var(--editor-text-muted)' }}>No project references are assigned. The model will use only the written shot and project direction.</p>
+            )}
+
+            {(shot.usePreviousPanel && previousTake && previousShot) && (
+              <div className="mt-2 flex items-center gap-3 rounded-lg border p-2.5" style={{ borderColor: 'var(--editor-border)' }}>
+                <div className="flex h-12 w-16 shrink-0 items-center justify-center rounded-md bg-neutral-100"><ArrowLeft className="h-4 w-4" /></div>
+                <div className="min-w-0 flex-1"><p className="truncate text-xs font-medium">Previous selected panel</p><p className="mt-0.5 text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>{previousShot.title} · continuous action</p></div>
+                <CircleCheck className="h-4 w-4 text-neutral-500" />
+              </div>
+            )}
+
+            {currentTake && (
+              <label className="mt-3 flex cursor-pointer items-start gap-2 rounded-lg bg-neutral-100 p-3">
+                <input type="checkbox" checked={refineSelected} onChange={(event) => setRefineSelected(event.target.checked)} className="mt-0.5" />
+                <span><span className="block text-[10px] font-semibold">Refine the selected version</span><span className="mt-0.5 block text-[9px] leading-4" style={{ color: 'var(--editor-text-muted)' }}>Include the current composition as an additional input. Leave this off for a genuinely different alternative.</span></span>
+              </label>
+            )}
+            <p className="mt-3 text-[10px] leading-4" style={{ color: 'var(--editor-text-muted)' }}>Only references assigned to this scene or shot are sent. Other project references are excluded.</p>
+          </section>
+
+          <section className="px-6 py-5">
+            <p className="mb-3 text-xs font-semibold">Provider and quality</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="rounded-lg border p-3" style={{ borderColor: 'var(--editor-border)' }}><p className="text-[9px] uppercase tracking-wide" style={{ color: 'var(--editor-text-muted)' }}>Provider</p><p className="mt-1 text-xs font-medium">fal.ai</p></div>
+              {([
+                { value: 'draft' as const, label: 'Draft', note: 'FLUX.2 Flash' },
+                { value: 'final' as const, label: 'Final', note: 'Seedream 4.5' },
+              ]).map((tier) => (
+                <button
+                  key={tier.value}
+                  type="button"
+                  onClick={() => updateProject(project.id, { renderTier: tier.value })}
+                  className="rounded-lg border p-3 text-left"
+                  style={{ borderColor: renderTier === tier.value ? 'var(--editor-text-primary)' : 'var(--editor-border)', backgroundColor: renderTier === tier.value ? 'var(--editor-bg-secondary)' : 'transparent' }}
+                >
+                  <p className="text-xs font-semibold">{tier.label}</p><p className="mt-1 text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>{tier.note}</p>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          {error && <p className="mx-6 mb-5 rounded-lg bg-red-50 px-3 py-2.5 text-[10px] leading-4 text-red-700" role="alert">{error}</p>}
+          {generated && <p className="mx-6 mb-5 rounded-lg bg-neutral-100 px-3 py-2.5 text-[10px] leading-4">New version added. Select it from Shot details after closing this dialog.</p>}
+        </div>
+
+        <DialogFooter className="items-center border-t px-6 py-4 sm:justify-between" style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-secondary)' }}>
+          <p className="text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>{renderTier === 'draft' ? 'FLUX.2 Flash · $0.005 per input/output MP' : 'Seedream 4.5 · $0.04 per image'} · 1 output</p>
+          <div className="flex gap-2">
+            <button type="button" onClick={() => closeDialog(false)} className="rounded-full border px-4 py-2 text-xs font-medium" style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-primary)' }}>{generated ? 'Done' : 'Cancel'}</button>
+            <button type="button" onClick={generate} disabled={!shot.prompt.trim() || isGenerating || generated || inputCount > referenceLimit} className="flex items-center gap-2 rounded-full bg-neutral-950 px-4 py-2 text-xs font-medium text-white disabled:opacity-40">
+              {isGenerating ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" /> : <Sparkles className="h-3.5 w-3.5" />}
+              {isGenerating ? 'Generating…' : generated ? 'Version added' : `Generate ${renderTier}`}
+            </button>
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function StoryboardWorkspaceToolbar({
   project,
   projects,
   view,
   storageStatus,
-  projectPanelOpen,
+  outlineOpen,
   inspectorOpen,
   hasShot,
   onProjectChange,
   onViewChange,
+  onOpenReferences,
   onAspectChange,
   onNewProject,
-  onToggleProjectPanel,
+  onGenerate,
+  onToggleOutline,
   onToggleInspector,
 }: {
   project: StoryboardProject;
   projects: StoryboardProject[];
   view: StoryboardWorkspaceView;
   storageStatus: StoryboardStorageStatus;
-  projectPanelOpen: boolean;
+  outlineOpen: boolean;
   inspectorOpen: boolean;
   hasShot: boolean;
   onProjectChange: (projectId: string) => void;
-  onViewChange: (view: StoryboardWorkspaceView | 'references') => void;
+  onViewChange: (view: StoryboardWorkspaceView) => void;
+  onOpenReferences: () => void;
   onAspectChange: (aspect: StoryboardAspect) => void;
   onNewProject: () => void;
-  onToggleProjectPanel: () => void;
+  onGenerate: () => void;
+  onToggleOutline: () => void;
   onToggleInspector: () => void;
 }) {
   const storageLabel = storageStatus === 'saving'
@@ -1721,26 +1968,45 @@ function StoryboardWorkspaceToolbar({
         </button>
       </div>
 
-      <div className="flex shrink-0 rounded-full p-1" style={{ backgroundColor: 'var(--editor-bg-secondary)' }}>
-        {([
-          { value: 'storyboard' as const, label: 'Storyboard' },
-          { value: 'animatic' as const, label: 'Timing' },
-          { value: 'references' as const, label: 'References' },
-        ]).map((item) => (
-          <button
-            key={item.value}
-            type="button"
-            onClick={() => onViewChange(item.value)}
-            className="rounded-full px-2.5 py-1.5 text-[10px] font-medium sm:px-3 sm:text-xs"
-            style={{
-              backgroundColor: view === item.value ? 'var(--editor-bg-primary)' : 'transparent',
-              color: view === item.value ? 'var(--editor-text-primary)' : 'var(--editor-text-muted)',
-              boxShadow: view === item.value ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
-            }}
-          >
-            {item.label}
-          </button>
-        ))}
+      <div className="flex shrink-0 items-center gap-1">
+        <div className="flex rounded-full p-1" style={{ backgroundColor: 'var(--editor-bg-secondary)' }}>
+          {([
+            { value: 'board' as const, label: 'Board' },
+            { value: 'shot-list' as const, label: 'Shot list' },
+            { value: 'timing' as const, label: 'Timing' },
+          ]).map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => onViewChange(item.value)}
+              className="rounded-full px-2.5 py-1.5 text-[10px] font-medium sm:px-3 sm:text-xs"
+              style={{
+                backgroundColor: view === item.value ? 'var(--editor-bg-primary)' : 'transparent',
+                color: view === item.value ? 'var(--editor-text-primary)' : 'var(--editor-text-muted)',
+                boxShadow: view === item.value ? '0 1px 3px rgba(0,0,0,.08)' : 'none',
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={onOpenReferences}
+          className="hidden rounded-full px-3 py-2 text-[10px] font-medium lg:block"
+          style={{ color: 'var(--editor-text-muted)' }}
+        >
+          References
+        </button>
+        <button
+          type="button"
+          aria-label="References"
+          onClick={onOpenReferences}
+          className="flex h-8 w-8 items-center justify-center rounded-full lg:hidden"
+          style={{ color: 'var(--editor-text-muted)' }}
+        >
+          <BookOpen className="h-3.5 w-3.5" />
+        </button>
       </div>
 
       <div className="flex items-center gap-1.5">
@@ -1773,16 +2039,24 @@ function StoryboardWorkspaceToolbar({
         </div>
         <button
           type="button"
-          onClick={onToggleProjectPanel}
+          onClick={onGenerate}
+          disabled={!hasShot}
+          className="flex h-8 items-center gap-1.5 rounded-full bg-neutral-950 px-3 text-[10px] font-medium text-white disabled:opacity-40"
+        >
+          <Sparkles className="h-3.5 w-3.5" /> <span className="hidden sm:inline">Generate</span>
+        </button>
+        <button
+          type="button"
+          onClick={onToggleOutline}
           className="flex h-8 items-center gap-1.5 rounded-full border px-3 text-[10px] font-medium"
-          aria-label="Project and scene setup"
+          aria-label="Scene and shot outline"
           style={{
-            borderColor: projectPanelOpen ? 'var(--editor-text-primary)' : 'var(--editor-border)',
-            backgroundColor: projectPanelOpen ? 'var(--editor-text-primary)' : 'transparent',
-            color: projectPanelOpen ? 'var(--editor-bg-primary)' : 'var(--editor-text-tertiary)',
+            borderColor: outlineOpen ? 'var(--editor-text-primary)' : 'var(--editor-border)',
+            backgroundColor: outlineOpen ? 'var(--editor-text-primary)' : 'transparent',
+            color: outlineOpen ? 'var(--editor-bg-primary)' : 'var(--editor-text-tertiary)',
           }}
         >
-          <PanelLeftOpen className="h-3.5 w-3.5" /> <span className="hidden xl:inline">Project</span>
+          <PanelLeftOpen className="h-3.5 w-3.5" /> <span className="hidden xl:inline">Outline</span>
         </button>
         <button
           type="button"
@@ -1805,27 +2079,47 @@ function StoryboardWorkspaceToolbar({
 
 export function StoryboardWorkspace({
   onOpenImage,
-  onViewChange,
-  view = 'storyboard',
+  onOpenReferences,
 }: {
   onOpenImage: (imageId: string) => void;
-  onViewChange: (view: StoryboardWorkspaceView | 'references') => void;
-  view?: StoryboardWorkspaceView;
+  onOpenReferences: () => void;
 }) {
   const [newProjectOpen, setNewProjectOpen] = useState(false);
-  const [projectPanelOpen, setProjectPanelOpen] = useState(false);
+  const [outlineOpen, setOutlineOpen] = useState(true);
+  const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [generationOpen, setGenerationOpen] = useState(false);
+  const [mobileOutlineOpen, setMobileOutlineOpen] = useState(false);
+  const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
+  const [view, setView] = useState<StoryboardWorkspaceView>('board');
   const projects = useStoryboardStore((state) => state.projects);
   const activeProjectId = useStoryboardStore((state) => state.activeProjectId);
   const selectedShotId = useStoryboardStore((state) => state.selectedShotId);
   const storageStatus = useStoryboardStore((state) => state.storageStatus);
   const setActiveProject = useStoryboardStore((state) => state.setActiveProject);
+  const selectShot = useStoryboardStore((state) => state.selectShot);
   const updateProject = useStoryboardStore((state) => state.updateProject);
   const project = useMemo(
     () => projects.find((candidate) => candidate.id === activeProjectId) ?? projects[0] ?? null,
     [activeProjectId, projects],
   );
   const shot = project?.shots.find((candidate) => candidate.id === selectedShotId) ?? project?.shots[0] ?? null;
+
+  const openInspector = () => {
+    if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches) {
+      setInspectorOpen(true);
+    } else {
+      setMobileInspectorOpen(true);
+    }
+  };
+
+  const selectAndInspectShot = (shotId: string) => {
+    selectShot(shotId);
+    setMobileOutlineOpen(false);
+    if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches) {
+      setInspectorOpen(true);
+    }
+  };
 
   if (!project) {
     return (
@@ -1843,39 +2137,104 @@ export function StoryboardWorkspace({
         projects={projects}
         view={view}
         storageStatus={storageStatus}
-        projectPanelOpen={projectPanelOpen}
+        outlineOpen={outlineOpen}
         inspectorOpen={inspectorOpen}
         hasShot={Boolean(shot)}
         onProjectChange={setActiveProject}
-        onViewChange={onViewChange}
+        onViewChange={setView}
+        onOpenReferences={onOpenReferences}
         onAspectChange={(aspect) => updateProject(project.id, { aspect })}
         onNewProject={() => setNewProjectOpen(true)}
-        onToggleProjectPanel={() => {
-          setProjectPanelOpen((open) => !open);
-          setInspectorOpen(false);
+        onGenerate={() => setGenerationOpen(true)}
+        onToggleOutline={() => {
+          if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches) {
+            setOutlineOpen((open) => !open);
+          } else {
+            setMobileOutlineOpen(true);
+          }
         }}
         onToggleInspector={() => {
-          setInspectorOpen((open) => !open);
-          setProjectPanelOpen(false);
+          if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1280px)').matches) {
+            setInspectorOpen((open) => !open);
+          } else {
+            setMobileInspectorOpen(true);
+          }
         }}
       />
 
-      <div className={`flex min-h-0 flex-1 flex-col overflow-y-auto lg:grid lg:overflow-hidden ${projectPanelOpen ? 'lg:grid-cols-[300px_minmax(0,1fr)]' : inspectorOpen && shot ? 'lg:grid-cols-[minmax(0,1fr)_360px]' : 'lg:grid-cols-1'}`}>
-        {projectPanelOpen && <ProjectPanel project={project} onClose={() => setProjectPanelOpen(false)} />}
+      <div className="flex min-h-0 flex-1 overflow-hidden">
+        {outlineOpen && (
+          <aside className="hidden w-[240px] shrink-0 border-r lg:block" style={{ borderColor: 'var(--editor-border)' }}>
+            <StoryboardOutline
+              project={project}
+              selectedShotId={shot?.id ?? null}
+              onSelectShot={selectAndInspectShot}
+              onOpenSettings={() => setProjectSettingsOpen(true)}
+            />
+          </aside>
+        )}
         <Board
           project={project}
           selectedShotId={shot?.id ?? null}
           view={view}
-          hasOpenRail={projectPanelOpen || inspectorOpen}
-          onInspectShot={() => {
-            setInspectorOpen(true);
-            setProjectPanelOpen(false);
-          }}
+          hasOpenRail={outlineOpen || inspectorOpen}
+          onInspectShot={openInspector}
         />
         {inspectorOpen && shot && (
-          <ShotInspector key={shot.id} project={project} shot={shot} onOpenImage={onOpenImage} onClose={() => setInspectorOpen(false)} />
+          <div className="hidden w-[360px] shrink-0 xl:block">
+            <ShotInspector key={shot.id} project={project} shot={shot} onOpenImage={onOpenImage} onClose={() => setInspectorOpen(false)} onGenerate={() => setGenerationOpen(true)} />
+          </div>
         )}
       </div>
+
+      <Sheet open={mobileOutlineOpen} onOpenChange={setMobileOutlineOpen}>
+        <SheetContent className="w-[280px] gap-0 p-0" side="left">
+          <SheetHeader className="sr-only">
+            <SheetTitle>Storyboard outline</SheetTitle>
+            <SheetDescription>Navigate scenes and shots.</SheetDescription>
+          </SheetHeader>
+          <StoryboardOutline
+            project={project}
+            selectedShotId={shot?.id ?? null}
+            onSelectShot={selectAndInspectShot}
+            onOpenSettings={() => {
+              setMobileOutlineOpen(false);
+              setProjectSettingsOpen(true);
+            }}
+          />
+        </SheetContent>
+      </Sheet>
+
+      <Sheet open={mobileInspectorOpen} onOpenChange={setMobileInspectorOpen}>
+        <SheetContent className="w-[360px] gap-0 p-0 sm:max-w-[360px]" side="right">
+          <SheetHeader className="sr-only">
+            <SheetTitle>Shot details</SheetTitle>
+            <SheetDescription>Edit direction, references, timing, generation, and versions for the selected shot.</SheetDescription>
+          </SheetHeader>
+          {shot && <ShotInspector key={shot.id} project={project} shot={shot} onOpenImage={onOpenImage} onClose={() => setMobileInspectorOpen(false)} onGenerate={() => { setMobileInspectorOpen(false); setGenerationOpen(true); }} />}
+        </SheetContent>
+      </Sheet>
+
+      {shot && (
+        <StoryboardGenerationDialog
+          key={shot.id}
+          open={generationOpen}
+          onOpenChange={setGenerationOpen}
+          project={project}
+          shot={shot}
+        />
+      )}
+
+      <Dialog open={projectSettingsOpen} onOpenChange={setProjectSettingsOpen}>
+        <DialogContent className="h-[88vh] max-w-[calc(100%-2rem)] gap-0 overflow-hidden p-0 sm:max-w-4xl" showCloseButton={false}>
+          <DialogHeader className="sr-only">
+            <DialogTitle>Project and scene settings</DialogTitle>
+            <DialogDescription>Edit project direction, scene defaults, references, and imported bundles.</DialogDescription>
+          </DialogHeader>
+          <ProjectPanel project={project} onClose={() => setProjectSettingsOpen(false)} />
+        </DialogContent>
+      </Dialog>
+
       <NewProjectDialog open={newProjectOpen} onOpenChange={setNewProjectOpen} />
     </div>
   );

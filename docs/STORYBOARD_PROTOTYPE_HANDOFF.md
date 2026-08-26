@@ -25,15 +25,21 @@ Do not mistake polished prototype interactions for production functionality. The
 
 Branch: `codex/storyboard-workspace-refactor`
 
-The first production transition is underway on this branch:
+The production transition is now implemented on this branch:
 
 - the prototype's two header rows are collapsed into one responsive workspace header;
-- production Storyboard, Timing, and References now share a single visible header instead of stacking a global and local header;
-- the production storyboard toolbar is isolated as its own component boundary inside `StoryboardWorkspace.tsx` while retaining the existing store ownership;
-- visible **Approved** language is replaced with **Selected**, and the decorative green approval treatment is removed;
-- the production reference header now uses the same height, compact project selector, and responsive priorities as the storyboard header.
+- Storyboards and References are project-level destinations; Board, Shot list, and Timing are views of the same storyboard data;
+- a scene-and-shot outline replaces the former permanent project-settings rail, while project and scene setup remain available in a focused dialog;
+- the Board keeps images primary and groups the real stored shots by scene;
+- Shot list is a structured table over those same shots, with panel, scene, action, framing, movement, duration, and selected-version state;
+- Timing is a working lightweight animatic preview that advances through selected panels according to each shot's stored duration;
+- the References workspace is project-scoped, categorized, searchable, and built from production reference records rather than all gallery images;
+- selecting a reference opens a production-asset inspector with editable category/direction, provenance, and inherited/direct shot usage;
+- image generation moved out of the long inspector form into an explicit review dialog showing the target, exact assigned references, inheritance scope, provider limit, tier, pricing basis, and paid-run action;
+- the shot inspector remains the home for direction, reference assignment, timing, imported panels, and immutable versions;
+- visible **Approved** language is replaced with **Selected**, decorative green approval treatment is removed, and the fake continuity score/view is gone.
 
-No persisted schema, workspace API, generation route, image asset, or editor behavior changed in this first slice. The next production step should replace the Project settings rail with an outline and introduce Board, Shot list, and Timing as explicit views over the existing shots.
+The refactor deliberately preserves the current persisted schema, shared-workspace APIs, generated Police Riot assets, existing image editor, and generation API. `/storyboard-prototype` remains as a design fixture; `/` is the real implementation to evaluate.
 
 ## Prototype Source
 
@@ -61,17 +67,15 @@ Validation completed at handoff:
 
 ## Latest User Feedback
 
-The user likes the overall prototype and considers it close. Their first concrete change is to collapse the two stacked headers. The upper header feels sparse, and its controls should be redistributed rather than consuming a full row.
+The user approved continuing the prototype-to-production transition. The core intent remains:
 
-Recommended single-header exploration:
+- keep the product flexible and image-first rather than making script ingestion mandatory;
+- use references systematically without sending every reference to every shot;
+- preserve the image editor, but do not position AI as a collection of look sliders;
+- make the app feel like a legitimate director-side product using familiar storyboard terminology and proven information architecture;
+- keep clean storyboard-to-video handoff as the longer-term direction.
 
-```text
-L  Project / Storyboard        Board  Shot list  Timing        References  Generate  Share  User
-```
-
-When References is active, the middle can become the reference search and filters, while the right side becomes Import and Add reference. On narrow screens, preserve the project name, current view, Generate, and overflow; move secondary actions into menus.
-
-This should be prototyped and reviewed before changing the production shell. Do not immediately port the current two-row header.
+The unified shell is now in production code. Further work should refine this implementation rather than create another detached mockup.
 
 ## What the Prototype Gets Right
 
@@ -180,13 +184,20 @@ The repository contains calibration scripts and the complete Police Riot image b
 
 ## Recommended Next Sequence
 
-1. Refine the prototype into one unified header using the current Police Riot data.
-2. Gather the user's remaining questions and comments before implementing production changes.
-3. Test the prototype with a long board, at least one shot with multiple versions, and one shot with multiple panels.
-4. Prototype an actual version-comparison surface and a multi-shot generation plan.
-5. Confirm the IA and density decisions.
-6. Begin Phase 1 from the product-design document: shell and language changes against the existing production store.
-7. Extract the production workspace one component at a time while preserving shared storage, generated assets, and the editor.
+1. Let the user evaluate `/` with a second real storyboard and note friction in Board, Shot list, Timing, References, and generation review.
+2. Extract `StoryboardWorkspace.tsx` into focused production components now that the UI boundaries have stabilized; do not change the store during that extraction.
+3. Add explicit version comparison and make image-editor saves create new storyboard versions instead of mutating the selected asset in place.
+4. Add multi-shot generation planning for missing or selected shots, with per-shot validation and isolated failure/retry.
+5. Evolve the model from one storyboard per project toward multiple storyboards and neutral groups, then add optional start/middle/end panels only for shots that need them.
+6. Upgrade the animatic with scrubbing, accurate playhead time, dialogue/voice-over tracks, and export rather than expanding into a general video editor.
+7. Add professional export and handoff surfaces: PDF/contact sheet, images, shot-list data, and animatic output.
+
+## Validation on the Refactor Branch
+
+- `npm run lint`
+- `npm run build`
+- browser review of the production Board, project outline, project settings, Shot list, working animatic playback, project-scoped References, reference inspector, and generation-review dialog
+- browser console checked with no application errors
 
 ## Guardrails for the Next Agent
 
