@@ -1,9 +1,10 @@
-// IndexedDB storage for persisting gallery images locally
-// This provides localStorage-like persistence but with much larger capacity (50MB+)
+// Legacy browser storage retained only for one-time migration into the shared local workspace.
 
 const DB_NAME = 'lumen-editor';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const IMAGES_STORE = 'images';
+const WORKSPACE_STORE = 'workspace';
+const STORYBOARD_STATE_KEY = 'storyboards';
 
 export interface StoredImage {
   id: string;
@@ -15,6 +16,8 @@ export interface StoredImage {
   editState: unknown; // EditState type
   createdAt: number;
   updatedAt: number;
+  sourceUrl?: string;
+  sourceProvider?: string;
 }
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -31,7 +34,9 @@ function getDB(): Promise<IDBDatabase> {
     };
 
     request.onsuccess = () => {
-      resolve(request.result);
+      const db = request.result;
+      db.onversionchange = () => db.close();
+      resolve(db);
     };
 
     request.onupgradeneeded = (event) => {
@@ -43,10 +48,45 @@ function getDB(): Promise<IDBDatabase> {
         store.createIndex('createdAt', 'createdAt', { unique: false });
         store.createIndex('updatedAt', 'updatedAt', { unique: false });
       }
+
+      if (!db.objectStoreNames.contains(WORKSPACE_STORE)) {
+        db.createObjectStore(WORKSPACE_STORE, { keyPath: 'key' });
+      }
     };
   });
 
   return dbPromise;
+}
+
+interface StoredWorkspaceValue<T> {
+  key: string;
+  value: T;
+  updatedAt: number;
+}
+
+export async function getStoryboardState<T>(): Promise<T | null> {
+  const db = await getDB();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(WORKSPACE_STORE, 'readonly');
+    const request = transaction.objectStore(WORKSPACE_STORE).get(STORYBOARD_STATE_KEY);
+
+    request.onsuccess = () => resolve((request.result as StoredWorkspaceValue<T> | undefined)?.value ?? null);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+export async function saveStoryboardState<T>(value: T): Promise<number> {
+  const db = await getDB();
+  const updatedAt = Date.now();
+
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(WORKSPACE_STORE, 'readwrite');
+    transaction.objectStore(WORKSPACE_STORE).put({ key: STORYBOARD_STATE_KEY, value, updatedAt });
+    transaction.oncomplete = () => resolve(updatedAt);
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error ?? new Error('Storyboard save was aborted'));
+  });
 }
 
 export async function saveImage(image: StoredImage): Promise<void> {
@@ -219,4 +259,11 @@ export async function requestPersistentStorage(): Promise<boolean> {
     return navigator.storage.persist();
   }
   return false;
+}
+
+export async function isPersistentStorageGranted(): Promise<boolean | null> {
+  if ('storage' in navigator && 'persisted' in navigator.storage) {
+    return navigator.storage.persisted();
+  }
+  return null;
 }

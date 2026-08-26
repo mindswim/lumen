@@ -175,14 +175,6 @@ export function MaskPanel() {
     [selectedMaskId, updateMask]
   );
 
-  const resetMaskAdjustments = () => {
-    if (!selectedMaskId) return;
-    updateMask(selectedMaskId, {
-      adjustments: { ...DEFAULT_LOCAL_ADJUSTMENTS },
-      opacity: 100,
-    });
-  };
-
   return (
     <PanelContainer>
       {/* Dodge & Burn Quick Access */}

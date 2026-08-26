@@ -188,7 +188,7 @@ export function importPresetsFromJSON(file: File): Promise<UserPreset[]> {
         const merged = [...presetsWithNewIds, ...currentPresets];
         saveUserPresets(merged);
         resolve(merged);
-      } catch (error) {
+      } catch {
         reject(new Error('Invalid preset file'));
       }
     };

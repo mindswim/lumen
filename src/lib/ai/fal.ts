@@ -25,6 +25,7 @@ export interface GenerateImageResult {
   images: GeneratedImage[];
   prompt: string;
   seed: number;
+  model?: string;
 }
 
 const MODEL_IDS: Record<FluxModel, string> = {
@@ -77,5 +78,77 @@ export async function generateImage(params: GenerateImageParams): Promise<Genera
     })),
     prompt: data.prompt,
     seed: data.seed,
+    model: modelId,
+  };
+}
+
+export interface GenerateStoryboardFrameParams {
+  prompt: string;
+  imageSize?: GenerateImageParams['imageSize'];
+  referenceImages?: string[];
+  numImages?: number;
+  renderTier?: 'draft' | 'final';
+}
+
+const STORY_DRAFT_TEXT_MODEL = 'fal-ai/flux-2/flash';
+const STORY_DRAFT_EDIT_MODEL = 'fal-ai/flux-2/flash/edit';
+const STORY_TEXT_MODEL = 'fal-ai/bytedance/seedream/v4.5/text-to-image';
+const STORY_EDIT_MODEL = 'fal-ai/bytedance/seedream/v4.5/edit';
+
+/**
+ * Generate one or more complete storyboard frames. Each render tier keeps
+ * text generation and reference-conditioned editing in the same model family:
+ * FLUX.2 Flash for inexpensive drafts and Seedream 4.5 for final frames.
+ */
+export async function generateStoryboardFrame(
+  params: GenerateStoryboardFrameParams,
+): Promise<GenerateImageResult> {
+  const {
+    prompt,
+    imageSize = 'landscape_16_9',
+    referenceImages = [],
+    numImages = 1,
+    renderTier = 'draft',
+  } = params;
+  const isDraft = renderTier === 'draft';
+  const modelId = isDraft
+    ? referenceImages.length > 0 ? STORY_DRAFT_EDIT_MODEL : STORY_DRAFT_TEXT_MODEL
+    : referenceImages.length > 0 ? STORY_EDIT_MODEL : STORY_TEXT_MODEL;
+  const input: Record<string, unknown> = {
+    prompt,
+    image_size: imageSize,
+    num_images: Math.min(4, Math.max(1, numImages)),
+    enable_safety_checker: true,
+  };
+  if (isDraft) {
+    input.enable_prompt_expansion = false;
+    input.output_format = 'jpeg';
+  } else {
+    input.max_images = 1;
+  }
+  if (referenceImages.length > 0) input.image_urls = referenceImages.slice(0, isDraft ? 4 : 10);
+
+  const result = await fal.subscribe(modelId, { input });
+  const data = result.data as {
+    images: Array<{
+      url: string;
+      width?: number;
+      height?: number;
+      content_type?: string;
+    }>;
+    seed?: number;
+  };
+  const fallbackSize = IMAGE_SIZES[imageSize] ?? IMAGE_SIZES.landscape_16_9;
+
+  return {
+    images: data.images.map((image) => ({
+      url: image.url,
+      width: image.width ?? fallbackSize.width,
+      height: image.height ?? fallbackSize.height,
+      contentType: image.content_type ?? 'image/jpeg',
+    })),
+    prompt,
+    seed: data.seed ?? 0,
+    model: modelId,
   };
 }

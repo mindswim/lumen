@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
     const imageBuffer = Buffer.from(base64Data, 'base64');
 
     // Process with Sharp
-    let pipeline = sharp(imageBuffer)
+    const pipeline = sharp(imageBuffer)
       // Ensure sRGB color space with embedded ICC profile
       .withIccProfile('srgb')
       // Set DPI metadata (for print)

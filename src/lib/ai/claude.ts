@@ -1,7 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk';
+import type { ContentBlockParam, MessageParam } from '@anthropic-ai/sdk/resources/messages';
 import { EditState } from '@/types/editor';
 
 const anthropic = new Anthropic();
+const AI_MODEL = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';
 
 /**
  * System prompt that teaches Claude about the photo editor's parameters.
@@ -116,32 +118,165 @@ export interface AIResponse {
   reasoning: string;
 }
 
+export interface AIDirection extends AIResponse {
+  id: string;
+  name: string;
+  description: string;
+}
+
+function parseImageDataUrl(imageData?: string): ContentBlockParam | null {
+  if (!imageData) return null;
+  const match = imageData.match(/^data:(image\/(?:jpeg|png|gif|webp));base64,(.+)$/);
+  if (!match) return null;
+
+  return {
+    type: 'image',
+    source: {
+      type: 'base64',
+      media_type: match[1] as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+      data: match[2],
+    },
+  };
+}
+
+function parseResponse(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error('Invalid JSON response from AI');
+    return JSON.parse(jsonMatch[0]);
+  }
+}
+
+function clamp(value: unknown, minimum: number, maximum: number): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
+  return Math.min(maximum, Math.max(minimum, value));
+}
+
+function sanitizeNumberObject(
+  value: unknown,
+  ranges: Record<string, readonly [number, number]>
+): Record<string, number> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const input = value as Record<string, unknown>;
+  const result: Record<string, number> = {};
+
+  for (const [key, [minimum, maximum]] of Object.entries(ranges)) {
+    const nextValue = clamp(input[key], minimum, maximum);
+    if (nextValue !== undefined) result[key] = nextValue;
+  }
+
+  return Object.keys(result).length > 0 ? result : undefined;
+}
+
+function sanitizeAIAdjustments(value: unknown): Partial<EditState> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const input = value as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+  const scalarRanges: Record<string, readonly [number, number]> = {
+    exposure: [-5, 5],
+    contrast: [-100, 100],
+    highlights: [-100, 100],
+    shadows: [-100, 100],
+    whites: [-100, 100],
+    blacks: [-100, 100],
+    temperature: [-100, 100],
+    tint: [-100, 100],
+    clarity: [-100, 100],
+    texture: [-100, 100],
+    dehaze: [-100, 100],
+    vibrance: [-100, 100],
+    saturation: [-100, 100],
+    fade: [0, 100],
+  };
+
+  for (const [key, [minimum, maximum]] of Object.entries(scalarRanges)) {
+    const nextValue = clamp(input[key], minimum, maximum);
+    if (nextValue !== undefined) result[key] = nextValue;
+  }
+
+  if (typeof input.convertToGrayscale === 'boolean') {
+    result.convertToGrayscale = input.convertToGrayscale;
+  }
+
+  const curveInput = input.curve;
+  if (curveInput && typeof curveInput === 'object' && !Array.isArray(curveInput)) {
+    const curves: Record<string, Array<{ x: number; y: number }>> = {};
+    for (const channel of ['rgb', 'red', 'green', 'blue']) {
+      const points = (curveInput as Record<string, unknown>)[channel];
+      if (!Array.isArray(points)) continue;
+      const sanitizedPoints = points.slice(0, 16).flatMap((point) => {
+        if (!point || typeof point !== 'object' || Array.isArray(point)) return [];
+        const x = clamp((point as Record<string, unknown>).x, 0, 1);
+        const y = clamp((point as Record<string, unknown>).y, 0, 1);
+        return x === undefined || y === undefined ? [] : [{ x, y }];
+      }).sort((a, b) => a.x - b.x);
+      if (sanitizedPoints.length >= 2) curves[channel] = sanitizedPoints;
+    }
+    if (Object.keys(curves).length > 0) result.curve = curves;
+  }
+
+  const hslInput = input.hsl;
+  if (hslInput && typeof hslInput === 'object' && !Array.isArray(hslInput)) {
+    const hsl: Record<string, Record<string, number>> = {};
+    for (const color of ['red', 'orange', 'yellow', 'green', 'aqua', 'blue', 'purple', 'magenta']) {
+      const channel = sanitizeNumberObject((hslInput as Record<string, unknown>)[color], {
+        hue: [-100, 100], saturation: [-100, 100], luminance: [-100, 100],
+      });
+      if (channel) hsl[color] = channel;
+    }
+    if (Object.keys(hsl).length > 0) result.hsl = hsl;
+  }
+
+  const nestedRanges: Record<string, Record<string, readonly [number, number]>> = {
+    grain: { amount: [0, 100], size: [0, 100], roughness: [0, 100] },
+    vignette: { amount: [-100, 100], midpoint: [0, 100], roundness: [-100, 100], feather: [0, 100] },
+    splitTone: { highlightHue: [0, 360], highlightSaturation: [0, 100], shadowHue: [0, 360], shadowSaturation: [0, 100], balance: [-100, 100] },
+    bloom: { amount: [0, 100], threshold: [0, 100], radius: [0, 100] },
+    halation: { amount: [0, 100], threshold: [0, 100], hue: [0, 360] },
+    sharpening: { amount: [0, 100], radius: [0.5, 3], detail: [0, 100] },
+    noiseReduction: { luminance: [0, 100], color: [0, 100], detail: [0, 100] },
+    grayMixer: { red: [-100, 100], orange: [-100, 100], yellow: [-100, 100], green: [-100, 100], aqua: [-100, 100], blue: [-100, 100], purple: [-100, 100], magenta: [-100, 100] },
+  };
+
+  for (const [key, ranges] of Object.entries(nestedRanges)) {
+    const sanitized = sanitizeNumberObject(input[key], ranges);
+    if (sanitized) result[key] = sanitized;
+  }
+
+  return result as Partial<EditState>;
+}
+
 /**
  * Calls Claude API to get photo editing adjustments with reasoning
  */
 export async function getAIAdjustments(
   prompt: string,
   currentState?: Partial<EditState>,
-  conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>
+  conversationHistory?: Array<{ role: 'user' | 'assistant'; content: string }>,
+  imageData?: string
 ): Promise<AIResponse> {
   const userMessage = currentState
     ? `Current edit state context (non-default values): ${JSON.stringify(currentState, null, 2)}\n\nUser request: ${prompt}`
     : prompt;
 
   // Build messages array with conversation history for context
-  const messages: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+  const messages: MessageParam[] = [];
 
   if (conversationHistory && conversationHistory.length > 0) {
     messages.push(...conversationHistory);
   }
 
-  messages.push({
-    role: 'user',
-    content: userMessage,
-  });
+  const imageBlock = parseImageDataUrl(imageData);
+  const content: ContentBlockParam[] = [];
+  if (imageBlock) content.push(imageBlock);
+  content.push({ type: 'text', text: userMessage });
+
+  messages.push({ role: 'user', content });
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: AI_MODEL,
     max_tokens: 1024,
     system: PHOTO_EDITOR_SYSTEM_PROMPT,
     messages,
@@ -154,38 +289,56 @@ export async function getAIAdjustments(
   }
 
   // Parse JSON response
-  try {
-    const parsed = JSON.parse(textContent.text);
-    // Handle both new format (with reasoning) and old format (just adjustments)
-    if (parsed.adjustments) {
+  const parsed = parseResponse(textContent.text) as Partial<AIResponse> & Partial<EditState>;
+  if ('adjustments' in parsed && parsed.adjustments) {
       return {
-        adjustments: parsed.adjustments,
+        adjustments: sanitizeAIAdjustments(parsed.adjustments),
         reasoning: parsed.reasoning || 'Adjustments applied.',
       };
-    }
-    // Fallback for old format
-    return {
-      adjustments: parsed,
-      reasoning: 'Adjustments applied.',
-    };
-  } catch {
-    // Try to extract JSON from the response if it has extra text
-    const jsonMatch = textContent.text.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const parsed = JSON.parse(jsonMatch[0]);
-      if (parsed.adjustments) {
-        return {
-          adjustments: parsed.adjustments,
-          reasoning: parsed.reasoning || 'Adjustments applied.',
-        };
-      }
-      return {
-        adjustments: parsed,
-        reasoning: 'Adjustments applied.',
-      };
-    }
-    throw new Error('Invalid JSON response from AI');
   }
+
+  return {
+    adjustments: sanitizeAIAdjustments(parsed),
+    reasoning: 'Adjustments applied.',
+  };
+}
+
+export async function getAIDirections(
+  currentState: Partial<EditState>,
+  imageData: string
+): Promise<AIDirection[]> {
+  const imageBlock = parseImageDataUrl(imageData);
+  if (!imageBlock) throw new Error('A valid image preview is required');
+
+  const prompt = `Study this photo's subject, lighting, palette, dynamic range, and emotional tone. Propose exactly three genuinely different but tasteful creative directions.
+
+Each direction must be achievable with the available parametric controls, preserve the subject's identity, and avoid generative changes. Return JSON only in this shape:
+{"directions":[{"id":"short-id","name":"2-3 word name","description":"one sentence describing the mood","adjustments":{},"reasoning":"one sentence explaining why it suits this photo"}]}
+
+Current edit state: ${JSON.stringify(currentState)}`;
+
+  const response = await anthropic.messages.create({
+    model: AI_MODEL,
+    max_tokens: 1800,
+    system: `${PHOTO_EDITOR_SYSTEM_PROMPT}\n\nFor the creative-directions request, follow the directions array response format in the user message instead of the usual single-adjustment response format.`,
+    messages: [{ role: 'user', content: [imageBlock, { type: 'text', text: prompt }] }],
+  });
+
+  const textContent = response.content.find((content) => content.type === 'text');
+  if (!textContent || textContent.type !== 'text') throw new Error('No text response from AI');
+
+  const parsed = parseResponse(textContent.text) as { directions?: AIDirection[] };
+  if (!Array.isArray(parsed.directions) || parsed.directions.length === 0) {
+    throw new Error('AI did not return creative directions');
+  }
+
+  return parsed.directions.slice(0, 3).map((direction, index) => ({
+    id: direction.id || `direction-${index + 1}`,
+    name: direction.name || `Direction ${index + 1}`,
+    description: direction.description || direction.reasoning || 'A tailored look for this photo.',
+    reasoning: direction.reasoning || direction.description || 'Tailored to this photo.',
+    adjustments: sanitizeAIAdjustments(direction.adjustments),
+  }));
 }
 
 /**

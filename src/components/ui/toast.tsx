@@ -1,34 +1,28 @@
 'use client';
 
 import { useEditorStore } from '@/lib/editor/state';
-import { useEffect, useState } from 'react';
 
 export function Toast() {
   const toast = useEditorStore((state) => state.toast);
-  const [visible, setVisible] = useState(false);
-
-  useEffect(() => {
-    if (toast) {
-      setVisible(true);
-    } else {
-      // Delay hiding for animation
-      const timeout = setTimeout(() => setVisible(false), 150);
-      return () => clearTimeout(timeout);
-    }
-  }, [toast]);
-
-  if (!visible && !toast) return null;
+  if (!toast) return null;
 
   return (
     <div
-      className={`
-        fixed bottom-8 left-1/2 -translate-x-1/2 z-50
-        px-4 py-2 bg-neutral-800 text-white text-sm rounded-lg shadow-lg
-        transition-all duration-150
-        ${toast ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'}
-      `}
+      className="fixed bottom-24 md:bottom-8 left-1/2 -translate-x-1/2 z-[70] flex items-center gap-4 px-4 py-3 bg-neutral-900 text-white text-sm rounded-full shadow-2xl animate-in fade-in slide-in-from-bottom-2"
+      role="status"
     >
-      {toast?.message}
+      <span>{toast.message}</span>
+      {toast.actionLabel && toast.onAction && (
+        <button
+          className="font-semibold text-amber-300 hover:text-amber-200"
+          onClick={() => {
+            toast.onAction?.();
+            useEditorStore.setState({ toast: null });
+          }}
+        >
+          {toast.actionLabel}
+        </button>
+      )}
     </div>
   );
 }

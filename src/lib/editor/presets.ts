@@ -1,4 +1,4 @@
-import { EditState, createDefaultEditState, Point } from '@/types/editor';
+import { EditState, createDefaultEditState, ensureCompleteEditState, mergeEditState, Point } from '@/types/editor';
 
 // Built-in preset type - same as user presets, just with category
 export interface BuiltInPreset {
@@ -40,8 +40,8 @@ const curves = {
   // Faded with S-curve (classic film)
   fadedFilm: (lift: number = 0.06, strength: number = 0.08): Point[] => [
     { x: 0, y: lift },
-    { x: 0.25, y: 0.22 + lift * 0.5 },
-    { x: 0.75, y: 0.78 },
+    { x: 0.25, y: 0.25 - strength + lift * 0.5 },
+    { x: 0.75, y: 0.75 + strength },
     { x: 1, y: 0.97 },
   ],
 
@@ -1362,6 +1362,51 @@ export function applyPreset(preset: BuiltInPreset): Partial<EditState> {
   result.lutIntensity = 100;
 
   return result;
+}
+
+export function createPresetEditState(preset: BuiltInPreset, base: EditState): EditState {
+  const presetState = mergeEditState(createDefaultEditState(), applyPreset(preset));
+
+  // Looks should never destroy image-specific composition or local work.
+  return ensureCompleteEditState({
+    ...presetState,
+    crop: base.crop,
+    rotation: base.rotation,
+    straighten: base.straighten,
+    perspectiveX: base.perspectiveX,
+    perspectiveY: base.perspectiveY,
+    flipH: base.flipH,
+    flipV: base.flipV,
+    masks: base.masks,
+  });
+}
+
+function blendValue(from: unknown, to: unknown, amount: number): unknown {
+  if (typeof from === 'number' && typeof to === 'number') {
+    return from + (to - from) * amount;
+  }
+  if (Array.isArray(from) && Array.isArray(to) && from.length === to.length) {
+    return from.map((value, index) => blendValue(value, to[index], amount));
+  }
+  if (from && to && typeof from === 'object' && typeof to === 'object') {
+    const keys = new Set([...Object.keys(from), ...Object.keys(to)]);
+    return Object.fromEntries(
+      Array.from(keys).map((key) => [
+        key,
+        blendValue(
+          (from as Record<string, unknown>)[key],
+          (to as Record<string, unknown>)[key],
+          amount
+        ),
+      ])
+    );
+  }
+  return amount < 0.5 ? from : to;
+}
+
+export function blendEditStates(from: EditState, to: EditState, strength: number): EditState {
+  const amount = Math.max(0, Math.min(1, strength / 100));
+  return ensureCompleteEditState(blendValue(from, to, amount) as EditState);
 }
 
 // Get preset categories

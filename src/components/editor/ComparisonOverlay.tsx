@@ -5,10 +5,9 @@ import { useEditorStore } from '@/lib/editor/state';
 
 interface ComparisonOverlayProps {
   canvasWidth: number;
-  canvasHeight: number;
 }
 
-export function ComparisonOverlay({ canvasWidth, canvasHeight }: ComparisonOverlayProps) {
+export function ComparisonOverlay({ canvasWidth }: ComparisonOverlayProps) {
   const comparisonMode = useEditorStore((state) => state.comparisonMode);
   const splitPosition = useEditorStore((state) => state.comparisonSplitPosition);
   const setSplitPosition = useEditorStore((state) => state.setComparisonSplitPosition);

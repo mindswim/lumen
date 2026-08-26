@@ -2,24 +2,12 @@
 
 import { useEditorStore, batchedUpdate } from '@/lib/editor/state';
 import { useGalleryStore } from '@/lib/gallery/store';
-import { AdjustmentSlider, sliderPresets } from '@/components/ui/adjustment-slider';
+import { AdjustmentSlider } from '@/components/ui/adjustment-slider';
 import { PanelSection, PanelContainer, PanelDivider } from '@/components/ui/panel-section';
 import { Slider } from '@/components/ui/slider';
 import { Button } from '@/components/ui/button';
 import { BlurSettings, BorderSettings, BloomSettings, HalationSettings, EditState, ColorGradingSettings, ColorWheelSettings } from '@/types/editor';
 import { ColorWheel } from '@/components/ui/color-wheel';
-
-// Color presets for split tone hue picker
-const HUE_PRESETS = [
-  { label: 'Red', hue: 0 },
-  { label: 'Orange', hue: 30 },
-  { label: 'Yellow', hue: 60 },
-  { label: 'Green', hue: 120 },
-  { label: 'Cyan', hue: 180 },
-  { label: 'Blue', hue: 220 },
-  { label: 'Purple', hue: 280 },
-  { label: 'Magenta', hue: 320 },
-];
 
 function HueSlider({
   label,

@@ -67,6 +67,7 @@ interface EditorStore {
 
   // History
   history: HistoryEntry[];
+  redoStack: HistoryEntry[];
   historyIndex: number;
   pushHistory: () => void;
   undo: () => void;
@@ -115,8 +116,8 @@ interface EditorStore {
   hasCopiedSettings: () => boolean;
 
   // Toast notifications
-  toast: { message: string; id: number } | null;
-  showToast: (message: string) => void;
+  toast: { message: string; id: number; actionLabel?: string; onAction?: () => void } | null;
+  showToast: (message: string, action?: { label: string; onClick: () => void }) => void;
 }
 
 const MAX_HISTORY = 50;
@@ -124,7 +125,7 @@ const MAX_HISTORY = 50;
 export const useEditorStore = create<EditorStore>((set, get) => ({
   // Image
   image: null,
-  setImage: (image) => set({ image }),
+  setImage: (image) => set({ image, history: [], redoStack: [], historyIndex: -1 }),
 
   // Edit state
   editState: createDefaultEditState(),
@@ -321,12 +322,20 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   // History
   history: [],
+  redoStack: [],
   historyIndex: -1,
   pushHistory: () => {
-    const { editState, history, historyIndex } = get();
-    const newHistory = history.slice(0, historyIndex + 1);
+    const { editState, history } = get();
+    const snapshot = JSON.parse(JSON.stringify(editState)) as EditState;
+    const lastSnapshot = history[history.length - 1]?.editState;
+
+    if (lastSnapshot && JSON.stringify(lastSnapshot) === JSON.stringify(snapshot)) {
+      return;
+    }
+
+    const newHistory = [...history];
     newHistory.push({
-      editState: JSON.parse(JSON.stringify(editState)),
+      editState: snapshot,
       timestamp: Date.now(),
     });
     // Limit history size
@@ -335,43 +344,48 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
     }
     set({
       history: newHistory,
+      redoStack: [],
       historyIndex: newHistory.length - 1,
     });
   },
   undo: () => {
-    const { history, historyIndex, editState } = get();
-    if (historyIndex > 0) {
-      // Save current state if at end of history
-      if (historyIndex === history.length - 1) {
-        const newHistory = [...history];
-        newHistory.push({
-          editState: JSON.parse(JSON.stringify(editState)),
-          timestamp: Date.now(),
-        });
-        set({
-          history: newHistory,
-          historyIndex: historyIndex - 1,
-          editState: JSON.parse(JSON.stringify(history[historyIndex - 1].editState)),
-        });
-      } else {
-        set({
-          historyIndex: historyIndex - 1,
-          editState: JSON.parse(JSON.stringify(history[historyIndex - 1].editState)),
-        });
-      }
-    }
+    const { history, redoStack, editState } = get();
+    if (history.length === 0) return;
+
+    const previous = history[history.length - 1];
+    const remainingHistory = history.slice(0, -1);
+    const current: HistoryEntry = {
+      editState: JSON.parse(JSON.stringify(editState)),
+      timestamp: Date.now(),
+    };
+
+    set({
+      history: remainingHistory,
+      redoStack: [...redoStack, current],
+      historyIndex: remainingHistory.length - 1,
+      editState: JSON.parse(JSON.stringify(previous.editState)),
+    });
   },
   redo: () => {
-    const { history, historyIndex } = get();
-    if (historyIndex < history.length - 1) {
-      set({
-        historyIndex: historyIndex + 1,
-        editState: JSON.parse(JSON.stringify(history[historyIndex + 1].editState)),
-      });
-    }
+    const { history, redoStack, editState } = get();
+    if (redoStack.length === 0) return;
+
+    const next = redoStack[redoStack.length - 1];
+    const current: HistoryEntry = {
+      editState: JSON.parse(JSON.stringify(editState)),
+      timestamp: Date.now(),
+    };
+    const nextHistory = [...history, current].slice(-MAX_HISTORY);
+
+    set({
+      history: nextHistory,
+      redoStack: redoStack.slice(0, -1),
+      historyIndex: nextHistory.length - 1,
+      editState: JSON.parse(JSON.stringify(next.editState)),
+    });
   },
-  canUndo: () => get().historyIndex > 0,
-  canRedo: () => get().historyIndex < get().history.length - 1,
+  canUndo: () => get().history.length > 0,
+  canRedo: () => get().redoStack.length > 0,
 
   // UI state
   activePanel: 'adjust',
@@ -439,27 +453,40 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
 
   // Toast notifications
   toast: null,
-  showToast: (message) => {
+  showToast: (message, action) => {
     const id = Date.now();
-    set({ toast: { message, id } });
-    // Auto-hide after 2 seconds
+    set({
+      toast: {
+        message,
+        id,
+        actionLabel: action?.label,
+        onAction: action?.onClick,
+      },
+    });
+    // Give actionable notifications enough time to be used.
     setTimeout(() => {
       const currentToast = get().toast;
       if (currentToast?.id === id) {
         set({ toast: null });
       }
-    }, 2000);
+    }, action ? 6000 : 2500);
   },
 }));
 
 // Helper to batch updates without creating history entries for every slider tick
 let historyTimeout: ReturnType<typeof setTimeout> | null = null;
+let isBatchActive = false;
 
 export function batchedUpdate<T extends keyof EditState>(
   key: T,
   value: EditState[T]
 ) {
   const store = useEditorStore.getState();
+
+  if (!isBatchActive) {
+    store.pushHistory();
+    isBatchActive = true;
+  }
 
   // Clear existing timeout
   if (historyTimeout) {
@@ -471,8 +498,10 @@ export function batchedUpdate<T extends keyof EditState>(
     editState: { ...state.editState, [key]: value },
   }));
 
-  // Debounce history push
+  // End this interaction after the slider settles. The snapshot was captured
+  // before the first change, so the very first edit is now undoable.
   historyTimeout = setTimeout(() => {
-    store.pushHistory();
+    isBatchActive = false;
+    historyTimeout = null;
   }, 500);
 }

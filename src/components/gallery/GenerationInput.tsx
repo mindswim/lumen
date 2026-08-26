@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { useGalleryStore } from '@/lib/gallery/store';
+import { useGalleryStore, type GalleryImage } from '@/lib/gallery/store';
 
 type ImageSize = 'square' | 'landscape_4_3' | 'landscape_16_9' | 'portrait_4_3' | 'portrait_16_9';
 type FluxModel = 'schnell' | 'dev' | 'pro';
@@ -20,7 +20,7 @@ const MODEL_OPTIONS: { value: FluxModel; label: string; description: string }[] 
   { value: 'pro', label: 'Pro', description: 'Best quality' },
 ];
 
-export function GenerationInput() {
+export function GenerationInput({ onCreated }: { onCreated?: (image: GalleryImage, prompt: string) => void }) {
   const [prompt, setPrompt] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -71,7 +71,11 @@ export function GenerationInput() {
       for (const image of result.images) {
         const timestamp = Date.now();
         const fileName = `generated-${timestamp}.png`;
-        await addImageFromUrl(image.url, fileName);
+        const added = await addImageFromUrl(image.url, fileName, {
+          provider: result.model || `fal:${model}`,
+          sourceUrl: image.url,
+        });
+        onCreated?.(added, prompt.trim());
       }
 
       setPrompt('');
@@ -143,7 +147,7 @@ export function GenerationInput() {
         </div>
 
         {/* Settings row */}
-        <div className="flex items-center justify-center gap-6">
+        <div className="flex flex-wrap items-center justify-center gap-3 md:gap-6">
           {/* Model selector */}
           <div className="flex items-center gap-1.5">
             <span className="text-xs" style={{ color: 'var(--editor-text-muted)' }}>Model</span>

@@ -20,6 +20,9 @@
 # production
 /build
 
+# local shared Lumen workspace (server-backed, not browser-specific)
+/.lumen/
+
 # misc
 .DS_Store
 *.pem

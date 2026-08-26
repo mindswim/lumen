@@ -19,7 +19,6 @@ import {
   BLUR_UNIFORMS,
   BLOOM_EXTRACT_UNIFORMS,
   COMPOSITE_UNIFORMS,
-  FINAL_PASS_UNIFORMS,
 } from './shaders';
 import { ProgramFactory } from './programs/program-factory';
 import { UniformSetter, MAIN_UNIFORM_NAMES } from './programs/uniform-setter';

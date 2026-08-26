@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useEditorStore } from '@/lib/editor/state';
 import { CropRect } from '@/types/editor';
 
@@ -70,23 +70,12 @@ export function CropOverlay({
     [offsetX, offsetY, scale]
   );
 
-  // Convert canvas coordinates to image coordinates
-  const toImage = useCallback(
-    (canvasRect: { left: number; top: number; width: number; height: number }) => ({
-      left: Math.max(0, Math.min(imageWidth, (canvasRect.left - offsetX) / scale)),
-      top: Math.max(0, Math.min(imageHeight, (canvasRect.top - offsetY) / scale)),
-      width: Math.max(10, canvasRect.width / scale),
-      height: Math.max(10, canvasRect.height / scale),
-    }),
-    [offsetX, offsetY, scale, imageWidth, imageHeight]
-  );
-
-  const crop = editState.crop || {
+  const crop = useMemo(() => editState.crop || ({
     top: 0,
     left: 0,
     width: imageWidth,
     height: imageHeight,
-  };
+  }), [editState.crop, imageHeight, imageWidth]);
 
   const canvasCrop = toCanvas(crop);
 
@@ -112,7 +101,7 @@ export function CropOverlay({
       const dxImg = dx / scale;
       const dyImg = dy / scale;
 
-      let newCrop = { ...cropStart };
+      const newCrop = { ...cropStart };
 
       if (dragHandle === 'move') {
         // Move the entire crop area
@@ -164,8 +153,6 @@ export function CropOverlay({
         // Apply aspect ratio constraint if set
         if (cropAspectRatio !== null) {
           const targetRatio = cropAspectRatio;
-          const currentRatio = newCrop.width / newCrop.height;
-
           if (
             dragHandle.includes('n') ||
             dragHandle.includes('s') ||

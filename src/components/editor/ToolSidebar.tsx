@@ -1,7 +1,6 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useEditorStore } from '@/lib/editor/state';
 import { useGalleryStore } from '@/lib/gallery/store';
 import { ensureCompleteEditState } from '@/types/editor';
@@ -55,6 +54,7 @@ function ToolButton({ icon, label, onClick, disabled, active }: ToolButtonProps)
         <button
           onClick={onClick}
           disabled={disabled}
+          aria-label={label}
           className={`w-10 h-10 flex items-center justify-center rounded-lg transition-colors ${disabled ? 'opacity-30 cursor-not-allowed' : ''}`}
           style={{
             backgroundColor: active ? 'var(--editor-bg-active)' : 'transparent',
@@ -88,10 +88,10 @@ interface ToolSidebarProps {
   mode: 'gallery' | 'editor';
   onExport?: () => void;
   onAddPhotos?: () => void;
+  onBack?: () => void;
 }
 
-export function ToolSidebar({ mode, onExport, onAddPhotos }: ToolSidebarProps) {
-  const router = useRouter();
+export function ToolSidebar({ mode, onExport, onAddPhotos, onBack }: ToolSidebarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
 
@@ -104,15 +104,12 @@ export function ToolSidebar({ mode, onExport, onAddPhotos }: ToolSidebarProps) {
   const comparisonMode = useEditorStore((state) => state.comparisonMode);
   const setComparisonMode = useEditorStore((state) => state.setComparisonMode);
   const editorImage = useEditorStore((state) => state.image);
-  const editState = useEditorStore((state) => state.editState);
-  const setEditorImage = useEditorStore((state) => state.setImage);
 
   // Gallery store
   const {
     selectedIds,
     removeImages,
     addImages,
-    activeImageId,
     updateImageEditState,
     gridColumns,
     setGridColumns,
@@ -183,16 +180,6 @@ export function ToolSidebar({ mode, onExport, onAddPhotos }: ToolSidebarProps) {
     }
   };
 
-  const handleBack = () => {
-    // Save current edit state to gallery before going back
-    if (activeImageId && editState) {
-      updateImageEditState(activeImageId, editState);
-    }
-    // Clear editor image
-    setEditorImage(null);
-    router.push('/');
-  };
-
   const handleDelete = () => {
     if (selectedIds.length > 0) {
       removeImages(selectedIds);
@@ -230,7 +217,7 @@ export function ToolSidebar({ mode, onExport, onAddPhotos }: ToolSidebarProps) {
             <ToolButton
               icon={<ArrowLeft className="w-5 h-5" />}
               label="Back to Library"
-              onClick={handleBack}
+              onClick={onBack}
             />
           )}
         </div>

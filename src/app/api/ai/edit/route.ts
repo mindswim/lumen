@@ -4,7 +4,14 @@ import { getAIAdjustments } from '@/lib/ai/claude';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { prompt, currentState, conversationHistory } = body;
+    const { prompt, currentState, conversationHistory, imageData } = body;
+
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return NextResponse.json(
+        { error: 'AI editing is not configured. Add ANTHROPIC_API_KEY to .env.local.' },
+        { status: 503 }
+      );
+    }
 
     if (!prompt || typeof prompt !== 'string') {
       return NextResponse.json(
@@ -14,7 +21,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get AI-generated adjustments based on natural language prompt
-    const response = await getAIAdjustments(prompt, currentState, conversationHistory);
+    const response = await getAIAdjustments(prompt, currentState, conversationHistory, imageData);
 
     return NextResponse.json({
       adjustments: response.adjustments,

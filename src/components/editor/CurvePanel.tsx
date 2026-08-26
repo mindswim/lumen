@@ -21,6 +21,37 @@ interface CurveEditorProps {
   color: string;
 }
 
+function interpolateCurve(pts: Point[], x: number): number {
+  if (pts.length < 2) return x;
+
+  let i = 0;
+  while (i < pts.length - 1 && pts[i + 1].x < x) i++;
+
+  if (i >= pts.length - 1) return pts[pts.length - 1].y;
+  if (i === 0 && x < pts[0].x) return pts[0].y;
+
+  const p0 = pts[Math.max(0, i - 1)];
+  const p1 = pts[i];
+  const p2 = pts[Math.min(pts.length - 1, i + 1)];
+  const p3 = pts[Math.min(pts.length - 1, i + 2)];
+
+  const t = (x - p1.x) / (p2.x - p1.x + 0.0001);
+  const t2 = t * t;
+  const t3 = t2 * t;
+
+  return Math.min(
+    1,
+    Math.max(
+      0,
+      0.5 *
+        (2 * p1.y +
+          (-p0.y + p2.y) * t +
+          (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
+          (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3)
+    )
+  );
+}
+
 function CurveEditor({ points, onChange, color }: CurveEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -120,37 +151,6 @@ function CurveEditor({ points, onChange, color }: CurveEditorProps) {
       ctx.fill();
     });
   }, [points, size, color]);
-
-  const interpolateCurve = (pts: Point[], x: number): number => {
-    if (pts.length < 2) return x;
-
-    let i = 0;
-    while (i < pts.length - 1 && pts[i + 1].x < x) i++;
-
-    if (i >= pts.length - 1) return pts[pts.length - 1].y;
-    if (i === 0 && x < pts[0].x) return pts[0].y;
-
-    const p0 = pts[Math.max(0, i - 1)];
-    const p1 = pts[i];
-    const p2 = pts[Math.min(pts.length - 1, i + 1)];
-    const p3 = pts[Math.min(pts.length - 1, i + 2)];
-
-    const t = (x - p1.x) / (p2.x - p1.x + 0.0001);
-    const t2 = t * t;
-    const t3 = t2 * t;
-
-    return Math.min(
-      1,
-      Math.max(
-        0,
-        0.5 *
-          (2 * p1.y +
-            (-p0.y + p2.y) * t +
-            (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
-            (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3)
-      )
-    );
-  };
 
   const getCanvasCoords = useCallback(
     (e: React.MouseEvent | MouseEvent): { x: number; y: number } => {

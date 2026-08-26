@@ -1,10 +1,16 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Search, SlidersHorizontal } from 'lucide-react';
 import { useEditorStore } from '@/lib/editor/state';
 import { useGalleryStore } from '@/lib/gallery/store';
-import { PRESETS, applyPreset } from '@/lib/editor/presets';
-import { createDefaultEditState } from '@/types/editor';
+import {
+  PRESETS,
+  blendEditStates,
+  createPresetEditState,
+  type BuiltInPreset,
+} from '@/lib/editor/presets';
+import { EditState, createDefaultEditState, ensureCompleteEditState } from '@/types/editor';
 import {
   loadUserPresets,
   addUserPreset,
@@ -14,370 +20,299 @@ import {
   applyUserPreset,
   UserPreset,
 } from '@/lib/editor/user-presets';
+import { renderPresetPreviews } from '@/lib/editor/preset-previews';
 import { SavePresetDialog } from './SavePresetDialog';
 
-// Category colors - distinct color for each preset category
-const CATEGORY_COLORS: Record<string, { bg: string; text: string }> = {
-  Basic: { bg: 'bg-neutral-500', text: 'text-white' },
-  Analog: { bg: 'bg-teal-500', text: 'text-white' },
-  Film: { bg: 'bg-amber-600', text: 'text-white' },
-  Portrait: { bg: 'bg-pink-400', text: 'text-black' },
-  Moody: { bg: 'bg-indigo-600', text: 'text-white' },
-  Vibrant: { bg: 'bg-rose-500', text: 'text-white' },
-  Cinematic: { bg: 'bg-cyan-600', text: 'text-white' },
-  'B&W': { bg: 'bg-neutral-700', text: 'text-white' },
-  Vintage: { bg: 'bg-orange-500', text: 'text-black' },
-  Clean: { bg: 'bg-sky-400', text: 'text-black' },
-};
+const FALLBACK_SWATCHES = [
+  'linear-gradient(145deg, #27323a, #d0a46b)',
+  'linear-gradient(145deg, #2f4858, #a6d4c8)',
+  'linear-gradient(145deg, #342e37, #f1b36b)',
+  'linear-gradient(145deg, #17324d, #c86b85)',
+  'linear-gradient(145deg, #5d4037, #d9b99b)',
+];
 
-// Preset pill component - compact single row
-interface PresetPillProps {
-  code: string;
-  category: string;
-  isActive: boolean;
-  onClick: () => void;
-}
-
-function PresetPill({ code, category, isActive, onClick }: PresetPillProps) {
-  const colors = CATEGORY_COLORS[category] || CATEGORY_COLORS.Basic;
-
-  return (
-    <button
-      onClick={onClick}
-      className="w-full flex items-center gap-3 px-2 py-1.5 rounded-lg transition-colors"
-      style={{ backgroundColor: isActive ? 'var(--editor-bg-active)' : 'transparent' }}
-      onMouseEnter={(e) => {
-        if (!isActive) e.currentTarget.style.backgroundColor = 'var(--editor-bg-hover)';
-      }}
-      onMouseLeave={(e) => {
-        if (!isActive) e.currentTarget.style.backgroundColor = 'transparent';
-      }}
-    >
-      <span className={`px-3 py-1 rounded text-xs font-medium min-w-[60px] text-center ${colors.bg} ${colors.text}`}>
-        {code}
-      </span>
-      <span
-        className="text-sm"
-        style={{
-          color: isActive ? 'var(--editor-text-primary)' : 'var(--editor-text-tertiary)',
-          fontWeight: isActive ? 500 : 400
-        }}
-      >
-        {category}
-      </span>
-    </button>
-  );
-}
-
-// User preset pill - compact styling
-interface UserPresetPillProps {
-  preset: UserPreset;
-  isActive: boolean;
-  onClick: () => void;
-  onDelete: () => void;
-}
-
-function UserPresetPill({ preset, isActive, onClick, onDelete }: UserPresetPillProps) {
-  return (
-    <div className="relative group">
-      <button
-        onClick={onClick}
-        className="w-full flex items-center gap-3 px-2 py-1.5 rounded-lg transition-colors"
-        style={{ backgroundColor: isActive ? 'var(--editor-bg-active)' : 'transparent' }}
-        onMouseEnter={(e) => {
-          if (!isActive) e.currentTarget.style.backgroundColor = 'var(--editor-bg-hover)';
-        }}
-        onMouseLeave={(e) => {
-          if (!isActive) e.currentTarget.style.backgroundColor = 'transparent';
-        }}
-      >
-        <span className="px-3 py-1 rounded text-xs font-medium min-w-[60px] text-center bg-emerald-600 text-white">
-          {preset.name.substring(0, 3).toUpperCase()}
-        </span>
-        <span
-          className="text-sm flex-1 text-left"
-          style={{
-            color: isActive ? 'var(--editor-text-primary)' : 'var(--editor-text-tertiary)',
-            fontWeight: isActive ? 500 : 400
-          }}
-        >
-          {preset.name}
-        </span>
-      </button>
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onDelete();
-        }}
-        className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-        style={{ color: 'var(--editor-text-muted)' }}
-        title="Delete preset"
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M18 6L6 18M6 6l12 12" />
-        </svg>
-      </button>
-    </div>
-  );
+function preserveComposition(target: EditState, base: EditState): EditState {
+  return ensureCompleteEditState({
+    ...target,
+    crop: base.crop,
+    rotation: base.rotation,
+    straighten: base.straighten,
+    perspectiveX: base.perspectiveX,
+    perspectiveY: base.perspectiveY,
+    flipH: base.flipH,
+    flipV: base.flipV,
+    masks: base.masks,
+  });
 }
 
 export function PresetPanel() {
-  // Editor store (single image mode)
   const image = useEditorStore((state) => state.image);
   const editState = useEditorStore((state) => state.editState);
   const setEditState = useEditorStore((state) => state.setEditState);
   const pushHistory = useEditorStore((state) => state.pushHistory);
   const showToast = useEditorStore((state) => state.showToast);
-
-  // Gallery store (batch mode)
   const { selectedIds, images: galleryImages, updateImageEditState } = useGalleryStore();
 
-  // Determine mode: editor (single image) or gallery (batch)
-  const isGalleryMode = !image && selectedIds.length > 0;
-  const selectedGalleryImages = isGalleryMode
-    ? galleryImages.filter((img) => selectedIds.includes(img.id))
-    : [];
+  const selectedGalleryImages = useMemo(
+    () => galleryImages.filter((galleryImage) => selectedIds.includes(galleryImage.id)),
+    [galleryImages, selectedIds]
+  );
+  const isGalleryMode = !image && selectedGalleryImages.length > 0;
+  const previewSource = image?.preview || selectedGalleryImages[0]?.dataUrl;
 
-  const [userPresets, setUserPresets] = useState<UserPreset[]>([]);
+  const [userPresets, setUserPresets] = useState<UserPreset[]>(() => loadUserPresets());
   const [isSaveDialogOpen, setIsSaveDialogOpen] = useState(false);
   const [activePresetId, setActivePresetId] = useState<string | null>(null);
   const [activeUserPresetId, setActiveUserPresetId] = useState<string | null>(null);
+  const [strength, setStrength] = useState(100);
+  const [category, setCategory] = useState('All');
+  const [query, setQuery] = useState('');
+  const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const editorBaseRef = useRef<EditState | null>(null);
+  const editorTargetRef = useRef<EditState | null>(null);
+  const galleryBaseRef = useRef<Map<string, EditState>>(new Map());
+  const galleryTargetRef = useRef<Map<string, EditState>>(new Map());
 
-  // Load user presets on mount
+  const categories = useMemo(
+    () => ['All', ...Array.from(new Set(PRESETS.map((preset) => preset.category)))],
+    []
+  );
+
+  const visiblePresets = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
+    return PRESETS.filter((preset) => {
+      const inCategory = category === 'All' || preset.category === category;
+      const matchesQuery = !normalizedQuery || `${preset.name} ${preset.category}`.toLowerCase().includes(normalizedQuery);
+      return inCategory && matchesQuery;
+    });
+  }, [category, query]);
+
   useEffect(() => {
-    setUserPresets(loadUserPresets());
-  }, []);
-
-  const handlePresetClick = (preset: (typeof PRESETS)[number]) => {
-    if (isGalleryMode) {
-      // Batch apply to selected gallery images
-      selectedGalleryImages.forEach((galleryImg) => {
-        let newEditState;
-        if (preset.id === 'original') {
-          newEditState = createDefaultEditState();
-        } else {
-          const presetState = applyPreset(preset);
-          const defaultState = createDefaultEditState();
-          // Deep merge: start with defaults, overlay preset values
-          newEditState = {
-            ...defaultState,
-            ...presetState,
-            // Ensure nested objects are properly merged
-            curve: { ...defaultState.curve, ...presetState.curve },
-            hsl: { ...defaultState.hsl, ...presetState.hsl },
-            grain: { ...defaultState.grain, ...presetState.grain },
-            vignette: { ...defaultState.vignette, ...presetState.vignette },
-            splitTone: { ...defaultState.splitTone, ...presetState.splitTone },
-            blur: { ...defaultState.blur, ...presetState.blur },
-            border: { ...defaultState.border, ...presetState.border },
-            bloom: { ...defaultState.bloom, ...presetState.bloom },
-            halation: { ...defaultState.halation, ...presetState.halation },
-            skinTone: { ...defaultState.skinTone, ...presetState.skinTone },
-            calibration: { ...defaultState.calibration, ...presetState.calibration },
-            grayMixer: { ...defaultState.grayMixer, ...presetState.grayMixer },
-            sharpening: { ...defaultState.sharpening, ...presetState.sharpening },
-            noiseReduction: { ...defaultState.noiseReduction, ...presetState.noiseReduction },
-          };
-        }
-        updateImageEditState(galleryImg.id, newEditState);
-      });
-      showToast(`Applied to ${selectedGalleryImages.length} photo${selectedGalleryImages.length > 1 ? 's' : ''}`);
-    } else {
-      // Single image mode
-      pushHistory();
-      setActivePresetId(preset.id);
-      setActiveUserPresetId(null);
-
-      if (preset.id === 'original') {
-        setEditState(createDefaultEditState());
-      } else {
-        const presetState = applyPreset(preset);
-        const defaultState = createDefaultEditState();
-        // Deep merge: start with defaults, overlay preset values
-        // Use setEditState for full replacement (not merge)
-        setEditState({
-          ...defaultState,
-          ...presetState,
-          // Ensure nested objects are properly merged
-          curve: { ...defaultState.curve, ...presetState.curve },
-          hsl: { ...defaultState.hsl, ...presetState.hsl },
-          grain: { ...defaultState.grain, ...presetState.grain },
-          vignette: { ...defaultState.vignette, ...presetState.vignette },
-          splitTone: { ...defaultState.splitTone, ...presetState.splitTone },
-          blur: { ...defaultState.blur, ...presetState.blur },
-          border: { ...defaultState.border, ...presetState.border },
-          bloom: { ...defaultState.bloom, ...presetState.bloom },
-          halation: { ...defaultState.halation, ...presetState.halation },
-          skinTone: { ...defaultState.skinTone, ...presetState.skinTone },
-          calibration: { ...defaultState.calibration, ...presetState.calibration },
-          grayMixer: { ...defaultState.grayMixer, ...presetState.grayMixer },
-          sharpening: { ...defaultState.sharpening, ...presetState.sharpening },
-          noiseReduction: { ...defaultState.noiseReduction, ...presetState.noiseReduction },
-        });
-      }
+    if (!previewSource) {
+      return;
     }
+
+    let cancelled = false;
+    renderPresetPreviews(previewSource, PRESETS)
+      .then((previews) => {
+        if (!cancelled) setPreviewUrls(previews);
+      })
+      .catch(() => {
+        if (!cancelled) setPreviewUrls({});
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [previewSource]);
+
+  const setBatchLook = (preset: BuiltInPreset) => {
+    const bases = new Map<string, EditState>();
+    const targets = new Map<string, EditState>();
+    selectedGalleryImages.forEach((galleryImage) => {
+      bases.set(galleryImage.id, galleryImage.editState);
+      const target = createPresetEditState(preset, galleryImage.editState);
+      targets.set(galleryImage.id, target);
+      updateImageEditState(galleryImage.id, target);
+    });
+    galleryBaseRef.current = bases;
+    galleryTargetRef.current = targets;
+  };
+
+  const handlePresetClick = (preset: BuiltInPreset) => {
+    setStrength(100);
+    setActivePresetId(preset.id);
+    setActiveUserPresetId(null);
+
+    if (isGalleryMode) {
+      setBatchLook(preset);
+      showToast(`Applied ${preset.name} to ${selectedGalleryImages.length} photo${selectedGalleryImages.length === 1 ? '' : 's'}`);
+      return;
+    }
+
+    pushHistory();
+    editorBaseRef.current = editState;
+    editorTargetRef.current = createPresetEditState(preset, editState);
+    setEditState(editorTargetRef.current);
   };
 
   const handleUserPresetClick = (preset: UserPreset) => {
+    setStrength(100);
+    setActivePresetId(null);
+    setActiveUserPresetId(preset.id);
+
     if (isGalleryMode) {
-      // Batch apply to selected gallery images
-      selectedGalleryImages.forEach((galleryImg) => {
-        const newState = applyUserPreset(preset, createDefaultEditState());
-        updateImageEditState(galleryImg.id, newState);
+      const bases = new Map<string, EditState>();
+      const targets = new Map<string, EditState>();
+      selectedGalleryImages.forEach((galleryImage) => {
+        bases.set(galleryImage.id, galleryImage.editState);
+        const target = preserveComposition(applyUserPreset(preset, createDefaultEditState()), galleryImage.editState);
+        targets.set(galleryImage.id, target);
+        updateImageEditState(galleryImage.id, target);
       });
-      showToast(`Applied to ${selectedGalleryImages.length} photo${selectedGalleryImages.length > 1 ? 's' : ''}`);
-    } else {
-      pushHistory();
-      setActivePresetId(null);
-      setActiveUserPresetId(preset.id);
-      const newState = applyUserPreset(preset, createDefaultEditState());
-      setEditState(newState);
+      galleryBaseRef.current = bases;
+      galleryTargetRef.current = targets;
+      showToast(`Applied ${preset.name} to ${selectedGalleryImages.length} photo${selectedGalleryImages.length === 1 ? '' : 's'}`);
+      return;
+    }
+
+    pushHistory();
+    editorBaseRef.current = editState;
+    editorTargetRef.current = preserveComposition(applyUserPreset(preset, createDefaultEditState()), editState);
+    setEditState(editorTargetRef.current);
+  };
+
+  const handleStrengthChange = (nextStrength: number) => {
+    setStrength(nextStrength);
+    if (isGalleryMode) {
+      galleryBaseRef.current.forEach((base, id) => {
+        const target = galleryTargetRef.current.get(id);
+        if (target) updateImageEditState(id, blendEditStates(base, target, nextStrength));
+      });
+      return;
+    }
+
+    if (editorBaseRef.current && editorTargetRef.current) {
+      setEditState(blendEditStates(editorBaseRef.current, editorTargetRef.current, nextStrength));
     }
   };
 
-  const handleSavePreset = (name: string) => {
-    const updated = addUserPreset(name, editState);
-    setUserPresets(updated);
-  };
-
+  const handleSavePreset = (name: string) => setUserPresets(addUserPreset(name, editState));
   const handleDeleteUserPreset = (id: string) => {
-    const updated = deleteUserPreset(id);
-    setUserPresets(updated);
-    if (activeUserPresetId === id) {
-      setActiveUserPresetId(null);
-    }
+    setUserPresets(deleteUserPreset(id));
+    if (activeUserPresetId === id) setActiveUserPresetId(null);
   };
 
-  const handleExportPresets = () => {
-    exportPresetsAsJSON(userPresets);
-  };
-
-  const handleImportPresets = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+  const handleImportPresets = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
     if (!file) return;
-
     try {
-      const updated = await importPresetsFromJSON(file);
-      setUserPresets(updated);
-    } catch (error) {
-      console.error('Failed to import presets:', error);
-    }
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+      setUserPresets(await importPresetsFromJSON(file));
+      showToast('Looks imported');
+    } catch {
+      showToast('Could not import that looks file');
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
-
-  // Group presets by category
-  const presetsByCategory = useMemo(() => {
-    const grouped: Record<string, typeof PRESETS> = {};
-    PRESETS.forEach((preset) => {
-      if (!grouped[preset.category]) {
-        grouped[preset.category] = [];
-      }
-      grouped[preset.category].push(preset);
-    });
-    return grouped;
-  }, []);
-
+  const hasActiveLook = activePresetId !== null || activeUserPresetId !== null;
 
   return (
-    <div className="py-2">
-      {/* User presets section */}
-      {userPresets.length > 0 && (
-        <div className="px-2 py-2">
-          <div className="flex items-center justify-between px-2 mb-2">
-            <span className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--editor-text-muted)' }}>
-              My Presets
-            </span>
-            <div className="flex gap-1">
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="text-xs px-2 py-1"
-                style={{ color: 'var(--editor-text-muted)' }}
-              >
-                Import
-              </button>
-              <button
-                onClick={handleExportPresets}
-                className="text-xs px-2 py-1"
-                style={{ color: 'var(--editor-text-muted)' }}
-              >
-                Export
-              </button>
-            </div>
-          </div>
-          <div className="space-y-0.5">
-            {userPresets.map((preset) => {
-              const isActive = activeUserPresetId === preset.id;
-              return (
-                <UserPresetPill
-                  key={preset.id}
-                  preset={preset}
-                  isActive={isActive}
-                  onClick={() => handleUserPresetClick(preset)}
-                  onDelete={() => handleDeleteUserPreset(preset.id)}
-                />
-              );
-            })}
-          </div>
+    <div className="pb-6">
+      <div className="sticky top-0 z-10 px-4 pt-4 pb-3 space-y-3" style={{ backgroundColor: 'var(--editor-bg-primary)', borderBottom: '1px solid var(--editor-border)' }}>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--editor-text-muted)' }} />
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search looks"
+            className="w-full rounded-xl py-2 pl-9 pr-3 text-sm outline-none"
+            style={{ backgroundColor: 'var(--editor-bg-secondary)', color: 'var(--editor-text-primary)', border: '1px solid var(--editor-border)' }}
+          />
         </div>
-      )}
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {categories.map((item) => (
+            <button
+              key={item}
+              onClick={() => setCategory(item)}
+              className="shrink-0 rounded-full px-3 py-1.5 text-xs font-medium"
+              style={{
+                backgroundColor: category === item ? 'var(--editor-accent)' : 'var(--editor-bg-secondary)',
+                color: category === item ? 'var(--editor-accent-foreground)' : 'var(--editor-text-tertiary)',
+                border: '1px solid var(--editor-border)',
+              }}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
 
-      {/* Save preset button */}
-      <div className="px-4 py-2" style={{ borderBottom: '1px solid var(--editor-border)' }}>
-        <button
-          onClick={() => setIsSaveDialogOpen(true)}
-          className="w-full py-2 text-sm rounded-lg transition-colors"
-          style={{ color: 'var(--editor-text-tertiary)', border: '1px solid var(--editor-border)' }}
-        >
-          + Save Current as Preset
-        </button>
+        {hasActiveLook && (
+          <div className="rounded-xl p-3" style={{ backgroundColor: 'var(--editor-bg-secondary)' }}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="flex items-center gap-2 text-xs font-medium" style={{ color: 'var(--editor-text-secondary)' }}>
+                <SlidersHorizontal className="w-3.5 h-3.5" /> Look strength
+              </span>
+              <span className="text-xs tabular-nums" style={{ color: 'var(--editor-text-primary)' }}>{strength}%</span>
+            </div>
+            <input
+              aria-label="Look strength"
+              type="range"
+              min="0"
+              max="100"
+              value={strength}
+              onChange={(event) => handleStrengthChange(Number(event.target.value))}
+              className="w-full"
+              style={{ accentColor: 'var(--editor-accent)' }}
+            />
+          </div>
+        )}
       </div>
 
-      {/* Preset list by category */}
-      {Object.entries(presetsByCategory).map(([category, presets]) => (
-        <div key={category} className="px-2 py-2">
-          <span className="block px-2 mb-2 text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--editor-text-muted)' }}>
-            {category}
-          </span>
-          <div className="space-y-0.5">
-            {presets.map((preset) => {
-              const isActive =
-                !isGalleryMode &&
-                activeUserPresetId === null &&
-                activePresetId === preset.id;
-              return (
-                <PresetPill
-                  key={preset.id}
-                  code={preset.name}
-                  category={category}
-                  isActive={isActive}
-                  onClick={() => handlePresetClick(preset)}
-                />
-              );
-            })}
+      {userPresets.length > 0 && category === 'All' && !query && (
+        <section className="px-4 pt-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-xs font-semibold uppercase tracking-[0.14em]" style={{ color: 'var(--editor-text-muted)' }}>My looks</h3>
+            <div className="flex gap-3 text-xs" style={{ color: 'var(--editor-text-muted)' }}>
+              <button onClick={() => fileInputRef.current?.click()}>Import</button>
+              <button onClick={() => exportPresetsAsJSON(userPresets)}>Export</button>
+            </div>
           </div>
+          <div className="grid grid-cols-2 gap-2">
+            {userPresets.map((preset, index) => (
+              <button
+                key={preset.id}
+                onClick={() => handleUserPresetClick(preset)}
+                onContextMenu={(event) => { event.preventDefault(); handleDeleteUserPreset(preset.id); }}
+                className="relative aspect-[4/3] overflow-hidden rounded-xl text-left p-3 flex items-end"
+                style={{ background: FALLBACK_SWATCHES[index % FALLBACK_SWATCHES.length], border: activeUserPresetId === preset.id ? '2px solid var(--editor-accent)' : '1px solid var(--editor-border)' }}
+              >
+                <span className="text-sm font-medium text-white drop-shadow">{preset.name}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className="px-4 pt-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-xs font-semibold uppercase tracking-[0.14em]" style={{ color: 'var(--editor-text-muted)' }}>
+            {category === 'All' ? 'Curated looks' : category}
+          </h3>
+          <button className="text-xs" style={{ color: 'var(--editor-text-tertiary)' }} onClick={() => setIsSaveDialogOpen(true)}>
+            Save current
+          </button>
         </div>
-      ))}
+        <div className="grid grid-cols-2 gap-2">
+          {visiblePresets.map((preset, index) => (
+            <button
+              key={preset.id}
+              onClick={() => handlePresetClick(preset)}
+              className="group relative aspect-[4/3] overflow-hidden rounded-xl text-left"
+              style={{ border: activePresetId === preset.id ? '2px solid var(--editor-accent)' : '1px solid var(--editor-border)', background: FALLBACK_SWATCHES[index % FALLBACK_SWATCHES.length] }}
+              aria-label={`${preset.name} ${preset.category}`}
+            >
+              {previewUrls[preset.id] && (
+                // Generated client-side previews are data URLs and cannot benefit from Next image optimization.
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={previewUrls[preset.id]} alt="" className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+              )}
+              <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-3 pt-8 pb-2.5 text-white">
+                <span className="block text-sm font-medium leading-none">{preset.name}</span>
+                <span className="block text-[10px] uppercase tracking-[0.12em] mt-1 text-white/70">{preset.category}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+        {visiblePresets.length === 0 && (
+          <p className="py-10 text-center text-sm" style={{ color: 'var(--editor-text-muted)' }}>No looks found.</p>
+        )}
+      </section>
 
-      {/* Hidden file input for import */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".json"
-        onChange={handleImportPresets}
-        className="hidden"
-      />
-
-      {/* Save preset dialog */}
-      <SavePresetDialog
-        isOpen={isSaveDialogOpen}
-        onClose={() => setIsSaveDialogOpen(false)}
-        onSave={handleSavePreset}
-      />
+      <input ref={fileInputRef} type="file" accept=".json" onChange={handleImportPresets} className="hidden" />
+      <SavePresetDialog isOpen={isSaveDialogOpen} onClose={() => setIsSaveDialogOpen(false)} onSave={handleSavePreset} />
     </div>
   );
 }

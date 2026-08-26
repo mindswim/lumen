@@ -3,7 +3,6 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { useEditorStore } from '@/lib/editor/state';
 import {
-  Mask,
   RadialMaskData,
   LinearMaskData,
   BrushMaskData,
@@ -22,43 +21,15 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
 
   const [isDragging, setIsDragging] = useState(false);
   const [dragType, setDragType] = useState<string | null>(null);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
   const selectedMask = masks.find((m) => m.id === selectedMaskId);
 
-  // Draw mask visualization
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || canvasWidth === 0 || canvasHeight === 0) return;
-
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    // Clear
-    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-
-    // Draw selected mask visualization
-    if (selectedMask && selectedMask.visible) {
-      ctx.save();
-
-      if (selectedMask.type === 'radial') {
-        drawRadialMask(ctx, selectedMask.data as RadialMaskData, canvasWidth, canvasHeight);
-      } else if (selectedMask.type === 'linear') {
-        drawLinearMask(ctx, selectedMask.data as LinearMaskData, canvasWidth, canvasHeight);
-      } else if (selectedMask.type === 'brush') {
-        drawBrushMask(ctx, selectedMask.data as BrushMaskData, canvasWidth, canvasHeight);
-      }
-
-      ctx.restore();
-    }
-  }, [selectedMask, canvasWidth, canvasHeight, masks]);
-
-  const drawRadialMask = (
+  function drawRadialMask(
     ctx: CanvasRenderingContext2D,
     data: RadialMaskData,
     width: number,
     height: number
-  ) => {
+  ) {
     const cx = data.centerX * width;
     const cy = data.centerY * height;
     const rx = data.radiusX * width;
@@ -106,14 +77,14 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
       ctx.fill();
       ctx.stroke();
     });
-  };
+  }
 
-  const drawLinearMask = (
+  function drawLinearMask(
     ctx: CanvasRenderingContext2D,
     data: LinearMaskData,
     width: number,
     height: number
-  ) => {
+  ) {
     const sx = data.startX * width;
     const sy = data.startY * height;
     const ex = data.endX * width;
@@ -161,14 +132,14 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
     ctx.moveTo(ex + perpX, ey + perpY);
     ctx.lineTo(ex - perpX, ey - perpY);
     ctx.stroke();
-  };
+  }
 
-  const drawBrushMask = (
+  function drawBrushMask(
     ctx: CanvasRenderingContext2D,
     data: BrushMaskData,
     width: number,
     height: number
-  ) => {
+  ) {
     // Draw brush strokes as semi-transparent overlay
     ctx.globalAlpha = 0.5;
     ctx.fillStyle = 'rgba(255, 100, 100, 0.5)';
@@ -194,7 +165,32 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
     });
 
     ctx.globalAlpha = 1;
-  };
+  }
+
+  // Draw mask visualization
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas || canvasWidth === 0 || canvasHeight === 0) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+
+    if (selectedMask && selectedMask.visible) {
+      ctx.save();
+
+      if (selectedMask.type === 'radial') {
+        drawRadialMask(ctx, selectedMask.data as RadialMaskData, canvasWidth, canvasHeight);
+      } else if (selectedMask.type === 'linear') {
+        drawLinearMask(ctx, selectedMask.data as LinearMaskData, canvasWidth, canvasHeight);
+      } else if (selectedMask.type === 'brush') {
+        drawBrushMask(ctx, selectedMask.data as BrushMaskData, canvasWidth, canvasHeight);
+      }
+
+      ctx.restore();
+    }
+  }, [selectedMask, canvasWidth, canvasHeight, masks]);
 
   const getCanvasCoords = useCallback(
     (e: React.MouseEvent): { x: number; y: number } => {
@@ -215,8 +211,6 @@ export function MaskOverlay({ canvasWidth, canvasHeight }: MaskOverlayProps) {
       if (!selectedMask) return;
 
       const { x, y } = getCanvasCoords(e);
-      setDragStart({ x, y });
-
       if (selectedMask.type === 'radial') {
         const data = selectedMask.data as RadialMaskData;
         const cx = data.centerX;

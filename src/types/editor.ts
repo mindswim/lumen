@@ -439,6 +439,55 @@ export function ensureCompleteEditState(partial: Partial<EditState>): EditState 
   };
 }
 
+// Merge partial edits into an existing state without resetting sibling values in
+// nested controls. This is especially important for AI responses, which often
+// return a single nested value such as grain.amount.
+export function mergeEditState(base: EditState, updates: Partial<EditState>): EditState {
+  return ensureCompleteEditState({
+    ...base,
+    ...updates,
+    curve: updates.curve ? { ...base.curve, ...updates.curve } : base.curve,
+    hsl: updates.hsl
+      ? {
+          red: { ...base.hsl.red, ...updates.hsl.red },
+          orange: { ...base.hsl.orange, ...updates.hsl.orange },
+          yellow: { ...base.hsl.yellow, ...updates.hsl.yellow },
+          green: { ...base.hsl.green, ...updates.hsl.green },
+          aqua: { ...base.hsl.aqua, ...updates.hsl.aqua },
+          blue: { ...base.hsl.blue, ...updates.hsl.blue },
+          purple: { ...base.hsl.purple, ...updates.hsl.purple },
+          magenta: { ...base.hsl.magenta, ...updates.hsl.magenta },
+        }
+      : base.hsl,
+    grain: updates.grain ? { ...base.grain, ...updates.grain } : base.grain,
+    vignette: updates.vignette ? { ...base.vignette, ...updates.vignette } : base.vignette,
+    splitTone: updates.splitTone ? { ...base.splitTone, ...updates.splitTone } : base.splitTone,
+    colorGrading: updates.colorGrading
+      ? {
+          shadows: { ...base.colorGrading.shadows, ...updates.colorGrading.shadows },
+          midtones: { ...base.colorGrading.midtones, ...updates.colorGrading.midtones },
+          highlights: { ...base.colorGrading.highlights, ...updates.colorGrading.highlights },
+          global: { ...base.colorGrading.global, ...updates.colorGrading.global },
+          blending: updates.colorGrading.blending ?? base.colorGrading.blending,
+        }
+      : base.colorGrading,
+    blur: updates.blur ? { ...base.blur, ...updates.blur } : base.blur,
+    border: updates.border ? { ...base.border, ...updates.border } : base.border,
+    bloom: updates.bloom ? { ...base.bloom, ...updates.bloom } : base.bloom,
+    halation: updates.halation ? { ...base.halation, ...updates.halation } : base.halation,
+    skinTone: updates.skinTone ? { ...base.skinTone, ...updates.skinTone } : base.skinTone,
+    calibration: updates.calibration ? { ...base.calibration, ...updates.calibration } : base.calibration,
+    grayMixer: updates.grayMixer ? { ...base.grayMixer, ...updates.grayMixer } : base.grayMixer,
+    sharpening: updates.sharpening ? { ...base.sharpening, ...updates.sharpening } : base.sharpening,
+    noiseReduction: updates.noiseReduction
+      ? { ...base.noiseReduction, ...updates.noiseReduction }
+      : base.noiseReduction,
+    chromaticAberration: updates.chromaticAberration
+      ? { ...base.chromaticAberration, ...updates.chromaticAberration }
+      : base.chromaticAberration,
+  });
+}
+
 export function createDefaultEditState(): EditState {
   return {
     exposure: 0,

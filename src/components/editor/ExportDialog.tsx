@@ -291,7 +291,7 @@ export function ExportDialog({ open, onOpenChange }: ExportDialogProps) {
             </div>
             {tier === 'print' && (
               <div className="text-xs mt-1" style={{ color: 'var(--editor-text-muted)' }}>
-                Print size at 300 DPI: {printSize.width}" x {printSize.height}"
+                Print size at 300 DPI: {printSize.width} in × {printSize.height} in
               </div>
             )}
             {image && (outputDimensions.width !== image.width || outputDimensions.height !== image.height) && (

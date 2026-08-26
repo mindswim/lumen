@@ -45,12 +45,6 @@ export function TransformPanel() {
   const isCropping = useEditorStore((state) => state.isCropping);
   const setIsCropping = useEditorStore((state) => state.setIsCropping);
 
-  const handleRotationChange = (value: number) => {
-    useEditorStore.setState((state) => ({
-      editState: { ...state.editState, rotation: value },
-    }));
-  };
-
   const rotate90 = (direction: 'cw' | 'ccw') => {
     pushHistory();
     const delta = direction === 'cw' ? 90 : -90;

@@ -2,23 +2,36 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { EditState, createDefaultEditState, ensureCompleteEditState } from '@/types/editor';
 import {
-  saveImage,
-  saveImages,
-  deleteImages,
   getAllImages,
   StoredImage,
 } from '@/lib/storage/indexed-db';
+import {
+  deleteSharedImages,
+  getSharedImages,
+  saveSharedImage,
+  saveSharedImages,
+  uploadSharedImage,
+} from '@/lib/storage/shared-workspace';
+import { renderGalleryThumbnail } from '@/lib/editor/gallery-thumbnail';
+import { getStoryboardImageIds, useStoryboardStore } from '@/lib/storyboard/store';
 
 export interface GalleryImage {
   id: string;
   fileName: string;
-  dataUrl: string; // Base64 data URL for persistence
+  dataUrl: string; // Stable local workspace URL (legacy records may still be data URLs during migration)
   thumbnailUrl: string;
   width: number;
   height: number;
   editState: EditState;
   createdAt: number;
   updatedAt: number;
+  sourceUrl?: string;
+  sourceProvider?: string;
+}
+
+export interface RemoveImagesResult {
+  removedIds: string[];
+  protectedIds: string[];
 }
 
 interface GalleryStore {
@@ -28,12 +41,14 @@ interface GalleryStore {
   gridColumns: number; // 1-8 columns
   isIsolated: boolean; // Isolate mode - show only isolated images
   isolatedIds: string[]; // IDs of images being isolated
-  isHydrated: boolean; // Whether IndexedDB data has been loaded
+  lastDeletedImages: GalleryImage[];
+  isHydrated: boolean; // Whether shared workspace data has been loaded
 
   // Actions
-  addImages: (files: File[]) => Promise<void>;
-  addImageFromUrl: (url: string, fileName: string) => Promise<GalleryImage>;
-  removeImages: (ids: string[]) => void;
+  addImages: (files: File[]) => Promise<GalleryImage[]>;
+  addImageFromUrl: (url: string, fileName: string, source?: { provider?: string; sourceUrl?: string }) => Promise<GalleryImage>;
+  removeImages: (ids: string[]) => RemoveImagesResult;
+  restoreLastDeleted: () => Promise<void>;
   selectImage: (id: string, multi?: boolean) => void;
   deselectAll: () => void;
   setActiveImage: (id: string | null) => void;
@@ -42,7 +57,7 @@ interface GalleryStore {
   setGridColumns: (columns: number) => void;
   toggleIsolate: () => void; // Enter/exit isolate mode
   exitIsolate: () => void; // Exit isolate mode
-  hydrateFromIndexedDB: () => Promise<void>; // Load images from IndexedDB
+  hydrateFromIndexedDB: () => Promise<void>; // Load shared images; migrate IndexedDB once when needed
 
   // Computed
   getVisibleImages: () => GalleryImage[]; // Returns isolated images if in isolate mode
@@ -56,7 +71,7 @@ function generateId(): string {
 // Create thumbnail from image
 async function createThumbnail(
   img: HTMLImageElement,
-  maxSize: number = 400
+  maxSize: number = 800
 ): Promise<string> {
   const canvas = document.createElement('canvas');
   let width = img.width;
@@ -81,7 +96,7 @@ async function createThumbnail(
   if (!ctx) throw new Error('Failed to get canvas context');
 
   ctx.drawImage(img, 0, 0, width, height);
-  return canvas.toDataURL('image/jpeg', 0.8);
+  return canvas.toDataURL('image/jpeg', 0.86);
 }
 
 // Load image from file
@@ -99,6 +114,50 @@ function loadImageFromFile(file: File): Promise<HTMLImageElement> {
   });
 }
 
+function loadImageFromBlob(blob: Blob): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const objectUrl = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      resolve(img);
+    };
+    img.onerror = (error) => {
+      URL.revokeObjectURL(objectUrl);
+      reject(error);
+    };
+    img.src = objectUrl;
+  });
+}
+
+const thumbnailTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function scheduleThumbnailRefresh(id: string, get: () => GalleryStore, set: (partial: Partial<GalleryStore> | ((state: GalleryStore) => Partial<GalleryStore>)) => void) {
+  const existingTimer = thumbnailTimers.get(id);
+  if (existingTimer) clearTimeout(existingTimer);
+
+  thumbnailTimers.set(id, setTimeout(async () => {
+    thumbnailTimers.delete(id);
+    const image = get().images.find((candidate) => candidate.id === id);
+    if (!image) return;
+    const editVersion = image.updatedAt;
+
+    try {
+      const thumbnailUrl = await renderGalleryThumbnail(image.dataUrl, image.editState);
+      const latest = get().images.find((candidate) => candidate.id === id);
+      if (!latest || latest.updatedAt !== editVersion) return;
+
+      const updatedImage = { ...latest, thumbnailUrl };
+      set((state) => ({
+        images: state.images.map((candidate) => candidate.id === id ? updatedImage : candidate),
+      }));
+      await saveSharedImage(updatedImage as StoredImage);
+    } catch (error) {
+      console.error('Failed to refresh edited thumbnail:', error);
+    }
+  }, 450));
+}
+
 export const useGalleryStore = create<GalleryStore>()(
   persist(
     (set, get) => ({
@@ -108,11 +167,29 @@ export const useGalleryStore = create<GalleryStore>()(
       gridColumns: 5, // Default to 5 columns
       isIsolated: false,
       isolatedIds: [],
+      lastDeletedImages: [],
       isHydrated: false,
 
       hydrateFromIndexedDB: async () => {
         try {
-          const storedImages = await getAllImages();
+          const shared = await getSharedImages();
+          let storedImages = shared.images;
+
+          if (!shared.initialized) {
+            const browserImages = await getAllImages();
+            if (browserImages.length > 0) {
+              storedImages = [];
+              for (const image of browserImages) {
+                const response = await fetch(image.dataUrl);
+                if (!response.ok) throw new Error(`Could not migrate ${image.fileName}.`);
+                const blob = await response.blob();
+                const dataUrl = await uploadSharedImage(blob, image.id, image.fileName);
+                storedImages.push({ ...image, dataUrl });
+              }
+            }
+            await saveSharedImages(storedImages);
+          }
+
           const images: GalleryImage[] = storedImages.map((img: StoredImage) => ({
             ...img,
             // Ensure edit state has all required properties (for older stored images)
@@ -122,7 +199,7 @@ export const useGalleryStore = create<GalleryStore>()(
           images.sort((a, b) => b.createdAt - a.createdAt);
           set({ images, isHydrated: true });
         } catch (error) {
-          console.error('Failed to hydrate from IndexedDB:', error);
+          console.error('Failed to hydrate the shared local workspace:', error);
           set({ isHydrated: true }); // Mark as hydrated even on error
         }
       },
@@ -135,16 +212,12 @@ export const useGalleryStore = create<GalleryStore>()(
 
           try {
             const img = await loadImageFromFile(file);
-            const reader = new FileReader();
-            const dataUrl = await new Promise<string>((resolve) => {
-              reader.onload = (e) => resolve(e.target?.result as string);
-              reader.readAsDataURL(file);
-            });
-
             const thumbnailUrl = await createThumbnail(img);
+            const imageId = generateId();
+            const dataUrl = await uploadSharedImage(file, imageId, file.name);
 
             newImages.push({
-              id: generateId(),
+              id: imageId,
               fileName: file.name,
               dataUrl,
               thumbnailUrl,
@@ -159,43 +232,34 @@ export const useGalleryStore = create<GalleryStore>()(
           }
         }
 
-        // Save to IndexedDB
+        // Save metadata to the shared local workspace.
         try {
-          await saveImages(newImages as StoredImage[]);
+          await saveSharedImages(newImages as StoredImage[]);
         } catch (err) {
-          console.error('Failed to save images to IndexedDB:', err);
+          console.error('Failed to save images to the shared workspace:', err);
         }
 
         set((state) => ({
           images: [...newImages, ...state.images], // Add new images at the beginning
         }));
+
+        return newImages;
       },
 
-      addImageFromUrl: async (url: string, fileName: string) => {
-        // Load image from URL
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-
-        await new Promise<void>((resolve, reject) => {
-          img.onload = () => resolve();
-          img.onerror = reject;
-          img.src = url;
-        });
-
-        // Create canvas to get dataUrl
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) throw new Error('Failed to get canvas context');
-        ctx.drawImage(img, 0, 0);
-        const dataUrl = canvas.toDataURL('image/png');
+      addImageFromUrl: async (url: string, fileName: string, source) => {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Could not download ${fileName}.`);
+        const blob = await response.blob();
+        if (!blob.type.startsWith('image/')) throw new Error(`${fileName} is not a supported image.`);
+        const img = await loadImageFromBlob(blob);
 
         // Create thumbnail
         const thumbnailUrl = await createThumbnail(img);
 
+        const imageId = generateId();
+        const dataUrl = await uploadSharedImage(blob, imageId, fileName);
         const newImage: GalleryImage = {
-          id: generateId(),
+          id: imageId,
           fileName,
           dataUrl,
           thumbnailUrl,
@@ -204,13 +268,15 @@ export const useGalleryStore = create<GalleryStore>()(
           editState: createDefaultEditState(),
           createdAt: Date.now(),
           updatedAt: Date.now(),
+          sourceUrl: source?.sourceUrl ?? url,
+          sourceProvider: source?.provider,
         };
 
-        // Save to IndexedDB
+        // Save metadata to the shared local workspace.
         try {
-          await saveImage(newImage as StoredImage);
+          await saveSharedImage(newImage as StoredImage);
         } catch (err) {
-          console.error('Failed to save generated image to IndexedDB:', err);
+          console.error('Failed to save generated image to the shared workspace:', err);
         }
 
         set((state) => ({
@@ -221,17 +287,38 @@ export const useGalleryStore = create<GalleryStore>()(
       },
 
       removeImages: (ids: string[]) => {
-        // Delete from IndexedDB (fire and forget, don't block UI)
-        deleteImages(ids).catch((err) => {
-          console.error('Failed to delete images from IndexedDB:', err);
+        const storyboardImageIds = getStoryboardImageIds(useStoryboardStore.getState().projects);
+        const protectedIds = ids.filter((imageId) => storyboardImageIds.has(imageId));
+        const removableIds = ids.filter((imageId) => !storyboardImageIds.has(imageId));
+        const deletedImages = get().images.filter((img) => removableIds.includes(img.id));
+        if (deletedImages.length === 0) return { removedIds: [], protectedIds };
+
+        // Remove shared metadata but retain the local asset so undo remains recoverable.
+        deleteSharedImages(removableIds).catch((err) => {
+          console.error('Failed to delete images from the shared workspace:', err);
         });
 
         set((state) => ({
-          images: state.images.filter((img) => !ids.includes(img.id)),
-          selectedIds: state.selectedIds.filter((id) => !ids.includes(id)),
-          activeImageId: ids.includes(state.activeImageId || '')
+          images: state.images.filter((img) => !removableIds.includes(img.id)),
+          selectedIds: state.selectedIds.filter((id) => !removableIds.includes(id)),
+          lastDeletedImages: deletedImages,
+          activeImageId: removableIds.includes(state.activeImageId || '')
             ? null
             : state.activeImageId,
+        }));
+
+        return { removedIds: removableIds, protectedIds };
+      },
+
+      restoreLastDeleted: async () => {
+        const deletedImages = get().lastDeletedImages;
+        if (deletedImages.length === 0) return;
+
+        await saveSharedImages(deletedImages as StoredImage[]);
+        set((state) => ({
+          images: [...deletedImages, ...state.images].sort((a, b) => b.createdAt - a.createdAt),
+          selectedIds: deletedImages.map((image) => image.id),
+          lastDeletedImages: [],
         }));
       },
 
@@ -268,16 +355,18 @@ export const useGalleryStore = create<GalleryStore>()(
             img.id === id ? { ...img, editState, updatedAt } : img
           );
 
-          // Save to IndexedDB (fire and forget)
+          // Save to the shared local workspace (fire and forget).
           const updatedImage = updatedImages.find((img) => img.id === id);
           if (updatedImage) {
-            saveImage(updatedImage as StoredImage).catch((err) => {
-              console.error('Failed to save image edit state to IndexedDB:', err);
+            saveSharedImage(updatedImage as StoredImage).catch((err) => {
+              console.error('Failed to save image edit state to the shared workspace:', err);
             });
           }
 
           return { images: updatedImages };
         });
+
+        scheduleThumbnailRefresh(id, get, set);
       },
 
       getImage: (id: string) => {
@@ -315,7 +404,7 @@ export const useGalleryStore = create<GalleryStore>()(
     }),
     {
       name: 'lumen-ui-preferences',
-      // Only persist UI preferences, not images (those go to IndexedDB)
+      // Only persist UI preferences here; image metadata and files use the shared local workspace.
       partialize: (state) => ({
         gridColumns: state.gridColumns,
       }),

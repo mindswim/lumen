@@ -1,11 +1,19 @@
 'use client';
 
-import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useEditorStore } from '@/lib/editor/state';
 import { useGalleryStore } from '@/lib/gallery/store';
 import { Slider } from '@/components/ui/slider';
 import { sliderPresets } from '@/components/ui/adjustment-slider';
-import { EditState, ensureCompleteEditState, createDefaultEditState } from '@/types/editor';
+import { EditState, ensureCompleteEditState, mergeEditState } from '@/types/editor';
+import { createAIImagePreview } from '@/lib/ai/image-preview';
+import type { AIDirection } from '@/lib/ai/claude';
+
+const PROMPT_SUGGESTIONS = [
+  'Warm film, natural skin',
+  'Soft editorial contrast',
+  'Cool cinematic shadows',
+];
 
 // All available parameters organized by category
 const PARAMETER_CATEGORIES = {
@@ -115,6 +123,7 @@ export function AIPanel() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [directions, setDirections] = useState<AIDirection[]>([]);
   const [trackedAdjustments, setTrackedAdjustments] = useState<Map<string, TrackedAdjustment>>(new Map());
   const [isTrayExpanded, setIsTrayExpanded] = useState(true);
   const [showAddParam, setShowAddParam] = useState(false);
@@ -124,7 +133,14 @@ export function AIPanel() {
 
   const isGalleryMode = !image && selectedIds.length > 0;
   const hasImage = !!image || selectedIds.length > 0;
-  const defaultState = useMemo(() => createDefaultEditState(), []);
+  const leadGalleryImage = galleryImages.find((galleryImage) => galleryImage.id === selectedIds[0]);
+  const currentEditState = isGalleryMode && leadGalleryImage ? leadGalleryImage.editState : editState;
+
+  const getImagePreview = useCallback(async () => {
+    if (image?.preview) return createAIImagePreview(image.preview);
+    if (leadGalleryImage) return createAIImagePreview(leadGalleryImage.dataUrl);
+    throw new Error('Select a photo first.');
+  }, [image, leadGalleryImage]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -145,7 +161,7 @@ export function AIPanel() {
   }, [prompt, adjustTextareaHeight]);
 
   const updateParameter = (path: string, value: number) => {
-    const newEditState = setNestedValue(editState as unknown as Record<string, unknown>, path, value);
+    const newEditState = setNestedValue(currentEditState as unknown as Record<string, unknown>, path, value);
     if (isGalleryMode) {
       const selectedImages = galleryImages.filter((img) => selectedIds.includes(img.id));
       selectedImages.forEach((img) => {
@@ -164,11 +180,10 @@ export function AIPanel() {
   };
 
   const addParameter = (path: string) => {
-    const currentValue = getNestedValue(editState as unknown as Record<string, unknown>, path);
-    const originalValue = getNestedValue(defaultState as unknown as Record<string, unknown>, path);
+    const currentValue = getNestedValue(currentEditState as unknown as Record<string, unknown>, path);
     setTrackedAdjustments((prev) => {
       const updated = new Map(prev);
-      if (!updated.has(path)) updated.set(path, { path, originalValue, currentValue });
+      if (!updated.has(path)) updated.set(path, { path, originalValue: currentValue, currentValue });
       return updated;
     });
     setShowAddParam(false);
@@ -188,7 +203,7 @@ export function AIPanel() {
       const updated = new Map(prev);
       changes.forEach((value, path) => {
         const existing = updated.get(path);
-        const originalValue = existing?.originalValue ?? getNestedValue(defaultState as unknown as Record<string, unknown>, path);
+        const originalValue = existing?.originalValue ?? getNestedValue(currentEditState as unknown as Record<string, unknown>, path);
         updated.set(path, { path, originalValue, currentValue: value });
       });
       return updated;
@@ -197,18 +212,34 @@ export function AIPanel() {
     if (isGalleryMode) {
       const selectedImages = galleryImages.filter((img) => selectedIds.includes(img.id));
       selectedImages.forEach((img) => {
-        const newState = ensureCompleteEditState({ ...img.editState, ...adjustments });
+        const newState = mergeEditState(img.editState, adjustments);
         updateImageEditState(img.id, newState);
       });
     } else {
       pushHistory();
-      const newState = ensureCompleteEditState({ ...editState, ...adjustments });
+      const newState = mergeEditState(currentEditState, adjustments);
       setEditState(newState);
     }
   };
 
   const handleReset = () => {
-    trackedAdjustments.forEach((adj) => updateParameter(adj.path, adj.originalValue));
+    if (isGalleryMode) {
+      const selectedImages = galleryImages.filter((galleryImage) => selectedIds.includes(galleryImage.id));
+      selectedImages.forEach((galleryImage) => {
+        let restoredState = galleryImage.editState as unknown as Record<string, unknown>;
+        trackedAdjustments.forEach((adjustment) => {
+          restoredState = setNestedValue(restoredState, adjustment.path, adjustment.originalValue);
+        });
+        updateImageEditState(galleryImage.id, ensureCompleteEditState(restoredState as Partial<EditState>));
+      });
+    } else {
+      pushHistory();
+      let restoredState = currentEditState as unknown as Record<string, unknown>;
+      trackedAdjustments.forEach((adjustment) => {
+        restoredState = setNestedValue(restoredState, adjustment.path, adjustment.originalValue);
+      });
+      setEditState(ensureCompleteEditState(restoredState as Partial<EditState>));
+    }
     setTrackedAdjustments(new Map());
   };
 
@@ -226,14 +257,14 @@ export function AIPanel() {
     setMessages((prev) => [...prev, userMsg]);
 
     try {
+      const imageData = await getImagePreview();
       const response = await fetch('/api/ai/enhance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ currentState: editState }),
+        body: JSON.stringify({ currentState: currentEditState, imageData }),
       });
-      if (!response.ok) throw new Error('Failed to enhance image');
-
       const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to enhance image');
       applyAndTrackAdjustments(data.adjustments);
 
       const assistantMsg: ChatMessage = {
@@ -249,6 +280,42 @@ export function AIPanel() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleExploreDirections = async () => {
+    if (!hasImage || isLoading) return;
+    setIsLoading(true);
+    setError(null);
+    setDirections([]);
+
+    try {
+      const imageData = await getImagePreview();
+      const response = await fetch('/api/ai/directions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentState: currentEditState, imageData }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not create directions');
+      setDirections(data.directions || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create directions');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleApplyDirection = (direction: AIDirection) => {
+    applyAndTrackAdjustments(direction.adjustments);
+    setMessages((previous) => [
+      ...previous,
+      {
+        id: `msg-${Date.now()}`,
+        role: 'assistant',
+        content: `${direction.name}: ${direction.reasoning}`,
+        timestamp: Date.now(),
+      },
+    ]);
   };
 
   const handleSubmit = async (e?: React.FormEvent) => {
@@ -269,15 +336,15 @@ export function AIPanel() {
     setMessages((prev) => [...prev, userMsg]);
 
     try {
+      const imageData = await getImagePreview();
       const conversationHistory = messages.map((m) => ({ role: m.role, content: m.content }));
       const response = await fetch('/api/ai/edit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: userPrompt, currentState: editState, conversationHistory }),
+        body: JSON.stringify({ prompt: userPrompt, currentState: currentEditState, conversationHistory, imageData }),
       });
-      if (!response.ok) throw new Error('Failed to process edit');
-
       const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Failed to process edit');
       applyAndTrackAdjustments(data.adjustments);
 
       const assistantMsg: ChatMessage = {
@@ -313,19 +380,55 @@ export function AIPanel() {
     <div className="flex flex-col h-full" style={{ backgroundColor: 'var(--editor-bg-primary)' }}>
       {/* Header */}
       <div className="flex-shrink-0 px-4 pt-4 pb-3">
-        <button
-          onClick={handleAutoEnhance}
-          disabled={!hasImage || isLoading}
-          className="w-full py-2.5 px-4 rounded-lg text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-          style={{
-            backgroundColor: 'var(--editor-accent)',
-            color: 'white',
-          }}
-        >
-          <SparklesIcon />
-          Auto-Enhance
-        </button>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={handleExploreDirections}
+            disabled={!hasImage || isLoading}
+            className="py-2.5 px-3 rounded-xl text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            style={{ backgroundColor: 'var(--editor-accent)', color: 'var(--editor-accent-foreground)' }}
+          >
+            <SparklesIcon />
+            Explore looks
+          </button>
+          <button
+            onClick={handleAutoEnhance}
+            disabled={!hasImage || isLoading}
+            className="py-2.5 px-3 rounded-xl text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            style={{ backgroundColor: 'var(--editor-bg-secondary)', color: 'var(--editor-text-primary)', border: '1px solid var(--editor-border)' }}
+          >
+            Auto-correct
+          </button>
+        </div>
       </div>
+
+      {directions.length > 0 && (
+        <div className="flex-shrink-0 px-4 pb-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em]" style={{ color: 'var(--editor-text-muted)' }}>
+              Directions for this photo
+            </p>
+            <button className="text-xs" style={{ color: 'var(--editor-text-muted)' }} onClick={() => setDirections([])}>
+              Clear
+            </button>
+          </div>
+          <div className="grid gap-2">
+            {directions.map((direction, index) => (
+              <button
+                key={direction.id}
+                onClick={() => handleApplyDirection(direction)}
+                className="text-left rounded-xl p-3 transition-transform hover:-translate-y-0.5"
+                style={{ backgroundColor: 'var(--editor-bg-secondary)', border: '1px solid var(--editor-border)' }}
+              >
+                <span className="text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: 'var(--editor-text-muted)' }}>
+                  Direction {index + 1}
+                </span>
+                <span className="block text-sm font-medium mt-1" style={{ color: 'var(--editor-text-primary)' }}>{direction.name}</span>
+                <span className="block text-xs leading-relaxed mt-1" style={{ color: 'var(--editor-text-tertiary)' }}>{direction.description}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 space-y-3 min-h-0">
@@ -341,8 +444,20 @@ export function AIPanel() {
               AI Photo Editor
             </p>
             <p className="text-xs max-w-[200px]" style={{ color: 'var(--editor-text-muted)' }}>
-              Describe how you want to edit your photo in natural language
+              Lumen reads the photo, then builds a reversible look from real editing controls.
             </p>
+            <div className="flex flex-wrap justify-center gap-2 mt-5">
+              {PROMPT_SUGGESTIONS.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  onClick={() => setPrompt(suggestion)}
+                  className="px-3 py-1.5 rounded-full text-xs"
+                  style={{ color: 'var(--editor-text-secondary)', border: '1px solid var(--editor-border)' }}
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
           </div>
         ) : (
           <>
@@ -391,7 +506,7 @@ export function AIPanel() {
                   path={adj.path}
                   label={PARAM_LABELS[adj.path] || adj.path}
                   originalValue={adj.originalValue}
-                  currentValue={getNestedValue(editState as unknown as Record<string, unknown>, adj.path)}
+                  currentValue={getNestedValue(currentEditState as unknown as Record<string, unknown>, adj.path)}
                   onChange={(value) => updateParameter(adj.path, value)}
                   onRemove={() => removeParameter(adj.path)}
                 />
@@ -483,6 +598,9 @@ export function AIPanel() {
             Clear conversation
           </button>
         )}
+        <p className="mt-2 text-center text-[10px] leading-relaxed" style={{ color: 'var(--editor-text-muted)' }}>
+          AI actions send a reduced preview to your configured provider. Original files and edits stay in your local Lumen workspace.
+        </p>
       </div>
     </div>
   );

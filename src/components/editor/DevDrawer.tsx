@@ -6,10 +6,9 @@ import { EditState, ensureCompleteEditState } from '@/types/editor';
 
 interface DevDrawerProps {
   isOpen: boolean;
-  onToggle: () => void;
 }
 
-export function DevDrawer({ isOpen, onToggle }: DevDrawerProps) {
+export function DevDrawer({ isOpen }: DevDrawerProps) {
   const editState = useEditorStore((state) => state.editState);
   const setEditState = useEditorStore((state) => state.setEditState);
   const pushHistory = useEditorStore((state) => state.pushHistory);

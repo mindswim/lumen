@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { TransformWrapper, TransformComponent } from 'react-zoom-pan-pinch';
 import { useWebGL } from '@/hooks/useWebGL';
 import { useEditorStore } from '@/lib/editor/state';
@@ -244,7 +244,7 @@ export function Canvas({ className }: CanvasProps) {
         isExternalZoomChange.current = false;
       }, 100);
     }
-  }, [zoomLevel, zoomToFit, initialScale, containerSize, image]);
+  }, [zoomLevel, zoomToFit, initialScale, containerSize, image, currentScale]);
 
   return (
     <div
@@ -313,6 +313,8 @@ export function Canvas({ className }: CanvasProps) {
                   >
                     {/* Original image layer (shown for comparison modes) */}
                     {(comparisonMode === 'hold' && isHoldingOriginal) && (
+                      // The source is a user-selected local object/data URL, so Next image optimization does not apply.
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={image.preview.src}
                         alt="Original"
@@ -323,6 +325,8 @@ export function Canvas({ className }: CanvasProps) {
 
                     {/* Split mode: Original on left */}
                     {comparisonMode === 'split' && (
+                      // The source is a user-selected local object/data URL, so Next image optimization does not apply.
+                      // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={image.preview.src}
                         alt="Original"
@@ -350,7 +354,6 @@ export function Canvas({ className }: CanvasProps) {
                   {comparisonMode === 'split' && (
                     <ComparisonOverlay
                       canvasWidth={image.width}
-                      canvasHeight={image.height}
                     />
                   )}
 

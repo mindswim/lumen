@@ -1725,7 +1725,6 @@ export class WebGLRenderer {
   }
 
   render(editState: EditState): void {
-    const gl = this.gl;
     if (!this.imageTexture) return;
 
     const width = this.canvas.width;
@@ -1819,12 +1818,6 @@ export class WebGLRenderer {
         disableBlur: editState.blur.amount > 20,
       });
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-
-      // Re-apply blur if needed
-      if (editState.blur.amount > 20) {
-        const blurRadius = editState.blur.amount / 100.0 * 15.0;
-        // Store FBO2 bloom temporarily - just composite directly
-      }
 
       // Composite bloom onto FBO1 result, output to screen or temp
       this.compositeBloom(

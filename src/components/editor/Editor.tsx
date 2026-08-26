@@ -20,21 +20,22 @@ import { DetailPanel } from './DetailPanel';
 import { PresetPanel } from './PresetPanel';
 import { MaskPanel } from './MaskPanel';
 import { TransformPanel } from './TransformPanel';
+import { AIPanel } from './AIPanel';
 import { ExportProvider } from '@/contexts/export-context';
+import { ArrowLeft, Redo2, Undo2 } from 'lucide-react';
+import type { MobilePanelType } from './MobileToolbar';
 
-type PanelType = 'presets' | 'tools' | 'hsl' | 'effects';
-
-const PANEL_TITLES: Record<PanelType, string> = {
+const PANEL_TITLES: Record<MobilePanelType, string> = {
   presets: 'Presets',
-  tools: 'Tools',
-  hsl: 'HSL',
-  effects: 'Effects',
+  tune: 'Tune',
+  ai: 'AI creative director',
+  transform: 'Crop & transform',
 };
 
 export function Editor() {
   const router = useRouter();
   const isMobile = useIsMobile();
-  const { undo, redo, resetEditState, copySettings, pasteSettings, hasCopiedSettings } = useEditorStore();
+  const { undo, redo, canUndo, canRedo, resetEditState, copySettings, pasteSettings, hasCopiedSettings } = useEditorStore();
   const image = useEditorStore((state) => state.image);
   const editState = useEditorStore((state) => state.editState);
   const { activeImageId, updateImageEditState, setActiveImage } = useGalleryStore();
@@ -42,7 +43,8 @@ export function Editor() {
 
   const [exportOpen, setExportOpen] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
-  const [mobilePanel, setMobilePanel] = useState<PanelType | null>(null);
+  const [mobilePanel, setMobilePanel] = useState<MobilePanelType | null>(null);
+  const [mobileTuneMode, setMobileTuneMode] = useState<'light' | 'color' | 'effects' | 'detail'>('light');
 
   const handleBack = () => {
     // Save current edit state to gallery before going back
@@ -116,7 +118,7 @@ export function Editor() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [undo, redo, resetEditState, copySettings, pasteSettings, hasCopiedSettings, image, showShortcuts]);
 
-  const handleOpenPanel = (panel: PanelType) => {
+  const handleOpenPanel = (panel: MobilePanelType) => {
     setMobilePanel(mobilePanel === panel ? null : panel);
   };
 
@@ -126,10 +128,39 @@ export function Editor() {
       className="h-screen flex flex-col overflow-hidden"
       style={{ backgroundColor: 'var(--editor-canvas-bg)', color: 'var(--editor-text-primary)' }}
     >
-      <div className="flex-1 flex overflow-hidden">
+      <header
+        className="h-14 flex-shrink-0 flex items-center justify-between gap-3 px-3 md:px-4"
+        style={{ backgroundColor: 'var(--editor-bg-primary)', borderBottom: '1px solid var(--editor-border)' }}
+      >
+        <div className="flex min-w-0 items-center gap-3">
+          <button
+            onClick={handleBack}
+            className="md:hidden h-9 w-9 flex items-center justify-center rounded-full"
+            aria-label="Back to library"
+            style={{ backgroundColor: 'var(--editor-bg-secondary)' }}
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+          <div className="hidden md:flex items-center gap-2">
+            <span className="h-7 w-7 rounded-lg bg-neutral-950 text-white flex items-center justify-center text-xs font-semibold">L</span>
+            <span className="text-xs font-semibold tracking-[0.2em]">LUMEN</span>
+          </div>
+          <div className="hidden md:block h-5 w-px" style={{ backgroundColor: 'var(--editor-border)' }} />
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium" style={{ color: 'var(--editor-text-primary)' }}>{image?.fileName || 'Untitled photo'}</p>
+            <p className="hidden md:block text-[10px] uppercase tracking-[0.14em]" style={{ color: 'var(--editor-text-muted)' }}>Local non-destructive draft</p>
+          </div>
+        </div>
+        <div className="flex items-center gap-1 md:hidden">
+          <button aria-label="Undo" disabled={!canUndo()} onClick={undo} className="h-9 w-9 flex items-center justify-center rounded-full disabled:opacity-30"><Undo2 className="h-4 w-4" /></button>
+          <button aria-label="Redo" disabled={!canRedo()} onClick={redo} className="h-9 w-9 flex items-center justify-center rounded-full disabled:opacity-30"><Redo2 className="h-4 w-4" /></button>
+        </div>
+      </header>
+
+      <div className="flex-1 flex overflow-hidden min-h-0">
         {/* Left tool sidebar - hidden on mobile */}
         {!isMobile && (
-          <ToolSidebar mode="editor" onExport={() => setExportOpen(true)} />
+          <ToolSidebar mode="editor" onBack={handleBack} onExport={() => setExportOpen(true)} />
         )}
 
         {/* Center: canvas */}
@@ -146,7 +177,6 @@ export function Editor() {
           onOpenPanel={handleOpenPanel}
           activePanel={mobilePanel}
           onExport={() => setExportOpen(true)}
-          onBack={handleBack}
         />
       )}
 
@@ -173,19 +203,29 @@ export function Editor() {
           {/* Sheet content */}
           <div className="flex-1 overflow-y-auto pb-safe">
             {mobilePanel === 'presets' && <PresetPanel />}
-            {mobilePanel === 'tools' && (
-              <div className="space-y-0">
-                <AdjustPanel />
-                <DetailPanel />
-                <CurvePanel />
-                <TransformPanel />
-              </div>
-            )}
-            {mobilePanel === 'hsl' && <HSLPanel />}
-            {mobilePanel === 'effects' && (
-              <div className="space-y-0">
-                <EffectsPanel />
-                <MaskPanel />
+            {mobilePanel === 'ai' && <div className="h-[calc(70vh-49px)]"><AIPanel /></div>}
+            {mobilePanel === 'transform' && <TransformPanel />}
+            {mobilePanel === 'tune' && (
+              <div>
+                <div className="sticky top-0 z-10 flex gap-1 overflow-x-auto px-3 py-2" style={{ backgroundColor: 'var(--editor-bg-primary)', borderBottom: '1px solid var(--editor-border)' }}>
+                  {(['light', 'color', 'effects', 'detail'] as const).map((item) => (
+                    <button
+                      key={item}
+                      onClick={() => setMobileTuneMode(item)}
+                      className="rounded-full px-4 py-2 text-xs font-medium capitalize"
+                      style={{
+                        backgroundColor: mobileTuneMode === item ? 'var(--editor-accent)' : 'var(--editor-bg-secondary)',
+                        color: mobileTuneMode === item ? 'var(--editor-accent-foreground)' : 'var(--editor-text-tertiary)',
+                      }}
+                    >
+                      {item}
+                    </button>
+                  ))}
+                </div>
+                {mobileTuneMode === 'light' && <AdjustPanel />}
+                {mobileTuneMode === 'color' && <HSLPanel />}
+                {mobileTuneMode === 'effects' && <div><EffectsPanel /><MaskPanel /></div>}
+                {mobileTuneMode === 'detail' && <div><DetailPanel /><CurvePanel /></div>}
               </div>
             )}
           </div>
