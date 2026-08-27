@@ -10,6 +10,7 @@ import {
 export type StoryboardAspect = 'landscape_16_9' | 'landscape_4_3' | 'portrait_16_9';
 export type ReferenceKind = 'character' | 'location' | 'object' | 'style' | 'research';
 export type StoryboardRenderTier = 'draft' | 'final';
+export type StoryboardPanelRole = 'start' | 'middle' | 'end';
 export type ShotSize = 'unspecified' | 'extreme-wide' | 'wide' | 'medium-wide' | 'medium' | 'medium-close-up' | 'close-up' | 'extreme-close-up';
 export type CameraAngle = 'unspecified' | 'eye-level' | 'high-angle' | 'low-angle' | 'overhead' | 'dutch-angle';
 export type CameraMovement = 'static' | 'pan' | 'tilt' | 'dolly' | 'tracking' | 'handheld' | 'crane' | 'zoom';
@@ -45,6 +46,7 @@ export interface StoryboardTake {
   referenceIds: string[];
   model: string;
   seed: number | null;
+  panelRole: StoryboardPanelRole;
   createdAt: number;
 }
 
@@ -62,8 +64,11 @@ export interface StoryboardShot {
   cameraMovement: CameraMovement;
   usePreviousPanel: boolean;
   referenceIds: string[];
+  panelRoles: StoryboardPanelRole[];
+  panelDirections: Partial<Record<StoryboardPanelRole, string>>;
   takes: StoryboardTake[];
   selectedTakeId: string | null;
+  selectedTakeIds: Partial<Record<StoryboardPanelRole, string>>;
   createdAt: number;
   updatedAt: number;
 }
@@ -109,16 +114,16 @@ interface StoryboardStore {
   addScene: (projectId: string) => string;
   updateScene: (projectId: string, sceneId: string, changes: Partial<Pick<StoryboardScene, 'title' | 'summary' | 'location' | 'timeOfDay' | 'referenceIds'>>) => void;
   addShot: (projectId: string, afterShotId?: string, sceneId?: string) => string;
-  updateShot: (projectId: string, shotId: string, changes: Partial<Pick<StoryboardShot, 'sceneId' | 'title' | 'beat' | 'prompt' | 'continuityNotes' | 'dialogue' | 'durationSeconds' | 'shotSize' | 'cameraAngle' | 'cameraMovement' | 'usePreviousPanel' | 'referenceIds'>>) => void;
+  updateShot: (projectId: string, shotId: string, changes: Partial<Pick<StoryboardShot, 'sceneId' | 'title' | 'beat' | 'prompt' | 'continuityNotes' | 'dialogue' | 'durationSeconds' | 'shotSize' | 'cameraAngle' | 'cameraMovement' | 'usePreviousPanel' | 'referenceIds' | 'panelRoles' | 'panelDirections'>>) => void;
   removeShot: (projectId: string, shotId: string) => void;
   moveShot: (projectId: string, shotId: string, direction: -1 | 1) => void;
   selectShot: (shotId: string | null) => void;
-  addTake: (projectId: string, shotId: string, take: Omit<StoryboardTake, 'id' | 'createdAt'>) => string;
+  addTake: (projectId: string, shotId: string, take: Omit<StoryboardTake, 'id' | 'createdAt' | 'panelRole'> & { panelRole?: StoryboardPanelRole }) => string;
   selectTake: (projectId: string, shotId: string, takeId: string) => void;
 }
 
 interface PersistedStoryboardState {
-  version: 3;
+  version: 4;
   projects: StoryboardProject[];
   activeProjectId: string | null;
   selectedShotId: string | null;
@@ -163,16 +168,22 @@ function createShot(number: number, sceneId: string): StoryboardShot {
     cameraMovement: 'static',
     usePreviousPanel: false,
     referenceIds: [],
+    panelRoles: ['start'],
+    panelDirections: {},
     takes: [],
     selectedTakeId: null,
+    selectedTakeIds: {},
     createdAt: now,
     updatedAt: now,
   };
 }
 
-export function getSelectedTake(shot: StoryboardShot | undefined): StoryboardTake | null {
-  if (!shot?.selectedTakeId) return null;
-  return shot.takes.find((take) => take.id === shot.selectedTakeId) ?? null;
+export function getSelectedTake(shot: StoryboardShot | undefined, panelRole: StoryboardPanelRole = 'start'): StoryboardTake | null {
+  const selectedTakeId = panelRole === 'start'
+    ? shot?.selectedTakeIds?.start ?? shot?.selectedTakeId
+    : shot?.selectedTakeIds?.[panelRole];
+  if (!shot || !selectedTakeId) return null;
+  return shot.takes.find((take) => take.id === selectedTakeId && (take.panelRole ?? 'start') === panelRole) ?? null;
 }
 
 function migrateProject(project: Partial<StoryboardProject> & Pick<StoryboardProject, 'id' | 'title'>): StoryboardProject {
@@ -209,25 +220,39 @@ function migrateProject(project: Partial<StoryboardProject> & Pick<StoryboardPro
       createdAt: scene.createdAt ?? now,
       updatedAt: scene.updatedAt ?? now,
     })),
-    shots: (project.shots ?? []).map((shot, index) => ({
-      ...shot,
-      sceneId: shot.sceneId || defaultSceneId,
-      title: shot.title || `Shot ${index + 1}`,
-      beat: shot.beat ?? '',
-      prompt: shot.prompt ?? '',
-      continuityNotes: shot.continuityNotes ?? '',
-      dialogue: shot.dialogue ?? '',
-      durationSeconds: shot.durationSeconds ?? 3,
-      shotSize: shot.shotSize ?? 'unspecified',
-      cameraAngle: shot.cameraAngle ?? 'unspecified',
-      cameraMovement: shot.cameraMovement ?? 'static',
-      usePreviousPanel: shot.usePreviousPanel ?? false,
-      referenceIds: shot.referenceIds ?? [],
-      takes: shot.takes ?? [],
-      selectedTakeId: shot.selectedTakeId ?? null,
-      createdAt: shot.createdAt ?? now,
-      updatedAt: shot.updatedAt ?? now,
-    })),
+    shots: (project.shots ?? []).map((shot, index) => {
+      const panelRoles = Array.from(new Set<StoryboardPanelRole>([
+        'start',
+        ...((shot.panelRoles ?? []) as StoryboardPanelRole[]).filter((role) => role === 'start' || role === 'middle' || role === 'end'),
+      ]));
+      const takes = (shot.takes ?? []).map((take) => ({ ...take, panelRole: take.panelRole ?? 'start' }));
+      const selectedTakeIds = {
+        ...(shot.selectedTakeIds ?? {}),
+        ...(shot.selectedTakeId ? { start: shot.selectedTakeIds?.start ?? shot.selectedTakeId } : {}),
+      };
+      return {
+        ...shot,
+        sceneId: shot.sceneId || defaultSceneId,
+        title: shot.title || `Shot ${index + 1}`,
+        beat: shot.beat ?? '',
+        prompt: shot.prompt ?? '',
+        continuityNotes: shot.continuityNotes ?? '',
+        dialogue: shot.dialogue ?? '',
+        durationSeconds: shot.durationSeconds ?? 3,
+        shotSize: shot.shotSize ?? 'unspecified',
+        cameraAngle: shot.cameraAngle ?? 'unspecified',
+        cameraMovement: shot.cameraMovement ?? 'static',
+        usePreviousPanel: shot.usePreviousPanel ?? false,
+        referenceIds: shot.referenceIds ?? [],
+        panelRoles,
+        panelDirections: shot.panelDirections ?? {},
+        takes,
+        selectedTakeId: selectedTakeIds.start ?? null,
+        selectedTakeIds,
+        createdAt: shot.createdAt ?? now,
+        updatedAt: shot.updatedAt ?? now,
+      };
+    }),
     createdAt: project.createdAt ?? now,
     updatedAt: project.updatedAt ?? now,
   };
@@ -243,7 +268,7 @@ function normalizePersistedState(value: Partial<PersistedStoryboardState> | null
     ? value?.selectedShotId ?? null
     : activeProject?.shots[0]?.id ?? null;
 
-  return { version: 3, projects, activeProjectId, selectedShotId };
+  return { version: 4, projects, activeProjectId, selectedShotId };
 }
 
 function readLegacyState(): PersistedStoryboardState | null {
@@ -262,7 +287,7 @@ function readLegacyState(): PersistedStoryboardState | null {
 
 function persistedSnapshot(state: Pick<StoryboardStore, 'projects' | 'activeProjectId' | 'selectedShotId'>): PersistedStoryboardState {
   return {
-    version: 3,
+    version: 4,
     projects: state.projects,
     activeProjectId: state.activeProjectId,
     selectedShotId: state.selectedShotId,
@@ -296,7 +321,11 @@ export const useStoryboardStore = create<StoryboardStore>()(
           }
 
           const normalized = normalizePersistedState(stored);
-          lastQueuedSnapshot = JSON.stringify(normalized);
+          const normalizedSnapshot = JSON.stringify(normalized);
+          const migrationSavedAt = stored && JSON.stringify(stored) !== normalizedSnapshot
+            ? await saveSharedStoryboardState(normalized)
+            : null;
+          lastQueuedSnapshot = normalizedSnapshot;
 
           set({
             projects: normalized.projects,
@@ -305,7 +334,7 @@ export const useStoryboardStore = create<StoryboardStore>()(
             isHydrated: true,
             storageStatus: 'saved',
             storagePersisted: true,
-            lastSavedAt: stored ? Date.now() : null,
+            lastSavedAt: migrationSavedAt ?? (stored ? Date.now() : null),
           });
         } catch (error) {
           console.error('Failed to hydrate storyboards:', error);
@@ -454,13 +483,19 @@ export const useStoryboardStore = create<StoryboardStore>()(
 
       addTake: (projectId, shotId, take) => {
         const takeId = id('take');
+        const panelRole = take.panelRole ?? 'start';
         set((state) => ({
           projects: state.projects.map((project) => project.id === projectId ? {
             ...project,
             shots: project.shots.map((shot) => shot.id === shotId ? {
               ...shot,
-              takes: [...shot.takes, { ...take, id: takeId, createdAt: Date.now() }],
-              selectedTakeId: shot.selectedTakeId ?? takeId,
+              panelRoles: shot.panelRoles.includes(panelRole) ? shot.panelRoles : [...shot.panelRoles, panelRole],
+              takes: [...shot.takes, { ...take, panelRole, id: takeId, createdAt: Date.now() }],
+              selectedTakeId: panelRole === 'start' ? shot.selectedTakeId ?? takeId : shot.selectedTakeId,
+              selectedTakeIds: {
+                ...shot.selectedTakeIds,
+                [panelRole]: shot.selectedTakeIds[panelRole] ?? takeId,
+              },
               updatedAt: Date.now(),
             } : shot),
             updatedAt: Date.now(),
@@ -472,7 +507,16 @@ export const useStoryboardStore = create<StoryboardStore>()(
       selectTake: (projectId, shotId, takeId) => set((state) => ({
         projects: state.projects.map((project) => project.id === projectId ? {
           ...project,
-          shots: project.shots.map((shot) => shot.id === shotId ? { ...shot, selectedTakeId: takeId, updatedAt: Date.now() } : shot),
+          shots: project.shots.map((shot) => {
+            if (shot.id !== shotId) return shot;
+            const panelRole = shot.takes.find((take) => take.id === takeId)?.panelRole ?? 'start';
+            return {
+              ...shot,
+              selectedTakeId: panelRole === 'start' ? takeId : shot.selectedTakeId,
+              selectedTakeIds: { ...shot.selectedTakeIds, [panelRole]: takeId },
+              updatedAt: Date.now(),
+            };
+          }),
           updatedAt: Date.now(),
         } : project),
       })),

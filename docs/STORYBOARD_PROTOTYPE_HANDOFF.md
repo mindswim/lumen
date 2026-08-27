@@ -1,6 +1,6 @@
 # Storyboard Prototype Handoff
 
-Last updated: 2026-08-26
+Last updated: 2026-08-27
 Audience: the next product-design or implementation agent working on Lumen
 
 ## Read This First
@@ -18,6 +18,7 @@ Read [STORYBOARD_PRODUCT_DESIGN.md](./STORYBOARD_PRODUCT_DESIGN.md) for the rese
 | `/` | Working production workspace | Current gallery, storyboard, timing, references, storage, generation, and editor integration. This remains the canonical implementation. |
 | `/storyboard-prototype` | Static interactive prototype | Proposed information architecture and workspace shell. It uses representative Police Riot data and real images but does not read or write project state. |
 | `/editor` | Working production editor | Existing image-finishing surface that should remain independent and later save edits as new panel versions. |
+| `/storyboard-print` | Working print surface | Project-specific storyboard layout used by the production Export dialog for printing or saving a PDF. |
 
 Do not mistake polished prototype interactions for production functionality. The prototype intentionally has no store, persistence, generation calls, mutations, or export behavior.
 
@@ -25,21 +26,24 @@ Do not mistake polished prototype interactions for production functionality. The
 
 Branch: `codex/storyboard-workspace-refactor`
 
-The production transition is now implemented on this branch:
+The production transition and the first director-workflow pass are now implemented on this branch:
 
 - the prototype's two header rows are collapsed into one responsive workspace header;
 - Storyboards and References are project-level destinations; Board, Shot list, and Timing are views of the same storyboard data;
 - a scene-and-shot outline replaces the former permanent project-settings rail, while project and scene setup remain available in a focused dialog;
 - the Board keeps images primary and groups the real stored shots by scene;
 - Shot list is a structured table over those same shots, with panel, scene, action, framing, movement, duration, and selected-version state;
-- Timing is a working lightweight animatic preview that advances through selected panels according to each shot's stored duration;
+- Timing is a working lightweight animatic preview with play/pause, accurate elapsed time, scrubbing, shot seeking, dialogue/voice-over display, and optional within-shot panel playback;
 - the References workspace is project-scoped, categorized, searchable, and built from production reference records rather than all gallery images;
 - selecting a reference opens a production-asset inspector with editable category/direction, provenance, and inherited/direct shot usage;
-- image generation moved out of the long inspector form into an explicit review dialog showing the target, exact assigned references, inheritance scope, provider limit, tier, pricing basis, and paid-run action;
-- the shot inspector remains the home for direction, reference assignment, timing, imported panels, and immutable versions;
+- image generation moved out of the long inspector form into an explicit generation plan. It can target the current panel, the current scene, or every shot missing a Start panel; shows the exact references and validation state for each target; and keeps successful results if another target fails;
+- a shot can optionally expose Start, Middle, and End panels. Each enabled panel has its own direction, selected version, versions, comparison action, and generation target; one-panel shots remain the default;
+- each generated or imported result is appended as a new take. Version comparison supports side-by-side and opacity overlay modes, with selection kept distinct from review approval; the finishing editor still needs to return edits as new takes rather than mutating a take's gallery asset;
+- the shot inspector remains the home for direction, reference assignment, timing, optional panels, imported images, and versions;
+- Export provides a printable/PDF board, high-resolution contact-sheet PNG, shot-list CSV, and portable project manifest;
 - visible **Approved** language is replaced with **Selected**, decorative green approval treatment is removed, and the fake continuity score/view is gone.
 
-The refactor deliberately preserves the current persisted schema, shared-workspace APIs, generated Police Riot assets, existing image editor, and generation API. `/storyboard-prototype` remains as a design fixture; `/` is the real implementation to evaluate.
+The refactor deliberately preserves the shared-workspace APIs, generated Police Riot assets, existing image editor, and generation API. The storyboard store advances from schema v3 to v4; hydration migrates every existing take and selected version to the Start panel and writes the normalized project back to shared storage. `/storyboard-prototype` remains as a design fixture; `/` is the real implementation to evaluate.
 
 ## Prototype Source
 
@@ -88,7 +92,7 @@ The unified shell is now in production code. Further work should refine this imp
 7. Generation is a deliberate run with visible inputs instead of an opaque button buried in shot metadata.
 8. The visual language remains recognizably Lumen rather than imitating a large production suite.
 
-## Areas That Need Better Treatment
+## Areas That Still Need Better Treatment
 
 These are thoughtful follow-ups, not all requirements for the first implementation pass.
 
@@ -101,9 +105,9 @@ These are thoughtful follow-ups, not all requirements for the first implementati
 
 ### Inspector density
 
-- The prototype inspector is cleaner than production but still risks becoming a vertical form.
+- The production inspector is clearer but still risks becoming a vertical form.
 - Consider compact summary rows with focused edit modes rather than making every field permanently editable.
-- Versions may deserve a visual strip or focused compare action rather than only a stacked inspector section.
+- Versions now have a focused compare action; linked pan/zoom is not implemented yet.
 - Project, scene, shot, panel, and version selection states must never be ambiguous.
 
 ### Board density
@@ -117,7 +121,7 @@ These are thoughtful follow-ups, not all requirements for the first implementati
 - The drawers work, but the narrow-screen header still needs deliberate prioritization.
 - Mobile should support review and light edits; dense shot-list and advanced generation planning can optimize for wider screens.
 
-## Researched Patterns Not Yet Fully Represented
+## Researched Patterns and Their Current Status
 
 ### Multiple storyboards and flexible grouping
 
@@ -125,7 +129,7 @@ StudioBinder and Boords support multiple boards and flexible grouping. The proto
 
 ### Multiple panels within a shot
 
-Storyboard Pro's important distinction between a shot and its panels is only in the design document, not the prototype. Most shots can begin with one panel, but a moving or complex shot should be able to add start, middle, or end panels. Do not expose empty panel complexity to every user.
+Implemented in production using optional Start, Middle, and End panels. Start is always present; Middle and End are explicitly added only when a moving or complex shot needs another composition. Disabling a panel does not destroy its versions. This preserves Storyboard Pro's useful shot/panel distinction without exposing empty panel complexity to every user.
 
 ### Configurable caption fields and shot-list columns
 
@@ -133,7 +137,7 @@ Boords and Storyboard Pro allow projects to choose fields such as Action, Dialog
 
 ### Real version comparison and review
 
-Frame.io's dedicated comparison pattern is represented only by a button. A useful compare surface needs side-by-side or overlay comparison, linked zoom, clear version identity, and selection separate from approval. Formal approval should wait until reviewer identity and history exist.
+Implemented side-by-side and opacity-overlay comparison with clear version identity and a **Select this version** action. Linked zoom is still absent. Selection remains separate from approval; formal approval should wait until reviewer identity and history exist.
 
 ### Editable AI breakdown before generation
 
@@ -141,7 +145,7 @@ LTX Studio and AI storyboard products commonly turn an idea, outline, shot list,
 
 ### Multi-shot generation planning
 
-The generation dialog currently demonstrates one selected shot. It should eventually support missing panels, selected shots, or a group; expose per-shot reference assignments; validate provider limits; and isolate failures. The compiled prompt should remain an inspectable output, not the core data model.
+Implemented for the current panel, current scene, and all shots missing Start panels. Targets can be individually included or excluded; each row shows exact scoped references, provider-limit validation, run state, and isolated errors. Successful frames persist when another target fails. An arbitrary selection assembled directly from the Board or Shot list remains a later refinement. The compiled prompt remains derived output, not the core data model.
 
 ### Semantic reference routing and inheritance
 
@@ -153,7 +157,7 @@ Continuity is intentionally absent from the prototype. Do not reintroduce a gene
 
 ### Real animatic editing
 
-The prototype Timing view demonstrates the concept but advances frames on a simple preview timer. A real animatic needs accurate durations, scrubbing, playhead behavior, dialogue or voice-over, audio tracks, and later waveform and export support.
+Timing now has accurate duration-based playback, elapsed time, scrubbing, shot seeking, dialogue/voice-over display, and proportional within-shot panel timing. Audio tracks, waveforms, transitions, and rendered video export remain intentionally deferred; this is an animatic review surface, not a general video editor.
 
 ### Faster professional operation
 
@@ -169,7 +173,7 @@ Previs Pro and Shot Designer show the value of blocking, screen direction, focal
 
 ### Export and editorial handoff
 
-Professional tools earn trust through PDF, images, shot-list data, animatics, and editorial exports. The prototype does not show export or portability yet.
+Production now exports a printable/PDF storyboard, contact-sheet PNG, shot-list CSV, and JSON project manifest using the selected version of every enabled panel. Rendered animatic video, audio, and editorial interchange formats remain deferred.
 
 ## Production Code to Preserve
 
@@ -184,20 +188,30 @@ The repository contains calibration scripts and the complete Police Riot image b
 
 ## Recommended Next Sequence
 
-1. Let the user evaluate `/` with a second real storyboard and note friction in Board, Shot list, Timing, References, and generation review.
-2. Extract `StoryboardWorkspace.tsx` into focused production components now that the UI boundaries have stabilized; do not change the store during that extraction.
-3. Add explicit version comparison and make image-editor saves create new storyboard versions instead of mutating the selected asset in place.
-4. Add multi-shot generation planning for missing or selected shots, with per-shot validation and isolated failure/retry.
-5. Evolve the model from one storyboard per project toward multiple storyboards and neutral groups, then add optional start/middle/end panels only for shots that need them.
-6. Upgrade the animatic with scrubbing, accurate playhead time, dialogue/voice-over tracks, and export rather than expanding into a general video editor.
-7. Add professional export and handoff surfaces: PDF/contact sheet, images, shot-list data, and animatic output.
+1. Refresh `/` so the v3-to-v4 migration runs, then evaluate a real storyboard end to end: add a Middle panel, generate or import two versions, compare and select one, scrub Timing, and export the board.
+2. Make **Open in editor** save its result as a new immutable take on the originating shot and panel. The editor must not overwrite the gallery asset backing an older storyboard version.
+3. Extract `StoryboardWorkspace.tsx` into focused production components now that Board, Shot list, Timing, inspector, generation plan, comparison, and export boundaries are stable.
+4. Add arbitrary multi-shot selection and retry-failed actions to the generation plan; do not add a global reference bucket or send every reference to every target.
+5. Add direct manipulation for reorder/duplicate, practical keyboard shortcuts, and denser 30–50-shot board modes before adding more metadata.
+6. Decide whether one project needs multiple storyboards and neutral groups before evolving the current Scene model. Treat this as a product decision and a separate schema migration.
+7. Add audio tracks, waveform display, and rendered animatic export only after the current timing model proves useful in a real storyboard-to-video workflow.
 
 ## Validation on the Refactor Branch
 
 - `npm run lint`
 - `npm run build`
-- browser review of the production Board, project outline, project settings, Shot list, working animatic playback, project-scoped References, reference inspector, and generation-review dialog
-- browser console checked with no application errors
+- production build includes `/`, `/editor`, `/storyboard-prototype`, and `/storyboard-print`
+- the earlier shell transition received browser review of Board, project outline, project settings, Shot list, Timing, References, reference inspector, and generation review with no application console errors
+- the 2026-08-27 director-workflow pass was linted and production-built, but automated localhost browser verification was blocked by the in-app browser's URL security policy after the server restart; manually refresh `/` for final interaction QA and persistence migration
+
+## Schema v4 Notes
+
+- `StoryboardShot.panelRoles` stores enabled Start/Middle/End panels. Start is mandatory.
+- `StoryboardShot.panelDirections` stores optional direction specific to Middle or End while `prompt` remains shared shot direction.
+- `StoryboardShot.selectedTakeIds` stores one selected take per panel role; legacy `selectedTakeId` remains mirrored for Start compatibility.
+- `StoryboardTake.panelRole` identifies which panel owns a version.
+- Existing v3 takes and selection migrate to Start. Migration is idempotent and persists through the existing shared-workspace endpoint after hydration.
+- Generation for a Middle or End panel adds the preceding selected same-shot panel as continuity context. Generation for Start uses only assigned project/scene/shot references unless the user explicitly enables the previous-panel option.
 
 ## Guardrails for the Next Agent
 

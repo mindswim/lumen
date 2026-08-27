@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -9,6 +9,7 @@ import {
   ChevronDown,
   CircleCheck,
   Clock3,
+  Download,
   Film,
   HardDrive,
   ImagePlus,
@@ -41,6 +42,7 @@ import {
   type ReferenceKind,
   type ShotSize,
   type StoryboardAspect,
+  type StoryboardPanelRole,
   type StoryboardProject,
   type StoryboardShot,
   type StoryboardStorageStatus,
@@ -61,6 +63,8 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { StoryboardOutline } from '@/components/storyboard/StoryboardOutline';
+import { VersionComparisonDialog } from '@/components/storyboard/VersionComparisonDialog';
+import { StoryboardExportDialog } from '@/components/storyboard/StoryboardExportDialog';
 
 const FIELD = 'w-full rounded-lg border bg-transparent px-3 py-2 text-sm outline-none transition focus:border-neutral-500';
 const LABEL = 'mb-1.5 block text-[10px] font-semibold uppercase tracking-[0.14em]';
@@ -142,8 +146,8 @@ function aspectClass(aspect: StoryboardAspect): string {
   return 'aspect-video';
 }
 
-function imageForTake(shot: StoryboardShot, images: GalleryImage[]): GalleryImage | null {
-  const selected = getSelectedTake(shot);
+function imageForTake(shot: StoryboardShot, images: GalleryImage[], panelRole: StoryboardPanelRole = 'start'): GalleryImage | null {
+  const selected = getSelectedTake(shot, panelRole);
   return selected ? images.find((image) => image.id === selected.imageId) ?? null : null;
 }
 
@@ -937,6 +941,7 @@ function ShotCard({
           {shot.shotSize !== 'unspecified' && <span>{SHOT_SIZES.find((item) => item.value === shot.shotSize)?.label}</span>}
           {shot.cameraMovement !== 'static' && <span>· {CAMERA_MOVEMENTS.find((item) => item.value === shot.cameraMovement)?.label}</span>}
           <span>· {shot.durationSeconds}s</span>
+          {shot.panelRoles.length > 1 && <span>· {shot.panelRoles.length} panels</span>}
         </div>
         {shot.referenceIds.length > 0 && (
           <div className="mt-3 flex items-center gap-1 text-[9px] font-medium uppercase tracking-[0.1em]" style={{ color: 'var(--editor-text-muted)' }}>
@@ -967,32 +972,66 @@ function Board({
   const images = useGalleryStore((state) => state.images);
   const completed = project.shots.filter((shot) => shot.selectedTakeId).length;
   const totalDuration = project.shots.reduce((sum, shot) => sum + shot.durationSeconds, 0);
-  const playbackShot = project.shots.find((shot) => shot.id === selectedShotId) ?? project.shots[0];
+  const initiallySelectedIndex = Math.max(0, project.shots.findIndex((shot) => shot.id === selectedShotId));
+  const initiallyElapsed = project.shots.slice(0, initiallySelectedIndex).reduce((sum, shot) => sum + shot.durationSeconds, 0);
+  const [playbackSeconds, setPlaybackSeconds] = useState(initiallyElapsed);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const safePlaybackSeconds = Math.min(Math.max(0, playbackSeconds), Math.max(0, totalDuration));
+  const shotAtTime = useCallback((seconds: number) => {
+    let cursor = 0;
+    for (const candidate of project.shots) {
+      cursor += candidate.durationSeconds;
+      if (seconds < cursor) return candidate;
+    }
+    return project.shots.at(-1);
+  }, [project.shots]);
+  const playbackShot = shotAtTime(safePlaybackSeconds) ?? project.shots[0];
   const playbackIndex = playbackShot ? project.shots.findIndex((shot) => shot.id === playbackShot.id) : -1;
-  const playbackImage = playbackShot ? imageForTake(playbackShot, images) : null;
   const elapsedBeforeShot = playbackIndex > 0
     ? project.shots.slice(0, playbackIndex).reduce((sum, shot) => sum + shot.durationSeconds, 0)
     : 0;
-  const [isPlaying, setIsPlaying] = useState(false);
+  const elapsedWithinShot = playbackShot ? Math.max(0, safePlaybackSeconds - elapsedBeforeShot) : 0;
+  const timedPanelRoles = playbackShot
+    ? playbackShot.panelRoles.filter((role) => Boolean(getSelectedTake(playbackShot, role)))
+    : [];
+  const playbackPanelRoles = timedPanelRoles.length > 0 ? timedPanelRoles : (['start'] as StoryboardPanelRole[]);
+  const playbackPanelIndex = playbackShot
+    ? Math.min(playbackPanelRoles.length - 1, Math.floor((elapsedWithinShot / Math.max(0.1, playbackShot.durationSeconds)) * playbackPanelRoles.length))
+    : 0;
+  const playbackPanelRole = playbackPanelRoles[Math.max(0, playbackPanelIndex)] ?? 'start';
+  const playbackImage = playbackShot ? imageForTake(playbackShot, images, playbackPanelRole) : null;
+
+  const seekPlayback = (seconds: number) => {
+    const nextSeconds = Math.min(Math.max(0, seconds), totalDuration);
+    setPlaybackSeconds(nextSeconds);
+    const targetShot = shotAtTime(nextSeconds === totalDuration ? Math.max(0, nextSeconds - 0.001) : nextSeconds);
+    if (targetShot && targetShot.id !== selectedShotId) selectShot(targetShot.id);
+  };
 
   useEffect(() => {
-    if (view !== 'timing' || !isPlaying || !playbackShot) return;
-    const timer = window.setTimeout(() => {
-      const nextShot = project.shots[playbackIndex + 1];
-      if (nextShot) selectShot(nextShot.id);
-      else setIsPlaying(false);
-    }, Math.max(500, playbackShot.durationSeconds * 1000));
-    return () => window.clearTimeout(timer);
-  }, [isPlaying, playbackIndex, playbackShot, project.shots, selectShot, view]);
+    if (view !== 'timing' || !isPlaying || totalDuration <= 0) return;
+    const timer = window.setInterval(() => {
+      setPlaybackSeconds((current) => {
+        const next = Math.min(totalDuration, current + 0.1);
+        const targetShot = shotAtTime(next === totalDuration ? Math.max(0, next - 0.001) : next);
+        if (targetShot && targetShot.id !== useStoryboardStore.getState().selectedShotId) selectShot(targetShot.id);
+        if (next >= totalDuration) setIsPlaying(false);
+        return next;
+      });
+    }, 100);
+    return () => window.clearInterval(timer);
+  }, [isPlaying, selectShot, shotAtTime, totalDuration, view]);
 
   const selectPreviousPlaybackShot = () => {
-    const previous = project.shots[Math.max(0, playbackIndex - 1)];
-    if (previous) selectShot(previous.id);
+    const previousIndex = Math.max(0, playbackIndex - 1);
+    const seconds = project.shots.slice(0, previousIndex).reduce((sum, shot) => sum + shot.durationSeconds, 0);
+    seekPlayback(seconds);
   };
 
   const selectNextPlaybackShot = () => {
-    const next = project.shots[Math.min(project.shots.length - 1, playbackIndex + 1)];
-    if (next) selectShot(next.id);
+    const nextIndex = Math.min(project.shots.length - 1, playbackIndex + 1);
+    const seconds = project.shots.slice(0, nextIndex).reduce((sum, shot) => sum + shot.durationSeconds, 0);
+    seekPlayback(seconds);
   };
 
   if (view === 'timing') {
@@ -1032,24 +1071,25 @@ function Board({
               {playbackShot && (
                 <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/80 to-transparent px-5 pb-4 pt-16">
                   <div>
-                    <p className="font-mono text-[9px] text-white/55">SHOT {String(playbackIndex + 1).padStart(2, '0')}</p>
+                    <p className="font-mono text-[9px] uppercase text-white/55">SHOT {String(playbackIndex + 1).padStart(2, '0')} · {playbackPanelRole} panel</p>
                     <p className="mt-1 text-sm font-medium">{playbackShot.title}</p>
                   </div>
                   <p className="text-[10px] tabular-nums text-white/60">{playbackShot.durationSeconds.toFixed(1)} sec</p>
                 </div>
               )}
+              {playbackShot?.dialogue && (
+                <p className="pointer-events-none absolute bottom-16 left-1/2 max-w-[80%] -translate-x-1/2 rounded-md bg-black/75 px-3 py-2 text-center text-xs leading-5 text-white shadow-lg">{playbackShot.dialogue}</p>
+              )}
             </div>
 
             <div className="border-t border-white/10 px-4 py-3">
-              <div className="mb-3 h-1 overflow-hidden rounded-full bg-white/10">
-                <div className="h-full rounded-full bg-white transition-all" style={{ width: `${totalDuration ? (elapsedBeforeShot / totalDuration) * 100 : 0}%` }} />
-              </div>
+              <input type="range" min="0" max={Math.max(0.1, totalDuration)} step="0.1" value={safePlaybackSeconds} onChange={(event) => seekPlayback(Number(event.target.value))} className="mb-3 h-1 w-full cursor-pointer accent-white" aria-label="Animatic playhead" />
               <div className="flex items-center justify-center gap-3">
                 <button type="button" onClick={selectPreviousPlaybackShot} aria-label="Previous shot" disabled={playbackIndex <= 0} className="flex h-8 w-8 items-center justify-center rounded-full text-white/70 hover:bg-white/10 disabled:opacity-25"><SkipBack className="h-3.5 w-3.5" /></button>
                 <button
                   type="button"
                   onClick={() => {
-                    if (!isPlaying && playbackIndex === project.shots.length - 1 && project.shots[0]) selectShot(project.shots[0].id);
+                    if (!isPlaying && safePlaybackSeconds >= totalDuration) seekPlayback(0);
                     setIsPlaying((value) => !value);
                   }}
                   aria-label={isPlaying ? 'Pause animatic' : 'Play animatic'}
@@ -1059,7 +1099,7 @@ function Board({
                   {isPlaying ? <Pause className="h-4 w-4 fill-current" /> : <Play className="ml-0.5 h-4 w-4 fill-current" />}
                 </button>
                 <button type="button" onClick={selectNextPlaybackShot} aria-label="Next shot" disabled={playbackIndex < 0 || playbackIndex >= project.shots.length - 1} className="flex h-8 w-8 items-center justify-center rounded-full text-white/70 hover:bg-white/10 disabled:opacity-25"><SkipForward className="h-3.5 w-3.5" /></button>
-                <span className="ml-2 min-w-24 text-[9px] tabular-nums text-white/45">{elapsedBeforeShot.toFixed(1)} / {totalDuration.toFixed(1)} sec</span>
+                <span className="ml-2 min-w-24 text-[9px] tabular-nums text-white/45">{safePlaybackSeconds.toFixed(1)} / {totalDuration.toFixed(1)} sec</span>
               </div>
             </div>
 
@@ -1072,7 +1112,7 @@ function Board({
                     <button
                       key={timelineShot.id}
                       type="button"
-                      onClick={() => selectShot(timelineShot.id)}
+                      onClick={() => seekPlayback(project.shots.slice(0, index).reduce((sum, candidate) => sum + candidate.durationSeconds, 0))}
                       className="overflow-hidden rounded-lg border text-left text-white transition"
                       style={{
                         width: `${Math.max(132, timelineShot.durationSeconds * 46)}px`,
@@ -1089,7 +1129,7 @@ function Board({
                       </div>
                       <div className="p-2.5">
                         <p className="truncate text-[10px] font-semibold">{timelineShot.title}</p>
-                        <p className="mt-1 text-[9px] text-white/45">{timelineShot.durationSeconds}s · {CAMERA_MOVEMENTS.find((item) => item.value === timelineShot.cameraMovement)?.label}</p>
+                        <p className="mt-1 text-[9px] text-white/45">{timelineShot.durationSeconds}s · {timelineShot.panelRoles.length} panel{timelineShot.panelRoles.length === 1 ? '' : 's'} · {CAMERA_MOVEMENTS.find((item) => item.value === timelineShot.cameraMovement)?.label}</p>
                       </div>
                     </button>
                   );
@@ -1275,7 +1315,7 @@ function ShotInspector({
   shot: StoryboardShot;
   onOpenImage: (imageId: string) => void;
   onClose: () => void;
-  onGenerate: () => void;
+  onGenerate: (panelRole: StoryboardPanelRole) => void;
 }) {
   const takeInput = useRef<HTMLInputElement>(null);
   const images = useGalleryStore((state) => state.images);
@@ -1287,6 +1327,8 @@ function ShotInspector({
   const removeShot = useStoryboardStore((state) => state.removeShot);
   const [isImportingTake, setIsImportingTake] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activePanelRole, setActivePanelRole] = useState<StoryboardPanelRole>('start');
+  const [comparisonOpen, setComparisonOpen] = useState(false);
 
   const shotIndex = project.shots.findIndex((candidate) => candidate.id === shot.id);
   const scene = project.scenes.find((candidate) => candidate.id === shot.sceneId) ?? project.scenes[0];
@@ -1295,12 +1337,24 @@ function ShotInspector({
   const previousCandidate = shotIndex > 0 ? project.shots[shotIndex - 1] : null;
   const previousShot = previousCandidate?.sceneId === shot.sceneId ? previousCandidate : null;
   const previousTake = previousShot ? getSelectedTake(previousShot) : null;
+  const panelTakes = shot.takes.filter((take) => (take.panelRole ?? 'start') === activePanelRole);
+  const selectedPanelTake = getSelectedTake(shot, activePanelRole);
 
   const toggleReference = (referenceId: string) => {
     const next = shot.referenceIds.includes(referenceId)
       ? shot.referenceIds.filter((id) => id !== referenceId)
       : [...shot.referenceIds, referenceId];
     updateShot(project.id, shot.id, { referenceIds: next });
+  };
+
+  const togglePanelRole = (panelRole: StoryboardPanelRole) => {
+    if (panelRole === 'start') return;
+    const enabled = shot.panelRoles.includes(panelRole);
+    const panelRoles = enabled
+      ? shot.panelRoles.filter((role) => role !== panelRole)
+      : (['start', 'middle', 'end'] as StoryboardPanelRole[]).filter((role) => shot.panelRoles.includes(role) || role === panelRole);
+    updateShot(project.id, shot.id, { panelRoles });
+    if (enabled && activePanelRole === panelRole) setActivePanelRole('start');
   };
 
   const importTakes = async (files: File[]) => {
@@ -1317,6 +1371,7 @@ function ShotInspector({
           referenceIds: activeReferenceIds,
           model: 'Imported image',
           seed: null,
+          panelRole: activePanelRole,
         });
       }
       if (added.length === 0) throw new Error('No supported image files were imported.');
@@ -1363,6 +1418,34 @@ function ShotInspector({
           </button>
         </div>
       </div>
+
+      <section className="mt-4 rounded-xl border p-2.5" style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-secondary)' }}>
+        <div className="flex items-center justify-between gap-3">
+          <div><p className="text-[10px] font-semibold">Panels in this shot</p><p className="mt-0.5 text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>Add only when the shot needs another composition.</p></div>
+          <span className="text-[9px] font-mono" style={{ color: 'var(--editor-text-muted)' }}>{shot.panelRoles.length}</span>
+        </div>
+        <div className="mt-2 flex gap-1">
+          {(['start', 'middle', 'end'] as StoryboardPanelRole[]).map((panelRole) => {
+            const enabled = shot.panelRoles.includes(panelRole);
+            const versionCount = shot.takes.filter((take) => (take.panelRole ?? 'start') === panelRole).length;
+            return (
+              <div key={panelRole} className="min-w-0 flex-1">
+                {enabled ? (
+                  <button type="button" onClick={() => setActivePanelRole(panelRole)} className="w-full rounded-lg border px-2 py-2 text-left" style={{ borderColor: activePanelRole === panelRole ? 'var(--editor-text-primary)' : 'var(--editor-border)', backgroundColor: activePanelRole === panelRole ? 'var(--editor-bg-primary)' : 'transparent' }}>
+                    <span className="block text-[9px] font-semibold capitalize">{panelRole}</span>
+                    <span className="mt-0.5 block text-[8px]" style={{ color: 'var(--editor-text-muted)' }}>{versionCount} version{versionCount === 1 ? '' : 's'}</span>
+                  </button>
+                ) : (
+                  <button type="button" onClick={() => { togglePanelRole(panelRole); setActivePanelRole(panelRole); }} className="w-full rounded-lg border border-dashed px-2 py-2 text-[9px] font-medium capitalize" style={{ borderColor: 'var(--editor-border)', color: 'var(--editor-text-muted)' }}>+ {panelRole}</button>
+                )}
+                {enabled && panelRole !== 'start' && activePanelRole === panelRole && (
+                  <button type="button" onClick={() => togglePanelRole(panelRole)} className="mt-1 w-full text-center text-[8px] text-red-600">Remove panel</button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </section>
 
       <div className="mt-4 space-y-3">
         <label>
@@ -1430,6 +1513,19 @@ function ShotInspector({
             placeholder="Wide shot from behind the courier as she enters the flooded station. The red satchel is visible at her left hip…"
           />
         </label>
+        {activePanelRole !== 'start' && (
+          <label className="block rounded-xl bg-neutral-100 p-3">
+            <span className={LABEL} style={{ color: 'var(--editor-text-muted)' }}>{activePanelRole} panel direction</span>
+            <textarea
+              value={shot.panelDirections[activePanelRole] ?? ''}
+              onChange={(event) => updateShot(project.id, shot.id, { panelDirections: { ...shot.panelDirections, [activePanelRole]: event.target.value } })}
+              rows={3}
+              className={`${FIELD} resize-none bg-white text-xs leading-5`}
+              style={{ borderColor: 'var(--editor-border)' }}
+              placeholder={`What changes by the ${activePanelRole} of this same continuous shot?`}
+            />
+          </label>
+        )}
         <div className="grid grid-cols-[88px_1fr] gap-2">
           <label>
             <span className={LABEL} style={{ color: 'var(--editor-text-muted)' }}>Duration</span>
@@ -1549,12 +1645,12 @@ function ShotInspector({
       )}
 
       <button
-        onClick={onGenerate}
+        onClick={() => onGenerate(activePanelRole)}
         disabled={!shot.prompt.trim()}
         className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-neutral-950 px-4 py-3 text-xs font-medium text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-40"
       >
         <Sparkles className="h-3.5 w-3.5" />
-        {shot.takes.length ? 'Generate alternative' : 'Generate panel'}
+        {panelTakes.length ? `Generate ${activePanelRole} alternative` : `Generate ${activePanelRole} panel`}
       </button>
       <button
         type="button"
@@ -1567,22 +1663,22 @@ function ShotInspector({
       </button>
       <p className="mt-2 text-center text-[9px] leading-4" style={{ color: 'var(--editor-text-muted)' }}>Review the target, references, provider, and price before starting a paid run.</p>
 
-      {shot.takes.length > 0 && (
+      {panelTakes.length > 0 && (
         <>
           <div className="my-5 h-px" style={{ backgroundColor: 'var(--editor-border)' }} />
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Layers3 className="h-3.5 w-3.5" />
-              <p className="text-xs font-semibold">Versions</p>
+              <p className="text-xs font-semibold capitalize">{activePanelRole} versions</p>
             </div>
-            <span className="text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>Choose the version used on the board</span>
+            {panelTakes.length >= 2 && <button type="button" onClick={() => setComparisonOpen(true)} className="rounded-full border px-2.5 py-1 text-[9px] font-medium" style={{ borderColor: 'var(--editor-border)' }}>Compare</button>}
           </div>
           <div className="mt-3 space-y-2">
-            {[...shot.takes].reverse().map((take, reverseIndex) => {
+            {[...panelTakes].reverse().map((take, reverseIndex) => {
               const image = images.find((candidate) => candidate.id === take.imageId);
-              const selected = shot.selectedTakeId === take.id;
+              const selected = selectedPanelTake?.id === take.id;
               const isBibleReference = project.references.some((reference) => reference.imageId === take.imageId);
-              const takeNumber = shot.takes.length - reverseIndex;
+              const takeNumber = panelTakes.length - reverseIndex;
               return (
                 <div
                   key={take.id}
@@ -1653,6 +1749,15 @@ function ShotInspector({
           </div>
         </>
       )}
+      <VersionComparisonDialog
+        key={`${shot.id}-${activePanelRole}-${panelTakes.length}`}
+        open={comparisonOpen}
+        onOpenChange={setComparisonOpen}
+        project={project}
+        shot={shot}
+        panelRole={activePanelRole}
+        onOpenImage={onOpenImage}
+      />
     </aside>
   );
 }
@@ -1662,55 +1767,103 @@ function StoryboardGenerationDialog({
   onOpenChange,
   project,
   shot,
+  initialPanelRole,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   project: StoryboardProject;
   shot: StoryboardShot;
+  initialPanelRole: StoryboardPanelRole;
 }) {
   const images = useGalleryStore((state) => state.images);
   const addImageFromUrl = useGalleryStore((state) => state.addImageFromUrl);
   const updateProject = useStoryboardStore((state) => state.updateProject);
   const addTake = useStoryboardStore((state) => state.addTake);
+  const [scope, setScope] = useState<'current' | 'scene' | 'missing'>('current');
+  const [panelRole] = useState<StoryboardPanelRole>(initialPanelRole);
+  const [excludedShotIds, setExcludedShotIds] = useState<Set<string>>(new Set());
   const [refineSelected, setRefineSelected] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [generated, setGenerated] = useState(false);
+  const [runResults, setRunResults] = useState<Record<string, 'running' | 'success' | 'error'>>({});
+  const [runErrors, setRunErrors] = useState<Record<string, string>>({});
 
-  const shotIndex = project.shots.findIndex((candidate) => candidate.id === shot.id);
-  const scene = project.scenes.find((candidate) => candidate.id === shot.sceneId) ?? project.scenes[0];
-  const sceneReferenceIds = scene?.referenceIds ?? [];
-  const activeReferenceIds = Array.from(new Set([...sceneReferenceIds, ...shot.referenceIds]));
-  const assignedReferences = activeReferenceIds
-    .map((referenceId) => project.references.find((reference) => reference.id === referenceId))
-    .filter((reference): reference is NonNullable<typeof reference> => Boolean(reference));
-  const previousCandidate = shotIndex > 0 ? project.shots[shotIndex - 1] : null;
-  const previousShot = previousCandidate?.sceneId === shot.sceneId ? previousCandidate : null;
-  const previousTake = previousShot ? getSelectedTake(previousShot) : null;
-  const currentTake = getSelectedTake(shot);
-  const currentImage = currentTake ? images.find((image) => image.id === currentTake.imageId) : null;
+  const currentTake = getSelectedTake(shot, panelRole);
   const renderTier = project.renderTier ?? 'draft';
   const referenceLimit = renderTier === 'draft' ? 4 : 10;
-  const inputCount = assignedReferences.filter((reference) => images.some((image) => image.id === reference.imageId)).length
-    + (shot.usePreviousPanel && previousTake ? 1 : 0)
-    + (refineSelected && currentTake ? 1 : 0);
+  const scopeCandidates = scope === 'current'
+    ? [shot]
+    : scope === 'scene'
+      ? project.shots.filter((candidate) => candidate.sceneId === shot.sceneId)
+      : project.shots.filter((candidate) => !getSelectedTake(candidate, 'start'));
+  const targetShots = scopeCandidates.filter((candidate) => !excludedShotIds.has(candidate.id));
+
+  const targetPanelRole = (targetShot: StoryboardShot): StoryboardPanelRole => (
+    scope === 'current' && targetShot.id === shot.id ? panelRole : 'start'
+  );
+
+  const referenceIdsForShot = (targetShot: StoryboardShot) => {
+    const targetScene = project.scenes.find((candidate) => candidate.id === targetShot.sceneId);
+    return Array.from(new Set([...(targetScene?.referenceIds ?? []), ...targetShot.referenceIds]));
+  };
+
+  const priorContextForShot = (targetShot: StoryboardShot, role: StoryboardPanelRole) => {
+    const targetIndex = project.shots.findIndex((candidate) => candidate.id === targetShot.id);
+    if (role !== 'start') {
+      const priorRole: StoryboardPanelRole = role === 'end' && getSelectedTake(targetShot, 'middle') ? 'middle' : 'start';
+      const take = getSelectedTake(targetShot, priorRole);
+      return take ? { take, label: `${priorRole.toUpperCase()} PANEL IN THIS SHOT — preserve subjects and world state while advancing the action into the ${role} composition.` } : null;
+    }
+    const previousShot = targetIndex > 0 ? project.shots[targetIndex - 1] : null;
+    const previousTake = previousShot?.sceneId === targetShot.sceneId && targetShot.usePreviousPanel ? getSelectedTake(previousShot) : null;
+    return previousShot && previousTake ? { take: previousTake, label: `PREVIOUS SELECTED SHOT — ${previousShot.title}. Preserve identities, wardrobe, world state, and screen direction without copying its composition.` } : null;
+  };
+
+  const inputCountForShot = (targetShot: StoryboardShot) => {
+    const role = targetPanelRole(targetShot);
+    const inputImageIds = new Set<string>();
+    for (const referenceId of referenceIdsForShot(targetShot)) {
+      const reference = project.references.find((candidate) => candidate.id === referenceId);
+      if (reference && images.some((image) => image.id === reference.imageId)) inputImageIds.add(reference.imageId);
+    }
+    const priorContext = priorContextForShot(targetShot, role);
+    if (priorContext && images.some((image) => image.id === priorContext.take.imageId)) inputImageIds.add(priorContext.take.imageId);
+    const selectedTake = getSelectedTake(targetShot, role);
+    if (scope === 'current' && refineSelected && selectedTake && images.some((image) => image.id === selectedTake.imageId)) {
+      inputImageIds.add(selectedTake.imageId);
+    }
+    return inputImageIds.size;
+  };
+
+  const invalidReasonForShot = (targetShot: StoryboardShot) => {
+    if (!targetShot.prompt.trim()) return 'Missing shot description';
+    const inputCount = inputCountForShot(targetShot);
+    if (inputCount > referenceLimit) return `${inputCount - referenceLimit} references over provider limit`;
+    return null;
+  };
+
+  const assignedReferences = referenceIdsForShot(shot)
+    .map((referenceId) => project.references.find((reference) => reference.id === referenceId))
+    .filter((reference): reference is NonNullable<typeof reference> => Boolean(reference));
+  const sceneReferenceIds = project.scenes.find((candidate) => candidate.id === shot.sceneId)?.referenceIds ?? [];
+  const inputCount = inputCountForShot(shot);
 
   const closeDialog = (nextOpen: boolean) => {
     if (!nextOpen) {
       setError(null);
       setGenerated(false);
       setRefineSelected(false);
+      setRunResults({});
+      setRunErrors({});
     }
     onOpenChange(nextOpen);
   };
 
-  const generate = async () => {
-    if (!shot.prompt.trim() || isGenerating) return;
-    setIsGenerating(true);
-    setError(null);
-    setGenerated(false);
-
-    try {
+  const generateShot = async (targetShot: StoryboardShot) => {
+      const role = targetPanelRole(targetShot);
+      const targetIndex = project.shots.findIndex((candidate) => candidate.id === targetShot.id);
+      const activeReferenceIds = referenceIdsForShot(targetShot);
       const inputs: Array<{ image: GalleryImage; promptReference: PromptReference; referenceId?: string }> = [];
       for (const referenceId of activeReferenceIds) {
         const reference = project.references.find((candidate) => candidate.id === referenceId);
@@ -1718,16 +1871,18 @@ function StoryboardGenerationDialog({
         if (reference && image) inputs.push({ image, promptReference: { reference, label: reference.name }, referenceId });
       }
 
-      if (shot.usePreviousPanel && previousTake && previousShot) {
-        const image = images.find((candidate) => candidate.id === previousTake.imageId);
+      const priorContext = priorContextForShot(targetShot, role);
+      if (priorContext) {
+        const image = images.find((candidate) => candidate.id === priorContext.take.imageId);
         if (image) inputs.push({
           image,
-          promptReference: { reference: null, label: `PREVIOUS SELECTED SHOT — ${previousShot.title}. Preserve identities, wardrobe, world state, and screen direction without copying its composition.` },
+          promptReference: { reference: null, label: priorContext.label },
         });
       }
 
-      if (refineSelected && currentTake) {
-        const image = images.find((candidate) => candidate.id === currentTake.imageId);
+      const selectedTargetTake = getSelectedTake(targetShot, role);
+      if (scope === 'current' && refineSelected && selectedTargetTake) {
+        const image = images.find((candidate) => candidate.id === selectedTargetTake.imageId);
         if (image) inputs.push({
           image,
           promptReference: { reference: null, label: 'CURRENT SELECTED VERSION — refine this frame while preserving its successful composition and continuity.' },
@@ -1741,12 +1896,16 @@ function StoryboardGenerationDialog({
         throw new Error(`${renderTier === 'draft' ? 'Draft' : 'Final'} generation supports ${referenceLimit} reference images. Remove or re-scope ${uniqueInputs.length - referenceLimit} before running.`);
       }
 
-      const prompt = composeStoryboardPrompt(
+      const basePrompt = composeStoryboardPrompt(
         project,
-        shot,
-        shotIndex,
+        targetShot,
+        targetIndex,
         uniqueInputs.map((input) => input.promptReference),
       );
+      const panelDirection = targetShot.panelDirections[role]?.trim();
+      const prompt = role === 'start'
+        ? basePrompt
+        : `${basePrompt}\n\nPANEL WITHIN SHOT: ${role.toUpperCase()}. This is an additional composition inside the same continuous shot. Advance the action and camera path from the earlier panel without treating it as a new cut.${panelDirection ? `\nPANEL-SPECIFIC DIRECTION: ${panelDirection}` : ''}`;
       const referenceImages = await Promise.all(
         uniqueInputs.map((input) => createAIImagePreview(input.image.dataUrl)),
       );
@@ -1766,54 +1925,104 @@ function StoryboardGenerationDialog({
       if (!response.ok) throw new Error(result.error || 'The frame could not be generated.');
 
       for (const [index, output] of (result.images as Array<{ url: string }>).entries()) {
-        const safeTitle = shot.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `shot-${shotIndex + 1}`;
-        const image = await addImageFromUrl(output.url, `${String(shotIndex + 1).padStart(2, '0')}-${safeTitle}-v${shot.takes.length + index + 1}.jpg`);
-        addTake(project.id, shot.id, {
+        const safeTitle = targetShot.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `shot-${targetIndex + 1}`;
+        const roleTakeCount = targetShot.takes.filter((take) => (take.panelRole ?? 'start') === role).length;
+        const image = await addImageFromUrl(output.url, `${String(targetIndex + 1).padStart(2, '0')}-${safeTitle}-${role}-v${roleTakeCount + index + 1}.jpg`);
+        addTake(project.id, targetShot.id, {
           imageId: image.id,
           prompt,
           referenceIds: uniqueInputs.flatMap((input) => input.referenceId ? [input.referenceId] : []),
           model: result.model || 'fal-ai/bytedance/seedream/v4.5',
           seed: typeof result.seed === 'number' ? result.seed : null,
+          panelRole: role,
         });
       }
-      setGenerated(true);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'The frame could not be generated.');
-    } finally {
-      setIsGenerating(false);
+  };
+
+  const generate = async () => {
+    if (targetShots.length === 0 || isGenerating) return;
+    setIsGenerating(true);
+    setError(null);
+    setGenerated(false);
+    setRunResults({});
+    setRunErrors({});
+    let successes = 0;
+    let failures = 0;
+
+    for (const targetShot of targetShots) {
+      const invalidReason = invalidReasonForShot(targetShot);
+      if (invalidReason) {
+        failures += 1;
+        setRunResults((results) => ({ ...results, [targetShot.id]: 'error' }));
+        setRunErrors((errors) => ({ ...errors, [targetShot.id]: invalidReason }));
+        continue;
+      }
+      setRunResults((results) => ({ ...results, [targetShot.id]: 'running' }));
+      try {
+        await generateShot(targetShot);
+        successes += 1;
+        setRunResults((results) => ({ ...results, [targetShot.id]: 'success' }));
+      } catch (caught) {
+        failures += 1;
+        setRunResults((results) => ({ ...results, [targetShot.id]: 'error' }));
+        setRunErrors((errors) => ({ ...errors, [targetShot.id]: caught instanceof Error ? caught.message : 'Generation failed' }));
+      }
     }
+
+    setGenerated(successes > 0);
+    if (failures > 0) setError(`${successes} completed · ${failures} need attention. Successful versions were kept.`);
+    setIsGenerating(false);
   };
 
   return (
     <Dialog open={open} onOpenChange={closeDialog}>
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-2xl">
         <DialogHeader className="border-b px-6 py-5" style={{ borderColor: 'var(--editor-border)' }}>
-          <DialogTitle className="flex items-center gap-2 text-base"><Sparkles className="h-4 w-4" /> {shot.takes.length ? 'Generate alternative' : 'Generate panel'}</DialogTitle>
-          <DialogDescription>Review the target and the exact continuity inputs before starting a paid generation.</DialogDescription>
+          <DialogTitle className="flex items-center gap-2 text-base"><Sparkles className="h-4 w-4" /> Generation plan</DialogTitle>
+          <DialogDescription>Choose the target shots, then review each shot&apos;s own references and validation before starting paid runs.</DialogDescription>
         </DialogHeader>
 
         <div className="max-h-[68vh] overflow-y-auto">
           <section className="border-b px-6 py-5" style={{ borderColor: 'var(--editor-border)' }}>
             <div className="mb-3 flex items-center justify-between">
-              <div><p className="text-xs font-semibold">Target</p><p className="mt-0.5 text-[10px]" style={{ color: 'var(--editor-text-muted)' }}>1 shot · 1 new version</p></div>
-              <span className="font-mono text-[10px]" style={{ color: 'var(--editor-text-muted)' }}>SHOT {String(shotIndex + 1).padStart(2, '0')}</span>
+              <div><p className="text-xs font-semibold">Targets</p><p className="mt-0.5 text-[10px]" style={{ color: 'var(--editor-text-muted)' }}>{targetShots.length} selected · 1 version each</p></div>
+              {scope === 'current' && <span className="font-mono text-[10px] uppercase" style={{ color: 'var(--editor-text-muted)' }}>{panelRole} panel</span>}
             </div>
-            <div className="flex items-center gap-3 rounded-xl border p-2.5" style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-secondary)' }}>
-              <div className="h-16 w-24 shrink-0 overflow-hidden rounded-lg bg-neutral-900">
-                {currentImage ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={currentImage.thumbnailUrl} alt="" className="h-full w-full object-cover" />
-                ) : <div className="flex h-full items-center justify-center text-[8px] uppercase tracking-wide text-white/40">New panel</div>}
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-xs font-semibold">{shot.title}</p>
-                <p className="mt-1 line-clamp-2 text-[10px] leading-4" style={{ color: 'var(--editor-text-tertiary)' }}>{shot.beat || shot.prompt}</p>
-              </div>
+            <div className="mb-3 flex rounded-lg bg-neutral-100 p-0.5">
+              {([
+                { value: 'current' as const, label: 'Current panel' },
+                { value: 'scene' as const, label: 'Current scene' },
+                { value: 'missing' as const, label: 'Missing starts' },
+              ]).map((option) => (
+                <button key={option.value} type="button" onClick={() => { setScope(option.value); setExcludedShotIds(new Set()); setRunResults({}); setRunErrors({}); setGenerated(false); setError(null); }} className="flex-1 rounded-md px-2 py-2 text-[10px] font-medium" style={{ backgroundColor: scope === option.value ? 'white' : 'transparent', boxShadow: scope === option.value ? '0 1px 2px rgba(0,0,0,.08)' : 'none' }}>{option.label}</button>
+              ))}
             </div>
-            {!shot.prompt.trim() && <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[10px] text-amber-800">Add a shot description before generating. The action/beat alone is not treated as a complete image direction.</p>}
+            <div className="max-h-56 space-y-2 overflow-y-auto">
+              {scopeCandidates.map((targetShot) => {
+                const targetIndex = project.shots.findIndex((candidate) => candidate.id === targetShot.id);
+                const targetImage = imageForTake(targetShot, images, targetPanelRole(targetShot));
+                const invalidReason = invalidReasonForShot(targetShot);
+                const result = runResults[targetShot.id];
+                const referenceNames = referenceIdsForShot(targetShot).flatMap((referenceId) => project.references.find((reference) => reference.id === referenceId)?.name ?? []);
+                return (
+                  <label key={targetShot.id} className="flex cursor-pointer items-center gap-3 rounded-xl border p-2.5" style={{ borderColor: invalidReason ? '#fbbf24' : 'var(--editor-border)', backgroundColor: 'var(--editor-bg-secondary)' }}>
+                    <input type="checkbox" checked={!excludedShotIds.has(targetShot.id)} onChange={() => setExcludedShotIds((current) => { const next = new Set(current); if (next.has(targetShot.id)) next.delete(targetShot.id); else next.add(targetShot.id); return next; })} disabled={isGenerating} />
+                    <div className="h-12 w-16 shrink-0 overflow-hidden rounded-md bg-neutral-900">{targetImage && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={targetImage.thumbnailUrl} alt="" className="h-full w-full object-cover" />
+                    )}</div>
+                    <div className="min-w-0 flex-1"><p className="truncate text-[10px] font-semibold">{String(targetIndex + 1).padStart(2, '0')} · {targetShot.title}</p><p className="mt-0.5 truncate text-[9px]" title={runErrors[targetShot.id]} style={{ color: runErrors[targetShot.id] ? '#b91c1c' : invalidReason ? '#a16207' : 'var(--editor-text-muted)' }}>{runErrors[targetShot.id] || invalidReason || `${inputCountForShot(targetShot)} inputs · ${referenceNames.join(', ') || 'written direction only'}`}</p></div>
+                    {result === 'running' && <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-neutral-300 border-t-neutral-900" />}
+                    {result === 'success' && <CircleCheck className="h-4 w-4" />}
+                    {result === 'error' && <X className="h-4 w-4 text-red-600" />}
+                  </label>
+                );
+              })}
+              {scopeCandidates.length === 0 && <p className="rounded-lg border border-dashed px-3 py-5 text-center text-[10px]" style={{ borderColor: 'var(--editor-border)', color: 'var(--editor-text-muted)' }}>No missing Start panels. This storyboard is fully covered.</p>}
+            </div>
           </section>
 
-          <section className="border-b px-6 py-5" style={{ borderColor: 'var(--editor-border)' }}>
+          {scope === 'current' && <section className="border-b px-6 py-5" style={{ borderColor: 'var(--editor-border)' }}>
             <div className="mb-3 flex items-center justify-between"><p className="text-xs font-semibold">Reference assignments</p><span className="text-[10px]" style={{ color: inputCount > referenceLimit ? 'var(--editor-error)' : 'var(--editor-text-muted)' }}>{inputCount} of {referenceLimit} inputs</span></div>
             {assignedReferences.length > 0 ? (
               <div className="space-y-2">
@@ -1839,10 +2048,10 @@ function StoryboardGenerationDialog({
               <p className="rounded-lg border border-dashed px-3 py-4 text-[10px] leading-4" style={{ borderColor: 'var(--editor-border)', color: 'var(--editor-text-muted)' }}>No project references are assigned. The model will use only the written shot and project direction.</p>
             )}
 
-            {(shot.usePreviousPanel && previousTake && previousShot) && (
+            {priorContextForShot(shot, panelRole) && (
               <div className="mt-2 flex items-center gap-3 rounded-lg border p-2.5" style={{ borderColor: 'var(--editor-border)' }}>
                 <div className="flex h-12 w-16 shrink-0 items-center justify-center rounded-md bg-neutral-100"><ArrowLeft className="h-4 w-4" /></div>
-                <div className="min-w-0 flex-1"><p className="truncate text-xs font-medium">Previous selected panel</p><p className="mt-0.5 text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>{previousShot.title} · continuous action</p></div>
+                <div className="min-w-0 flex-1"><p className="truncate text-xs font-medium">Earlier continuity panel</p><p className="mt-0.5 text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>{panelRole === 'start' ? 'Previous shot · continuous action' : `Earlier panel in ${shot.title}`}</p></div>
                 <CircleCheck className="h-4 w-4 text-neutral-500" />
               </div>
             )}
@@ -1854,7 +2063,7 @@ function StoryboardGenerationDialog({
               </label>
             )}
             <p className="mt-3 text-[10px] leading-4" style={{ color: 'var(--editor-text-muted)' }}>Only references assigned to this scene or shot are sent. Other project references are excluded.</p>
-          </section>
+          </section>}
 
           <section className="px-6 py-5">
             <p className="mb-3 text-xs font-semibold">Provider and quality</p>
@@ -1878,16 +2087,16 @@ function StoryboardGenerationDialog({
           </section>
 
           {error && <p className="mx-6 mb-5 rounded-lg bg-red-50 px-3 py-2.5 text-[10px] leading-4 text-red-700" role="alert">{error}</p>}
-          {generated && <p className="mx-6 mb-5 rounded-lg bg-neutral-100 px-3 py-2.5 text-[10px] leading-4">New version added. Select it from Shot details after closing this dialog.</p>}
+          {generated && <p className="mx-6 mb-5 rounded-lg bg-neutral-100 px-3 py-2.5 text-[10px] leading-4">Completed versions were added to their target panels. Open Shot details to compare or select them.</p>}
         </div>
 
         <DialogFooter className="items-center border-t px-6 py-4 sm:justify-between" style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-secondary)' }}>
-          <p className="text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>{renderTier === 'draft' ? 'FLUX.2 Flash · $0.005 per input/output MP' : 'Seedream 4.5 · $0.04 per image'} · 1 output</p>
+          <p className="text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>{renderTier === 'draft' ? `FLUX.2 Flash · $0.005/MP × ${targetShots.length}` : `Seedream 4.5 · $${(targetShots.length * 0.04).toFixed(2)}`} · {targetShots.length} output{targetShots.length === 1 ? '' : 's'}</p>
           <div className="flex gap-2">
             <button type="button" onClick={() => closeDialog(false)} className="rounded-full border px-4 py-2 text-xs font-medium" style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-primary)' }}>{generated ? 'Done' : 'Cancel'}</button>
-            <button type="button" onClick={generate} disabled={!shot.prompt.trim() || isGenerating || generated || inputCount > referenceLimit} className="flex items-center gap-2 rounded-full bg-neutral-950 px-4 py-2 text-xs font-medium text-white disabled:opacity-40">
+            <button type="button" onClick={generate} disabled={targetShots.length === 0 || isGenerating || generated} className="flex items-center gap-2 rounded-full bg-neutral-950 px-4 py-2 text-xs font-medium text-white disabled:opacity-40">
               {isGenerating ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" /> : <Sparkles className="h-3.5 w-3.5" />}
-              {isGenerating ? 'Generating…' : generated ? 'Version added' : `Generate ${renderTier}`}
+              {isGenerating ? 'Running plan…' : generated ? 'Versions added' : `Generate ${targetShots.length} ${renderTier}`}
             </button>
           </div>
         </DialogFooter>
@@ -1910,6 +2119,7 @@ function StoryboardWorkspaceToolbar({
   onAspectChange,
   onNewProject,
   onGenerate,
+  onExport,
   onToggleOutline,
   onToggleInspector,
 }: {
@@ -1926,6 +2136,7 @@ function StoryboardWorkspaceToolbar({
   onAspectChange: (aspect: StoryboardAspect) => void;
   onNewProject: () => void;
   onGenerate: () => void;
+  onExport: () => void;
   onToggleOutline: () => void;
   onToggleInspector: () => void;
 }) {
@@ -2047,6 +2258,14 @@ function StoryboardWorkspaceToolbar({
         </button>
         <button
           type="button"
+          onClick={onExport}
+          className="flex h-8 items-center gap-1.5 rounded-full border px-3 text-[10px] font-medium"
+          style={{ borderColor: 'var(--editor-border)' }}
+        >
+          <Download className="h-3.5 w-3.5" /> <span className="hidden 2xl:inline">Export</span>
+        </button>
+        <button
+          type="button"
           onClick={onToggleOutline}
           className="flex h-8 items-center gap-1.5 rounded-full border px-3 text-[10px] font-medium"
           aria-label="Scene and shot outline"
@@ -2089,6 +2308,8 @@ export function StoryboardWorkspace({
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [generationOpen, setGenerationOpen] = useState(false);
+  const [generationPanelRole, setGenerationPanelRole] = useState<StoryboardPanelRole>('start');
+  const [exportOpen, setExportOpen] = useState(false);
   const [mobileOutlineOpen, setMobileOutlineOpen] = useState(false);
   const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
   const [view, setView] = useState<StoryboardWorkspaceView>('board');
@@ -2145,7 +2366,8 @@ export function StoryboardWorkspace({
         onOpenReferences={onOpenReferences}
         onAspectChange={(aspect) => updateProject(project.id, { aspect })}
         onNewProject={() => setNewProjectOpen(true)}
-        onGenerate={() => setGenerationOpen(true)}
+        onGenerate={() => { setGenerationPanelRole('start'); setGenerationOpen(true); }}
+        onExport={() => setExportOpen(true)}
         onToggleOutline={() => {
           if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches) {
             setOutlineOpen((open) => !open);
@@ -2182,7 +2404,7 @@ export function StoryboardWorkspace({
         />
         {inspectorOpen && shot && (
           <div className="hidden w-[360px] shrink-0 xl:block">
-            <ShotInspector key={shot.id} project={project} shot={shot} onOpenImage={onOpenImage} onClose={() => setInspectorOpen(false)} onGenerate={() => setGenerationOpen(true)} />
+            <ShotInspector key={shot.id} project={project} shot={shot} onOpenImage={onOpenImage} onClose={() => setInspectorOpen(false)} onGenerate={(panelRole) => { setGenerationPanelRole(panelRole); setGenerationOpen(true); }} />
           </div>
         )}
       </div>
@@ -2211,19 +2433,22 @@ export function StoryboardWorkspace({
             <SheetTitle>Shot details</SheetTitle>
             <SheetDescription>Edit direction, references, timing, generation, and versions for the selected shot.</SheetDescription>
           </SheetHeader>
-          {shot && <ShotInspector key={shot.id} project={project} shot={shot} onOpenImage={onOpenImage} onClose={() => setMobileInspectorOpen(false)} onGenerate={() => { setMobileInspectorOpen(false); setGenerationOpen(true); }} />}
+          {shot && <ShotInspector key={shot.id} project={project} shot={shot} onOpenImage={onOpenImage} onClose={() => setMobileInspectorOpen(false)} onGenerate={(panelRole) => { setMobileInspectorOpen(false); setGenerationPanelRole(panelRole); setGenerationOpen(true); }} />}
         </SheetContent>
       </Sheet>
 
       {shot && (
         <StoryboardGenerationDialog
-          key={shot.id}
+          key={`${shot.id}-${generationPanelRole}`}
           open={generationOpen}
           onOpenChange={setGenerationOpen}
           project={project}
           shot={shot}
+          initialPanelRole={generationPanelRole}
         />
       )}
+
+      <StoryboardExportDialog open={exportOpen} onOpenChange={setExportOpen} project={project} />
 
       <Dialog open={projectSettingsOpen} onOpenChange={setProjectSettingsOpen}>
         <DialogContent className="h-[88vh] max-w-[calc(100%-2rem)] gap-0 overflow-hidden p-0 sm:max-w-4xl" showCloseButton={false}>
