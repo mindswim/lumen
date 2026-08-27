@@ -6,11 +6,13 @@ import { Check, ChevronDown, Layers3, LockKeyhole, Sparkles, Trash2, Upload, X }
 import type { StoryboardEditorContext } from '@/lib/editor/state';
 import { useGalleryStore } from '@/lib/gallery/store';
 import { referenceRoleSummary } from '@/lib/storyboard/reference';
+import { resolveShotReferenceAssignments } from '@/lib/storyboard/generation-plan';
 import {
   getSelectedTake,
   useStoryboardStore,
   type CameraAngle,
   type CameraMovement,
+  type ReferenceRole,
   type ShotSize,
   type StoryboardPanelRole,
   type StoryboardProject,
@@ -22,6 +24,7 @@ import {
   CAMERA_MOVEMENTS,
   FIELD,
   LABEL,
+  REFERENCE_ROLES,
   SHOT_SIZES,
 } from '@/components/storyboard/storyboard-ui';
 
@@ -59,7 +62,9 @@ export function ShotInspector({
   const shotIndex = project.shots.findIndex((candidate) => candidate.id === shot.id);
   const scene = project.scenes.find((candidate) => candidate.id === shot.sceneId) ?? project.scenes[0];
   const sceneReferenceIds = scene?.referenceIds ?? [];
-  const activeReferenceIds = Array.from(new Set([...sceneReferenceIds, ...shot.referenceIds]));
+  const activeReferenceAssignments = resolveShotReferenceAssignments(project, shot);
+  const activeReferenceIds = activeReferenceAssignments.map((assignment) => assignment.referenceId);
+  const effectiveRolesByReferenceId = new Map(activeReferenceAssignments.map((assignment) => [assignment.referenceId, assignment.roles]));
   const previousCandidate = shotIndex > 0 ? project.shots[shotIndex - 1] : null;
   const previousShot = previousCandidate?.sceneId === shot.sceneId ? previousCandidate : null;
   const previousTake = previousShot ? getSelectedTake(previousShot) : null;
@@ -71,10 +76,37 @@ export function ShotInspector({
   };
 
   const toggleReference = (referenceId: string) => {
-    const next = shot.referenceIds.includes(referenceId)
+    const removing = shot.referenceIds.includes(referenceId);
+    const next = removing
       ? shot.referenceIds.filter((id) => id !== referenceId)
       : [...shot.referenceIds, referenceId];
-    updateShot(project.id, shot.id, { referenceIds: next });
+    const referenceRoleOverrides = { ...shot.referenceRoleOverrides };
+    if (removing) delete referenceRoleOverrides[referenceId];
+    updateShot(project.id, shot.id, { referenceIds: next, referenceRoleOverrides });
+  };
+
+  const setShotReferenceRole = (referenceId: string, role: ReferenceRole) => {
+    const reference = project.references.find((candidate) => candidate.id === referenceId);
+    if (!reference) return;
+    const currentRoles = effectiveRolesByReferenceId.get(referenceId) ?? reference.roles;
+    const nextRoles = currentRoles.includes(role)
+      ? currentRoles.filter((value) => value !== role)
+      : reference.roles.filter((value) => currentRoles.includes(value) || value === role);
+    if (nextRoles.length === 0) return;
+    const referenceRoleOverrides = { ...shot.referenceRoleOverrides };
+    const usesAllLibraryRoles = nextRoles.length === reference.roles.length
+      && reference.roles.every((value) => nextRoles.includes(value));
+    const inheritsNarrowedSceneRoles = sceneReferenceIds.includes(referenceId)
+      && Boolean(scene?.referenceRoleOverrides[referenceId]);
+    if (usesAllLibraryRoles && !inheritsNarrowedSceneRoles) delete referenceRoleOverrides[referenceId];
+    else referenceRoleOverrides[referenceId] = nextRoles;
+    updateShot(project.id, shot.id, { referenceRoleOverrides });
+  };
+
+  const clearShotReferenceRoleOverride = (referenceId: string) => {
+    const referenceRoleOverrides = { ...shot.referenceRoleOverrides };
+    delete referenceRoleOverrides[referenceId];
+    updateShot(project.id, shot.id, { referenceRoleOverrides });
   };
 
   const togglePanelRole = (panelRole: StoryboardPanelRole) => {
@@ -99,6 +131,9 @@ export function ShotInspector({
           imageId: image.id,
           prompt: shot.prompt,
           referenceIds: activeReferenceIds,
+          referenceRoleSelections: Object.fromEntries(activeReferenceAssignments.flatMap((assignment) => (
+            assignment.roles.length > 0 ? [[assignment.referenceId, assignment.roles] as const] : []
+          ))),
           model: 'Imported image',
           seed: null,
           panelRole: activePanelRole,
@@ -327,9 +362,12 @@ export function ShotInspector({
             const image = images.find((candidate) => candidate.id === reference.imageId);
             const active = shot.referenceIds.includes(reference.id);
             const inherited = sceneReferenceIds.includes(reference.id);
+            const effectiveRoles = effectiveRolesByReferenceId.get(reference.id) ?? reference.roles;
             return (
               <button
                 key={reference.id}
+                type="button"
+                aria-pressed={active || inherited}
                 onClick={() => !inherited && toggleReference(reference.id)}
                 disabled={inherited}
                 className="relative overflow-hidden rounded-lg border text-left"
@@ -343,7 +381,7 @@ export function ShotInspector({
                 </div>
                 <div className="p-2">
                   <p className="truncate text-[10px] font-semibold">{reference.name}</p>
-                  <p className="mt-0.5 text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>{inherited ? 'Scene default' : active ? 'This shot' : referenceRoleSummary(reference)}</p>
+                  <p className="mt-0.5 text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>{inherited ? `Scene default · ${referenceRoleSummary({ roles: effectiveRoles, sourceType: reference.sourceType })}` : active ? `This shot · ${referenceRoleSummary({ roles: effectiveRoles, sourceType: reference.sourceType })}` : referenceRoleSummary(reference)}</p>
                 </div>
                 <span
                   className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full border text-white"
@@ -352,6 +390,52 @@ export function ShotInspector({
                   {(active || inherited) && <Check className="h-3 w-3" />}
                 </span>
               </button>
+            );
+          })}
+        </div>
+      )}
+
+      {project.references.some((reference) => activeReferenceIds.includes(reference.id) && reference.roles.length > 1) && (
+        <div className="mt-3 space-y-2 rounded-xl border p-3" style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-secondary)' }}>
+          <div>
+            <p className="text-[10px] font-semibold">Use in this shot</p>
+            <p className="mt-0.5 text-[9px] leading-4" style={{ color: 'var(--editor-text-muted)' }}>Narrow a multi-purpose image when this shot should preserve only some of its details.</p>
+          </div>
+          {project.references.filter((reference) => activeReferenceIds.includes(reference.id) && reference.roles.length > 1).map((reference) => {
+            const effectiveRoles = effectiveRolesByReferenceId.get(reference.id) ?? reference.roles;
+            const inherited = sceneReferenceIds.includes(reference.id);
+            const hasShotOverride = reference.id in shot.referenceRoleOverrides;
+            return (
+              <div key={reference.id} className="rounded-lg border p-2.5" style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-primary)' }}>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-[10px] font-semibold">{reference.name}</p>
+                    <p className="mt-0.5 text-[8px]" style={{ color: 'var(--editor-text-muted)' }}>{inherited ? 'Inherited from scene' : 'Assigned to this shot'}</p>
+                  </div>
+                  {hasShotOverride && <button type="button" onClick={() => clearShotReferenceRoleOverride(reference.id)} className="shrink-0 text-[9px] font-medium underline underline-offset-2">Use {inherited ? 'scene' : 'all'} roles</button>}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {REFERENCE_ROLES.filter((role) => reference.roles.includes(role.value)).map((role) => {
+                    const activeRole = effectiveRoles.includes(role.value);
+                    return (
+                      <button
+                        key={role.value}
+                        type="button"
+                        aria-pressed={activeRole}
+                        onClick={() => setShotReferenceRole(reference.id, role.value)}
+                        className="rounded-full border px-2 py-1 text-[9px] font-medium"
+                        style={{
+                          borderColor: activeRole ? 'var(--editor-text-primary)' : 'var(--editor-border)',
+                          backgroundColor: activeRole ? 'var(--editor-text-primary)' : 'transparent',
+                          color: activeRole ? 'var(--editor-bg-primary)' : 'var(--editor-text-tertiary)',
+                        }}
+                      >
+                        {role.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
             );
           })}
         </div>

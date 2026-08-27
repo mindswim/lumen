@@ -1,6 +1,7 @@
 import type {
   LegacyReferenceKind,
   PersistedStoryboardState,
+  ReferenceRoleMap,
   ReferenceRole,
   ReferenceSourceType,
   StoryboardPanelRole,
@@ -23,6 +24,39 @@ function uniqueStrings(values: unknown): string[] {
     .filter((value): value is string => typeof value === 'string')
     .map((value) => value.trim())
     .filter(Boolean)));
+}
+
+function normalizeReferenceRoleMap(value: unknown, allowedReferenceIds?: Set<string>): ReferenceRoleMap {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  const entries = Object.entries(value).flatMap(([referenceId, roles]) => {
+    if (allowedReferenceIds && !allowedReferenceIds.has(referenceId)) return [];
+    const normalizedRoles = uniqueStrings(roles).filter((role): role is ReferenceRole => REFERENCE_ROLES.has(role as ReferenceRole));
+    return normalizedRoles.length > 0 ? [[referenceId, normalizedRoles] as const] : [];
+  });
+  return Object.fromEntries(entries);
+}
+
+function normalizeReferenceRoleOverrides(
+  value: unknown,
+  allowedReferenceIds: Set<string>,
+  referenceRolesById: Map<string, ReferenceRole[]>,
+  keepFullSelections = false,
+): ReferenceRoleMap {
+  const normalized = normalizeReferenceRoleMap(value, allowedReferenceIds);
+  return Object.fromEntries(Object.entries(normalized).flatMap(([referenceId, roles]) => {
+    const libraryRoles = referenceRolesById.get(referenceId) ?? [];
+    const narrowedRoles = roles.filter((role) => libraryRoles.includes(role));
+    const isFullLibrarySelection = narrowedRoles.length === libraryRoles.length
+      && narrowedRoles.every((role) => libraryRoles.includes(role));
+    return narrowedRoles.length > 0 && (keepFullSelections || !isFullLibrarySelection)
+      ? [[referenceId, narrowedRoles] as const]
+      : [];
+  }));
+}
+
+function withoutRoleOverride(roleMap: ReferenceRoleMap, referenceId: string): ReferenceRoleMap {
+  if (!(referenceId in roleMap)) return roleMap;
+  return Object.fromEntries(Object.entries(roleMap).filter(([id]) => id !== referenceId));
 }
 
 function legacyReferenceRoles(kind: LegacyReferenceKind | undefined): ReferenceRole[] {
@@ -74,16 +108,26 @@ export function removeStoryboardReference(
   const hasReference = project.references.some((reference) => reference.id === referenceId);
   const hasSceneAssignment = project.scenes.some((scene) => scene.referenceIds.includes(referenceId));
   const hasShotAssignment = project.shots.some((shot) => shot.referenceIds.includes(referenceId));
-  if (!hasReference && !hasSceneAssignment && !hasShotAssignment) return project;
+  const hasRoleOverride = project.scenes.some((scene) => referenceId in scene.referenceRoleOverrides)
+    || project.shots.some((shot) => referenceId in shot.referenceRoleOverrides);
+  if (!hasReference && !hasSceneAssignment && !hasShotAssignment && !hasRoleOverride) return project;
 
   return {
     ...project,
     references: project.references.filter((reference) => reference.id !== referenceId),
-    scenes: project.scenes.map((scene) => scene.referenceIds.includes(referenceId)
-      ? { ...scene, referenceIds: scene.referenceIds.filter((value) => value !== referenceId) }
+    scenes: project.scenes.map((scene) => scene.referenceIds.includes(referenceId) || referenceId in scene.referenceRoleOverrides
+      ? {
+          ...scene,
+          referenceIds: scene.referenceIds.filter((value) => value !== referenceId),
+          referenceRoleOverrides: withoutRoleOverride(scene.referenceRoleOverrides, referenceId),
+        }
       : scene),
-    shots: project.shots.map((shot) => shot.referenceIds.includes(referenceId)
-      ? { ...shot, referenceIds: shot.referenceIds.filter((value) => value !== referenceId) }
+    shots: project.shots.map((shot) => shot.referenceIds.includes(referenceId) || referenceId in shot.referenceRoleOverrides
+      ? {
+          ...shot,
+          referenceIds: shot.referenceIds.filter((value) => value !== referenceId),
+          referenceRoleOverrides: withoutRoleOverride(shot.referenceRoleOverrides, referenceId),
+        }
       : shot),
     updatedAt,
   };
@@ -114,6 +158,8 @@ export function selectStoryboardTake(
 
 export function migrateProject(project: Partial<StoryboardProject> & Pick<StoryboardProject, 'id' | 'title'>): StoryboardProject {
   const now = Date.now();
+  const references = ((project.references ?? []) as LegacyStoryReference[]).map(migrateReference);
+  const referenceRolesById = new Map(references.map((reference) => [reference.id, reference.roles]));
   const existingScenes = Array.isArray(project.scenes) && project.scenes.length > 0
     ? project.scenes
     : [{
@@ -123,10 +169,30 @@ export function migrateProject(project: Partial<StoryboardProject> & Pick<Storyb
         location: '',
         timeOfDay: '',
         referenceIds: [],
+        referenceRoleOverrides: {},
         createdAt: project.createdAt ?? now,
         updatedAt: project.updatedAt ?? now,
       }];
   const defaultSceneId = existingScenes[0].id;
+  const scenes = existingScenes.map((scene, index) => {
+    const referenceIds = scene.referenceIds ?? [];
+    return {
+      id: scene.id ?? `scene-${project.id}-${index + 1}`,
+      title: scene.title || `Scene ${index + 1}`,
+      summary: scene.summary ?? '',
+      location: scene.location ?? '',
+      timeOfDay: scene.timeOfDay ?? '',
+      referenceIds,
+      referenceRoleOverrides: normalizeReferenceRoleOverrides(
+        scene.referenceRoleOverrides,
+        new Set(referenceIds),
+        referenceRolesById,
+      ),
+      createdAt: scene.createdAt ?? now,
+      updatedAt: scene.updatedAt ?? now,
+    };
+  });
+  const sceneReferencesById = new Map(scenes.map((scene) => [scene.id, scene.referenceIds]));
 
   return {
     id: project.id,
@@ -135,30 +201,34 @@ export function migrateProject(project: Partial<StoryboardProject> & Pick<Storyb
     visualDirection: project.visualDirection ?? '',
     aspect: project.aspect ?? 'landscape_16_9',
     renderTier: project.renderTier ?? 'draft',
-    references: ((project.references ?? []) as LegacyStoryReference[]).map(migrateReference),
-    scenes: existingScenes.map((scene, index) => ({
-      id: scene.id ?? `scene-${project.id}-${index + 1}`,
-      title: scene.title || `Scene ${index + 1}`,
-      summary: scene.summary ?? '',
-      location: scene.location ?? '',
-      timeOfDay: scene.timeOfDay ?? '',
-      referenceIds: scene.referenceIds ?? [],
-      createdAt: scene.createdAt ?? now,
-      updatedAt: scene.updatedAt ?? now,
-    })),
+    references,
+    scenes,
     shots: (project.shots ?? []).map((shot, index) => {
       const panelRoles = Array.from(new Set<StoryboardPanelRole>([
         'start',
         ...((shot.panelRoles ?? []) as StoryboardPanelRole[]).filter((role) => role === 'start' || role === 'middle' || role === 'end'),
       ]));
-      const takes = (shot.takes ?? []).map((take) => ({ ...take, panelRole: take.panelRole ?? 'start' }));
+      const takes = (shot.takes ?? []).map((take) => {
+        const hasStoredSelections = Object.prototype.hasOwnProperty.call(take, 'referenceRoleSelections');
+        const suppliedSelections = normalizeReferenceRoleMap(take.referenceRoleSelections, new Set(take.referenceIds ?? []));
+        const referenceRoleSelections = hasStoredSelections
+          ? suppliedSelections
+          : Object.fromEntries((take.referenceIds ?? []).flatMap((referenceId) => {
+              const roles = referenceRolesById.get(referenceId) ?? [];
+              return roles.length > 0 ? [[referenceId, roles] as const] : [];
+            }));
+        return { ...take, panelRole: take.panelRole ?? 'start', referenceRoleSelections };
+      });
       const selectedTakeIds = {
         ...(shot.selectedTakeIds ?? {}),
         ...(shot.selectedTakeId ? { start: shot.selectedTakeIds?.start ?? shot.selectedTakeId } : {}),
       };
+      const sceneId = shot.sceneId || defaultSceneId;
+      const referenceIds = shot.referenceIds ?? [];
+      const activeReferenceIds = new Set([...(sceneReferencesById.get(sceneId) ?? []), ...referenceIds]);
       return {
         ...shot,
-        sceneId: shot.sceneId || defaultSceneId,
+        sceneId,
         title: shot.title || `Shot ${index + 1}`,
         beat: shot.beat ?? '',
         prompt: shot.prompt ?? '',
@@ -169,7 +239,13 @@ export function migrateProject(project: Partial<StoryboardProject> & Pick<Storyb
         cameraAngle: shot.cameraAngle ?? 'unspecified',
         cameraMovement: shot.cameraMovement ?? 'static',
         usePreviousPanel: shot.usePreviousPanel ?? false,
-        referenceIds: shot.referenceIds ?? [],
+        referenceIds,
+        referenceRoleOverrides: normalizeReferenceRoleOverrides(
+          shot.referenceRoleOverrides,
+          activeReferenceIds,
+          referenceRolesById,
+          true,
+        ),
         panelRoles,
         panelDirections: shot.panelDirections ?? {},
         takes,
@@ -194,5 +270,5 @@ export function normalizePersistedState(value: Partial<PersistedStoryboardState>
     ? value?.selectedShotId ?? null
     : activeProject?.shots[0]?.id ?? null;
 
-  return { version: 5, projects, activeProjectId, selectedShotId };
+  return { version: 6, projects, activeProjectId, selectedShotId };
 }

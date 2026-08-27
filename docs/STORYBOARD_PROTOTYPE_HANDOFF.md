@@ -48,7 +48,7 @@ The production transition, structural extraction, and reliability pass are imple
 - the unified workspace toolbar now deliberately wraps its view switcher below the project and action rows at narrow breakpoints instead of depending on accidental overflow;
 - visible **Approved** language is replaced with **Selected**, decorative green approval treatment is removed, and the fake continuity score/view is gone.
 
-The refactor deliberately preserves the shared-workspace APIs, generated Police Riot assets, image editor, and generation API. The storyboard store is now schema v5. Hydration first migrates legacy takes and selected versions to the Start panel, then migrates single reference kinds into multi-role references with separate provenance and tags. The normalized project is written back to shared storage. `/storyboard-prototype` remains only as a design fixture; `/` is the real implementation.
+The refactor deliberately preserves the shared-workspace APIs, generated Police Riot assets, image editor, and generation API. The storyboard store is now schema v6. Hydration first migrates legacy takes and selected versions to the Start panel, then migrates single reference kinds into multi-role references with separate provenance and tags. Schema v6 adds scene and shot role overrides plus an immutable role snapshot on each take. The normalized project is written back to shared storage. `/storyboard-prototype` remains only as a design fixture; `/` is the real implementation.
 
 ## Prototype Source
 
@@ -197,7 +197,7 @@ The repository contains calibration scripts and the generated Police Riot images
 
 The merge-blocking refactor is complete. Continue with product validation rather than another shell rewrite:
 
-1. Run a small paid reference-consistency benchmark across the current FAL models and OpenAI `gpt-image-2`: the same character + wardrobe + location inputs across wide, medium, close-up, and action shots. Record identity, role adherence, editability, latency, and cost before changing routing. Note that `gpt-image-2` processes every image input at high fidelity automatically and rejects `input_fidelity`, and that its pricing is per token rather than per image.
+1. Run a small internal reference-consistency evaluation across the current FAL models and OpenAI `gpt-image-2`: generate the same character + wardrobe + location setup across wide, medium, close-up, and action shots, then record identity, role adherence, editability, latency, and cost before changing the Draft or Final defaults. This is an engineering evaluation, not a new user-facing model tier or screen. Note that `gpt-image-2` processes every image input at high fidelity automatically and rejects `input_fidelity`, and that its pricing is per token rather than per image.
 2. Use one real project to generate a Start/Middle/End shot, compare alternatives, finish one version in the editor, scrub Timing, and export a handoff. Capture friction before adding hierarchy or metadata.
 3. Add arbitrary multi-shot selection from Board or Shot list only if scene/missing-start generation proves insufficient. Reuse the existing target planner and retry state.
 4. Add direct manipulation for duplicate/reorder, practical keyboard shortcuts, and denser 30–50-shot board modes before adding more form fields.
@@ -209,11 +209,11 @@ The merge-blocking refactor is complete. Continue with product validation rather
 ## Validation
 
 - `npm run lint`
-- `npm run test` — 16 passing tests covering migration/idempotence, reference-role/provenance migration and inference, library filtering by role, research provenance, and unclassified state, role-aware prompt compilation, guarded selection by panel, reference-removal cascades, scoped/deduplicated references, previous-shot opt-in, within-shot prior panels, and panel-specific prompt compilation
+- `npm run test` — 19 passing tests covering migration/idempotence, reference-role/provenance migration and inference, assignment-role precedence and snapshots, library filtering by role, research provenance, and unclassified state, role-aware prompt compilation, guarded selection by panel, reference-removal cascades, scoped/deduplicated references, previous-shot opt-in, within-shot prior panels, and panel-specific prompt compilation
 - `npm run build`
 - `npx tsc --noEmit` — clean across the repository, including the domain tests
 - production build includes `/`, `/editor`, `/storyboard-prototype`, and `/storyboard-print`
-- earlier browser passes used a production server pointed at an isolated copy of `.lumen/`. The schema-v5 pass ran against the real workspace and migrated `storyboards.json` in place; a copy of the migrated file was kept beside it as `.lumen/storyboards.backup-2026-08-27.json`
+- earlier browser passes used a production server pointed at an isolated copy of `.lumen/`. The schema-v5 pass ran against the real workspace and migrated `storyboards.json` in place; a safety snapshot of that migrated v5 workspace was kept beside it as `.lumen/storyboards.backup-2026-08-27.json`
 - Board, Shot list, Timing, animatic play/pause, project switching, project-scoped References, the shot inspector, optional Middle panel, active-panel continuity, the generation review, tier pricing, and deletion confirmation were exercised
 - a selected storyboard version was opened in `/editor`, given a preset, and saved. The result was a second selected take with `sourceTakeId`/`sourceImageId`; the original gallery image retained its zeroed edit state. The new version and project selection survived a production-server restart
 - the print route rendered the requested project, showed missing panels explicitly, respected the project aspect class, and returned **Storyboard not found** for an invalid explicit project id
@@ -223,21 +223,23 @@ The merge-blocking refactor is complete. Continue with product validation rather
 - the bundle-removal pass rebuilt the production server on a clean `.next`, confirmed `/api/workspace/bundles` returns 404, and re-verified the References library (Used for / Source filter groups, the Unclassified empty state, the reference inspector with role toggles, tags, and editable provenance) and the project settings panel without its Imports control, with zero console errors or warnings
 - automated narrow-screen visual QA remains outstanding because the browser controller reported success setting a mobile viewport while the page stayed at 1280×720; responsive behavior was reviewed statically and the temporary override was reset
 
-## Schema v5 Notes
+## Schema v6 Notes
 
 - `StoryboardShot.panelRoles` stores enabled Start/Middle/End panels. Start is mandatory.
 - `StoryboardShot.panelDirections` stores optional direction specific to Middle or End while `prompt` remains shared shot direction.
 - `StoryboardShot.selectedTakeIds` stores one selected take per panel role; legacy `selectedTakeId` remains mirrored for Start compatibility.
 - `StoryboardTake.panelRole` identifies which panel owns a version.
 - `StoryboardTake.sourceTakeId` and `sourceImageId` record editor-derived provenance without changing the source take.
+- `StoryboardTake.referenceRoleSelections` records the exact semantic roles sent for each reference when that version was created, so later library edits do not rewrite generation lineage.
 - Existing v3 takes and selection migrate to Start. Migration is idempotent and persists through the existing shared-workspace endpoint after hydration.
 - Generation for a Middle or End panel adds the preceding selected same-shot panel as continuity context. Generation for Start uses only assigned project/scene/shot references unless the user explicitly enables the previous-panel option.
 - `StoryReference.roles` stores zero or more semantic generation roles: Character, Wardrobe, Location / set, Prop, Look, and Composition. Zero roles means a general reference whose direction must explicitly name the usable details.
+- `StoryboardScene.referenceRoleOverrides` can narrow a multi-purpose library reference for every shot in a scene. `StoryboardShot.referenceRoleOverrides` can narrow it further or explicitly restore all library roles for one shot. Missing overrides inherit the next broader assignment.
 - `StoryReference.sourceType` independently records Generated, Imported, or Research provenance. Legacy `research` kinds migrate to research provenance with no assumed semantic role.
 - `StoryReference.tags` stores deduplicated free-form project vocabulary. Role filters remain stable product semantics; tags are not promoted into hardcoded global categories.
 - Legacy Character, Location, Object, and Style kinds migrate to Character, Location / set, Prop, and Look roles respectively. Generated legacy assets are recognized from their existing AI-generation rights note. IDs, assignments, images, source fields, and ordering remain unchanged.
 - Prompt compilation is role-aware: production roles preserve their owned attributes while Look and Composition are prevented from donating identity or story content.
-- Roles are inferred from file names only for uploaded images. Research imports and promoted storyboard frames start with no roles. The library's **Unclassified** filter lists non-research references with no roles so they can be classified deliberately.
+- Roles are inferred from file names for uploaded images and from direction text for generated references. Research imports and promoted storyboard frames start with no roles. The library's **Unclassified** filter lists non-research references with no roles so they can be classified deliberately.
 
 ## Guardrails for the Next Agent
 

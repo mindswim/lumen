@@ -98,7 +98,7 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000)
 
-On the first load after upgrading, Lumen copies the current browser's legacy IndexedDB library into `.lumen/`. Open the browser profile that contains your existing work once; after that, every browser connected to the same local server reads and writes the same workspace. Generated manifests under `public/generated/<bundle>/manifest.json` appear under **Project & scene → Bundles** for provenance-aware import.
+On the first load after upgrading, Lumen copies the current browser's legacy IndexedDB library into `.lumen/`. Open the browser profile that contains your existing work once; after that, every browser connected to the same local server reads and writes the same workspace.
 
 ### Storyboard workspace
 

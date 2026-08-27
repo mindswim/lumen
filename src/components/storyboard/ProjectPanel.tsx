@@ -5,7 +5,7 @@ import { BookOpen, Clock3, ImagePlus, Link2, LockKeyhole, MapPin, Trash2, Upload
 
 import { useGalleryStore } from '@/lib/gallery/store';
 import { inferReferenceRoles, referenceDisplayName } from '@/lib/storyboard/reference';
-import { useStoryboardStore, type StoryboardProject } from '@/lib/storyboard/store';
+import { useStoryboardStore, type ReferenceRole, type StoryboardProject } from '@/lib/storyboard/store';
 import { FIELD, LABEL, REFERENCE_ROLES } from '@/components/storyboard/storyboard-ui';
 
 export function ProjectPanel({ project, onClose }: { project: StoryboardProject; onClose: () => void }) {
@@ -39,12 +39,39 @@ export function ProjectPanel({ project, onClose }: { project: StoryboardProject;
     const referenceIds = removing
       ? activeScene.referenceIds.filter((value) => value !== referenceId)
       : [...activeScene.referenceIds, referenceId];
-    updateScene(project.id, activeScene.id, { referenceIds });
+    const referenceRoleOverrides = { ...activeScene.referenceRoleOverrides };
+    if (removing) delete referenceRoleOverrides[referenceId];
+    updateScene(project.id, activeScene.id, { referenceIds, referenceRoleOverrides });
     if (!removing) {
       project.shots
         .filter((shot) => shot.sceneId === activeScene.id && shot.referenceIds.includes(referenceId))
         .forEach((shot) => updateShot(project.id, shot.id, { referenceIds: shot.referenceIds.filter((value) => value !== referenceId) }));
+    } else {
+      project.shots
+        .filter((shot) => shot.sceneId === activeScene.id && !shot.referenceIds.includes(referenceId) && referenceId in shot.referenceRoleOverrides)
+        .forEach((shot) => {
+          const nextOverrides = { ...shot.referenceRoleOverrides };
+          delete nextOverrides[referenceId];
+          updateShot(project.id, shot.id, { referenceRoleOverrides: nextOverrides });
+        });
     }
+  };
+
+  const setSceneReferenceRole = (referenceId: string, role: ReferenceRole) => {
+    if (!activeScene) return;
+    const reference = project.references.find((candidate) => candidate.id === referenceId);
+    if (!reference) return;
+    const currentRoles = activeScene.referenceRoleOverrides[referenceId] ?? reference.roles;
+    const nextRoles = currentRoles.includes(role)
+      ? currentRoles.filter((value) => value !== role)
+      : reference.roles.filter((value) => currentRoles.includes(value) || value === role);
+    if (nextRoles.length === 0) return;
+    const referenceRoleOverrides = { ...activeScene.referenceRoleOverrides };
+    const usesAllLibraryRoles = nextRoles.length === reference.roles.length
+      && reference.roles.every((value) => nextRoles.includes(value));
+    if (usesAllLibraryRoles) delete referenceRoleOverrides[referenceId];
+    else referenceRoleOverrides[referenceId] = nextRoles;
+    updateScene(project.id, activeScene.id, { referenceRoleOverrides });
   };
 
   const importReferences = async (files: File[]) => {
@@ -221,6 +248,7 @@ export function ProjectPanel({ project, onClose }: { project: StoryboardProject;
                     <button
                       key={reference.id}
                       type="button"
+                      aria-pressed={active}
                       onClick={() => toggleSceneReference(reference.id)}
                       className="rounded-full border px-2.5 py-1 text-[9px] font-medium"
                       style={{
@@ -234,6 +262,59 @@ export function ProjectPanel({ project, onClose }: { project: StoryboardProject;
                   );
                 })}
               </div>
+              {project.references.some((reference) => activeScene.referenceIds.includes(reference.id) && reference.roles.length > 1) && (
+                <div className="mt-3 space-y-2 rounded-xl border p-3" style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-secondary)' }}>
+                  <div>
+                    <p className="text-[10px] font-semibold">Use throughout this scene</p>
+                    <p className="mt-0.5 text-[9px] leading-4" style={{ color: 'var(--editor-text-muted)' }}>Choose which details each multi-purpose reference should preserve by default.</p>
+                  </div>
+                  {project.references.filter((reference) => activeScene.referenceIds.includes(reference.id) && reference.roles.length > 1).map((reference) => {
+                    const effectiveRoles = activeScene.referenceRoleOverrides[reference.id] ?? reference.roles;
+                    const hasOverride = reference.id in activeScene.referenceRoleOverrides;
+                    return (
+                      <div key={reference.id} className="rounded-lg border p-2.5" style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-primary)' }}>
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="truncate text-[10px] font-semibold">{reference.name}</p>
+                          {hasOverride && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextOverrides = { ...activeScene.referenceRoleOverrides };
+                                delete nextOverrides[reference.id];
+                                updateScene(project.id, activeScene.id, { referenceRoleOverrides: nextOverrides });
+                              }}
+                              className="shrink-0 text-[9px] font-medium underline underline-offset-2"
+                            >
+                              Use all roles
+                            </button>
+                          )}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {REFERENCE_ROLES.filter((role) => reference.roles.includes(role.value)).map((role) => {
+                            const activeRole = effectiveRoles.includes(role.value);
+                            return (
+                              <button
+                                key={role.value}
+                                type="button"
+                                aria-pressed={activeRole}
+                                onClick={() => setSceneReferenceRole(reference.id, role.value)}
+                                className="rounded-full border px-2 py-1 text-[9px] font-medium"
+                                style={{
+                                  borderColor: activeRole ? 'var(--editor-text-primary)' : 'var(--editor-border)',
+                                  backgroundColor: activeRole ? 'var(--editor-text-primary)' : 'transparent',
+                                  color: activeRole ? 'var(--editor-bg-primary)' : 'var(--editor-text-tertiary)',
+                                }}
+                              >
+                                {role.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 

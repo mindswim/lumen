@@ -517,7 +517,7 @@ Current code seams make this feasible without replacing the application:
 | `src/components/storyboard/StoryboardWorkspace.tsx` | Keep as the state-owning shell first. Extract its existing project panel, board, shot card, review stage, and inspector into focused components; then add Shot list and Timing views against the same props. |
 | `src/lib/storyboard/store.ts` | Preserve the Zustand store and server persistence. Add a domain adapter and versioned migrations before changing persisted shapes. |
 | `src/lib/storyboard/prompt.ts` | Evolve from one compiled prompt function into provider-neutral direction compilation plus small provider adapters. Keep compiled prompts inspectable. |
-| `src/lib/storyboard/reference.ts` | Holds role and provenance inference, labels, and library filter helpers as of schema v5. Extend with assignment-role and inheritance utilities. |
+| `src/lib/storyboard/reference.ts` | Holds role and provenance inference, labels, and library filter helpers. Schema v6 assignment-role inheritance is resolved in `generation-plan.ts`. |
 | `src/lib/storage/shared-workspace.ts` | Keep as the client boundary for canonical shared data; UI components should not call workspace routes directly. |
 | `src/lib/storage/local-workspace-server.ts` | Preserve the local server-backed project and asset authority; add schema-aware reads and migrations without moving data back into a browser-only store. |
 | `src/components/editor/*` | Keep the editor independent. Open the selected panel version as an edit source and save the finished result as a new version. |
@@ -531,9 +531,9 @@ Introduce additive schema changes behind adapters:
 - create one default storyboard for existing projects;
 - create one default panel for each existing shot;
 - map existing `takes` to panel versions and `selectedTakeId` to selected version;
-- split reference `category` from `origin` — implemented in schema v5 as multi-select roles, free-form tags, and `sourceType` provenance, with the legacy `research` kind migrated to provenance;
+- split reference `category` from `origin` — implemented as multi-select roles, free-form tags, and `sourceType` provenance, with the legacy `research` kind migrated to provenance;
 - allow a reference entity to hold multiple visual assets while retaining the current primary image;
-- store reference scope and semantic assignment role;
+- store reference scope and semantic assignment role — implemented in schema v6 with scene and shot role overrides plus take-level snapshots;
 - preserve old serialized projects and migrate on load with a schema version.
 
 The UI should consume the compatibility domain model before storage is rewritten. Old work must open with the same selected images and ordering.

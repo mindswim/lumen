@@ -7,7 +7,7 @@ import {
   removeStoryboardReference,
   selectStoryboardTake,
 } from '../src/lib/storyboard/domain.ts';
-import { compilePanelPrompt, resolvePriorStoryboardTake, resolveShotReferenceIds } from '../src/lib/storyboard/generation-plan.ts';
+import { compilePanelPrompt, resolvePriorStoryboardTake, resolveShotReferenceAssignments, resolveShotReferenceIds } from '../src/lib/storyboard/generation-plan.ts';
 import { composeStoryboardPrompt } from '../src/lib/storyboard/prompt.ts';
 import { inferReferenceRoles, inferReferenceSourceType, referenceMatchesFilter, referenceRoleSummary } from '../src/lib/storyboard/reference.ts';
 import type { ReferenceRole, StoryboardPanelRole, StoryReference } from '../src/lib/storyboard/types.ts';
@@ -78,7 +78,7 @@ test('migrates legacy panels and references without changing identity or orderin
   const project = migrated.projects[0];
   const shot = project.shots[0];
 
-  assert.equal(migrated.version, 5);
+  assert.equal(migrated.version, 6);
   assert.equal(migrated.activeProjectId, 'project-1');
   assert.equal(migrated.selectedShotId, 'shot-1');
   assert.deepEqual(project.references.map((reference) => reference.id), ['ref-1']);
@@ -86,12 +86,15 @@ test('migrates legacy panels and references without changing identity or orderin
   assert.deepEqual(project.references[0].tags, []);
   assert.equal(project.references[0].sourceType, 'imported');
   assert.deepEqual(project.scenes.map((scene) => scene.id), ['scene-1']);
+  assert.deepEqual(project.scenes[0].referenceRoleOverrides, {});
   assert.deepEqual(project.shots.map((candidate) => candidate.id), ['shot-1']);
   assert.deepEqual(shot.panelRoles, ['start']);
   assert.deepEqual(shot.panelDirections, {});
+  assert.deepEqual(shot.referenceRoleOverrides, {});
   assert.equal(shot.takes[0].id, 'take-1');
   assert.equal(shot.takes[0].imageId, 'image-1');
   assert.equal(shot.takes[0].panelRole, 'start');
+  assert.deepEqual(shot.takes[0].referenceRoleSelections, { 'ref-1': ['character'] });
   assert.equal(shot.selectedTakeId, 'take-1');
   assert.equal(shot.selectedTakeIds.start, 'take-1');
   assert.equal(getSelectedTake(shot)?.id, 'take-1');
@@ -192,10 +195,45 @@ test('compiles role ownership and research provenance into the generation prompt
   assert.match(prompt, /Look and Composition references guide treatment and framing only/);
 });
 
+test('compiles only the roles selected for a scene or shot assignment', () => {
+  const project = normalizePersistedState(legacyState as never).projects[0];
+  const reference = {
+    ...project.references[0],
+    roles: ['character', 'wardrobe'] as ReferenceRole[],
+  };
+  const prompt = composeStoryboardPrompt(project, project.shots[0], 0, [{
+    reference,
+    label: reference.name,
+    roles: ['character'],
+  }]);
+
+  assert.match(prompt, /CHARACTER IDENTITY/);
+  assert.doesNotMatch(prompt, /WARDROBE/);
+});
+
 test('normalization is idempotent', () => {
   const once = normalizePersistedState(legacyState as never);
   const twice = normalizePersistedState(once);
   assert.deepEqual(twice, once);
+});
+
+test('preserves an intentionally empty role snapshot on an existing take', () => {
+  const migrated = normalizePersistedState(legacyState as never);
+  const project = migrated.projects[0];
+  const state = {
+    ...migrated,
+    projects: [{
+      ...project,
+      references: [{ ...project.references[0], roles: ['character', 'wardrobe'] as ReferenceRole[] }],
+      shots: [{
+        ...project.shots[0],
+        takes: [{ ...project.shots[0].takes[0], referenceRoleSelections: {} }],
+      }],
+    }],
+  };
+
+  const normalized = normalizePersistedState(state);
+  assert.deepEqual(normalized.projects[0].shots[0].takes[0].referenceRoleSelections, {});
 });
 
 test('falls back to the first valid project and shot when persisted selection is stale', () => {
@@ -213,9 +251,9 @@ test('resolves selection independently for Start, Middle, and End panels', () =>
     ...normalizePersistedState(legacyState as never).projects[0].shots[0],
     panelRoles: ['start', 'middle', 'end'] as StoryboardPanelRole[],
     takes: [
-      { id: 'start-take', imageId: 'start-image', prompt: '', referenceIds: [], model: 'test', seed: null, panelRole: 'start' as const, createdAt: 1 },
-      { id: 'middle-take', imageId: 'middle-image', prompt: '', referenceIds: [], model: 'test', seed: null, panelRole: 'middle' as const, createdAt: 2 },
-      { id: 'end-take', imageId: 'end-image', prompt: '', referenceIds: [], model: 'test', seed: null, panelRole: 'end' as const, createdAt: 3 },
+      { id: 'start-take', imageId: 'start-image', prompt: '', referenceIds: [], referenceRoleSelections: {}, model: 'test', seed: null, panelRole: 'start' as const, createdAt: 1 },
+      { id: 'middle-take', imageId: 'middle-image', prompt: '', referenceIds: [], referenceRoleSelections: {}, model: 'test', seed: null, panelRole: 'middle' as const, createdAt: 2 },
+      { id: 'end-take', imageId: 'end-image', prompt: '', referenceIds: [], referenceRoleSelections: {}, model: 'test', seed: null, panelRole: 'end' as const, createdAt: 3 },
     ],
     selectedTakeId: 'start-take',
     selectedTakeIds: { start: 'start-take', middle: 'middle-take', end: 'end-take' },
@@ -260,14 +298,16 @@ test('removing a reference also removes scene and shot assignments', () => {
       ...project.references,
       { ...project.references[0], id: 'ref-2', imageId: 'image-ref-2', name: 'Station' },
     ],
-    scenes: [{ ...project.scenes[0], referenceIds: ['ref-1', 'ref-2'] }],
-    shots: [{ ...project.shots[0], referenceIds: ['ref-2', 'ref-1'] }],
+    scenes: [{ ...project.scenes[0], referenceIds: ['ref-1', 'ref-2'], referenceRoleOverrides: { 'ref-1': ['character'] as ReferenceRole[] } }],
+    shots: [{ ...project.shots[0], referenceIds: ['ref-2', 'ref-1'], referenceRoleOverrides: { 'ref-1': ['character'] as ReferenceRole[] } }],
   };
 
   const removed = removeStoryboardReference(withUnrelatedAssignments, 'ref-1', 100);
   assert.deepEqual(removed.references.map((reference) => reference.id), ['ref-2']);
   assert.deepEqual(removed.scenes[0].referenceIds, ['ref-2']);
+  assert.deepEqual(removed.scenes[0].referenceRoleOverrides, {});
   assert.deepEqual(removed.shots[0].referenceIds, ['ref-2']);
+  assert.deepEqual(removed.shots[0].referenceRoleOverrides, {});
   assert.equal(removed.updatedAt, 100);
   assert.equal(removeStoryboardReference(removed, 'missing-reference', 200), removed);
 });
@@ -277,6 +317,51 @@ test('resolves only scene and shot references and removes duplicate assignments'
   const scene = { ...project.scenes[0], referenceIds: ['scene-ref', 'shared-ref'] };
   const shot = { ...project.shots[0], referenceIds: ['shared-ref', 'shot-ref'] };
   assert.deepEqual(resolveShotReferenceIds({ ...project, scenes: [scene], shots: [shot] }, shot), ['scene-ref', 'shared-ref', 'shot-ref']);
+});
+
+test('resolves assignment roles from library to scene to shot without changing the reference asset', () => {
+  const project = normalizePersistedState(legacyState as never).projects[0];
+  const reference = { ...project.references[0], roles: ['character', 'wardrobe'] as ReferenceRole[] };
+  const scene = {
+    ...project.scenes[0],
+    referenceIds: [reference.id],
+    referenceRoleOverrides: { [reference.id]: ['wardrobe'] as ReferenceRole[] },
+  };
+  const inheritedShot = {
+    ...project.shots[0],
+    referenceIds: [],
+    referenceRoleOverrides: {},
+  };
+  const withSceneOverride = { ...project, references: [reference], scenes: [scene], shots: [inheritedShot] };
+
+  assert.deepEqual(resolveShotReferenceAssignments(withSceneOverride, inheritedShot), [{
+    referenceId: reference.id,
+    roles: ['wardrobe'],
+    source: 'scene',
+  }]);
+
+  const shotOverride = {
+    ...inheritedShot,
+    referenceRoleOverrides: { [reference.id]: ['character'] as ReferenceRole[] },
+  };
+  assert.deepEqual(resolveShotReferenceAssignments({ ...withSceneOverride, shots: [shotOverride] }, shotOverride), [{
+    referenceId: reference.id,
+    roles: ['character'],
+    source: 'scene',
+  }]);
+
+  const allRolesOverride = {
+    ...inheritedShot,
+    referenceRoleOverrides: { [reference.id]: ['character', 'wardrobe'] as ReferenceRole[] },
+  };
+  const normalized = normalizePersistedState({
+    version: 6,
+    projects: [{ ...withSceneOverride, shots: [allRolesOverride] }],
+    activeProjectId: project.id,
+    selectedShotId: allRolesOverride.id,
+  });
+  assert.deepEqual(resolveShotReferenceAssignments(normalized.projects[0], normalized.projects[0].shots[0])[0].roles, ['character', 'wardrobe']);
+  assert.deepEqual(reference.roles, ['character', 'wardrobe']);
 });
 
 test('uses a previous shot only for opted-in continuous action in the same scene', () => {

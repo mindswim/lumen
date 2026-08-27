@@ -96,6 +96,7 @@ export function Editor() {
         imageId: clonedImage.id,
         prompt: sourceTake.prompt,
         referenceIds: sourceTake.referenceIds,
+        referenceRoleSelections: sourceTake.referenceRoleSelections,
         model: 'Lumen editor',
         seed: null,
         panelRole: storyboardContext.panelRole,

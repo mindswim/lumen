@@ -3,6 +3,8 @@ import type { ReferenceRole, StoryboardProject, StoryboardShot, StoryReference }
 export interface PromptReference {
   reference: StoryReference | null;
   label: string;
+  /** Effective roles for this scene/shot assignment. Defaults to the library roles. */
+  roles?: ReferenceRole[];
 }
 
 const ROLE_DIRECTIONS: Record<ReferenceRole, string> = {
@@ -14,9 +16,10 @@ const ROLE_DIRECTIONS: Record<ReferenceRole, string> = {
   composition: 'COMPOSITION — borrow framing, blocking, perspective, and camera geometry only; do not copy identities or story content',
 };
 
-function describeReference(reference: StoryReference, index: number): string {
-  const role = reference.roles.length > 0
-    ? reference.roles.map((value) => ROLE_DIRECTIONS[value]).join('; ')
+function describeReference(reference: StoryReference, index: number, assignedRoles?: ReferenceRole[]): string {
+  const roles = assignedRoles ?? reference.roles;
+  const role = roles.length > 0
+    ? roles.map((value) => ROLE_DIRECTIONS[value]).join('; ')
     : 'GENERAL VISUAL REFERENCE — use only the details explicitly named in its direction';
   const detail = reference.description.trim();
   const tags = reference.tags.length > 0 ? ` Tags: ${reference.tags.join(', ')}.` : '';
@@ -36,7 +39,7 @@ export function composeStoryboardPrompt(
   const references = referenceInputs.length > 0
     ? referenceInputs.map((input, index) => {
       if (!input.reference) return `Image ${index + 1}: ${input.label}`;
-      return describeReference(input.reference, index);
+      return describeReference(input.reference, index, input.roles);
       }).join('\n')
     : 'No image references are attached. Establish the design cleanly so this frame can become a future continuity reference.';
   const scene = project.scenes.find((candidate) => candidate.id === shot.sceneId);

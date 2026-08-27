@@ -6,7 +6,7 @@ import { ArrowLeft, CircleCheck, Sparkles, X } from 'lucide-react';
 import { createAIImagePreview } from '@/lib/ai/image-preview';
 import { useGalleryStore, type GalleryImage } from '@/lib/gallery/store';
 import { composeStoryboardPrompt, type PromptReference } from '@/lib/storyboard/prompt';
-import { compilePanelPrompt, resolvePriorStoryboardTake, resolveShotReferenceIds } from '@/lib/storyboard/generation-plan';
+import { compilePanelPrompt, resolvePriorStoryboardTake, resolveShotReferenceAssignments } from '@/lib/storyboard/generation-plan';
 import { referenceRoleSummary } from '@/lib/storyboard/reference';
 import {
   getSelectedTake,
@@ -70,9 +70,13 @@ export function StoryboardGenerationDialog({
     scope === 'current' && targetShot.id === shot.id ? panelRole : 'start'
   );
 
-  const referenceIdsForShot = (targetShot: StoryboardShot) => {
-    return resolveShotReferenceIds(project, targetShot);
+  const referenceAssignmentsForShot = (targetShot: StoryboardShot) => {
+    return resolveShotReferenceAssignments(project, targetShot);
   };
+
+  const referenceIdsForShot = (targetShot: StoryboardShot) => (
+    referenceAssignmentsForShot(targetShot).map((assignment) => assignment.referenceId)
+  );
 
   const priorContextForShot = (targetShot: StoryboardShot, role: StoryboardPanelRole) => {
     return resolvePriorStoryboardTake(project, targetShot, role);
@@ -81,8 +85,8 @@ export function StoryboardGenerationDialog({
   const inputCountForShot = (targetShot: StoryboardShot) => {
     const role = targetPanelRole(targetShot);
     const inputImageIds = new Set<string>();
-    for (const referenceId of referenceIdsForShot(targetShot)) {
-      const reference = project.references.find((candidate) => candidate.id === referenceId);
+    for (const assignment of referenceAssignmentsForShot(targetShot)) {
+      const reference = project.references.find((candidate) => candidate.id === assignment.referenceId);
       if (reference && images.some((image) => image.id === reference.imageId)) inputImageIds.add(reference.imageId);
     }
     const priorContext = priorContextForShot(targetShot, role);
@@ -103,9 +107,10 @@ export function StoryboardGenerationDialog({
   const estimatedOutputCount = targetShots.filter((targetShot) => !invalidReasonForShot(targetShot)).length;
   const estimatedTotal = estimatedUnitCost * estimatedOutputCount;
 
-  const assignedReferences = referenceIdsForShot(shot)
-    .map((referenceId) => project.references.find((reference) => reference.id === referenceId))
-    .filter((reference): reference is NonNullable<typeof reference> => Boolean(reference));
+  const assignedReferences = referenceAssignmentsForShot(shot).flatMap((assignment) => {
+    const reference = project.references.find((candidate) => candidate.id === assignment.referenceId);
+    return reference ? [{ assignment, reference }] : [];
+  });
   const sceneReferenceIds = project.scenes.find((candidate) => candidate.id === shot.sceneId)?.referenceIds ?? [];
   const inputCount = inputCountForShot(shot);
 
@@ -124,12 +129,16 @@ export function StoryboardGenerationDialog({
   const generateShot = async (targetShot: StoryboardShot) => {
       const role = targetPanelRole(targetShot);
       const targetIndex = project.shots.findIndex((candidate) => candidate.id === targetShot.id);
-      const activeReferenceIds = referenceIdsForShot(targetShot);
+      const activeReferenceAssignments = referenceAssignmentsForShot(targetShot);
       const inputs: Array<{ image: GalleryImage; promptReference: PromptReference; referenceId?: string }> = [];
-      for (const referenceId of activeReferenceIds) {
-        const reference = project.references.find((candidate) => candidate.id === referenceId);
+      for (const assignment of activeReferenceAssignments) {
+        const reference = project.references.find((candidate) => candidate.id === assignment.referenceId);
         const image = reference ? images.find((candidate) => candidate.id === reference.imageId) : null;
-        if (reference && image) inputs.push({ image, promptReference: { reference, label: reference.name }, referenceId });
+        if (reference && image) inputs.push({
+          image,
+          promptReference: { reference, label: reference.name, roles: assignment.roles },
+          referenceId: assignment.referenceId,
+        });
       }
 
       const priorContext = priorContextForShot(targetShot, role);
@@ -200,6 +209,11 @@ export function StoryboardGenerationDialog({
           imageId: image.id,
           prompt,
           referenceIds: uniqueInputs.flatMap((input) => input.referenceId ? [input.referenceId] : []),
+          referenceRoleSelections: Object.fromEntries(uniqueInputs.flatMap((input) => (
+            input.referenceId && input.promptReference.roles?.length
+              ? [[input.referenceId, input.promptReference.roles] as const]
+              : []
+          ))),
           model: result.model || 'fal-ai/bytedance/seedream/v4.5',
           seed: typeof result.seed === 'number' ? result.seed : null,
           panelRole: role,
@@ -306,10 +320,10 @@ export function StoryboardGenerationDialog({
             <div className="mb-3 flex items-center justify-between"><p className="text-xs font-semibold">Reference assignments</p><span className="text-[10px]" style={{ color: inputCount > referenceLimit ? 'var(--editor-error)' : 'var(--editor-text-muted)' }}>{inputCount} of {referenceLimit} inputs</span></div>
             {assignedReferences.length > 0 ? (
               <div className="space-y-2">
-                {assignedReferences.map((reference) => {
+                {assignedReferences.map(({ assignment, reference }) => {
                   const image = images.find((candidate) => candidate.id === reference.imageId);
                   const inherited = sceneReferenceIds.includes(reference.id);
-                  const role = referenceRoleSummary(reference);
+                  const role = referenceRoleSummary({ roles: assignment.roles, sourceType: reference.sourceType });
                   return (
                     <div key={reference.id} className="flex items-center gap-3 rounded-lg border p-2.5" style={{ borderColor: 'var(--editor-border)' }}>
                       <div className="h-12 w-16 shrink-0 overflow-hidden rounded-md bg-neutral-100">

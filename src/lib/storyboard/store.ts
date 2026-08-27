@@ -16,6 +16,7 @@ import type {
   StoryboardAspect,
   StoryboardPanelRole,
   StoryboardProject,
+  ReferenceRoleMap,
   StoryboardScene,
   StoryboardShot,
   StoryboardStorageStatus,
@@ -42,6 +43,10 @@ interface CreateProjectInput {
 type CreateReferenceInput = Omit<StoryReference, 'id' | 'createdAt' | 'roles' | 'tags' | 'sourceType'>
   & Partial<Pick<StoryReference, 'roles' | 'tags' | 'sourceType'>>;
 
+type CreateTakeInput = Omit<StoryboardTake, 'id' | 'createdAt' | 'panelRole' | 'referenceRoleSelections'>
+  & Partial<Pick<StoryboardTake, 'referenceRoleSelections'>>
+  & { panelRole?: StoryboardPanelRole };
+
 interface StoryboardStore {
   projects: StoryboardProject[];
   activeProjectId: string | null;
@@ -60,13 +65,13 @@ interface StoryboardStore {
   updateReference: (projectId: string, referenceId: string, changes: Partial<Pick<StoryReference, 'name' | 'roles' | 'tags' | 'sourceType' | 'description' | 'sourceUrl' | 'sourceTitle' | 'rightsNote'>>) => void;
   removeReference: (projectId: string, referenceId: string) => void;
   addScene: (projectId: string) => string;
-  updateScene: (projectId: string, sceneId: string, changes: Partial<Pick<StoryboardScene, 'title' | 'summary' | 'location' | 'timeOfDay' | 'referenceIds'>>) => void;
+  updateScene: (projectId: string, sceneId: string, changes: Partial<Pick<StoryboardScene, 'title' | 'summary' | 'location' | 'timeOfDay' | 'referenceIds' | 'referenceRoleOverrides'>>) => void;
   addShot: (projectId: string, afterShotId?: string, sceneId?: string) => string;
-  updateShot: (projectId: string, shotId: string, changes: Partial<Pick<StoryboardShot, 'sceneId' | 'title' | 'beat' | 'prompt' | 'continuityNotes' | 'dialogue' | 'durationSeconds' | 'shotSize' | 'cameraAngle' | 'cameraMovement' | 'usePreviousPanel' | 'referenceIds' | 'panelRoles' | 'panelDirections'>>) => void;
+  updateShot: (projectId: string, shotId: string, changes: Partial<Pick<StoryboardShot, 'sceneId' | 'title' | 'beat' | 'prompt' | 'continuityNotes' | 'dialogue' | 'durationSeconds' | 'shotSize' | 'cameraAngle' | 'cameraMovement' | 'usePreviousPanel' | 'referenceIds' | 'referenceRoleOverrides' | 'panelRoles' | 'panelDirections'>>) => void;
   removeShot: (projectId: string, shotId: string) => void;
   moveShot: (projectId: string, shotId: string, direction: -1 | 1) => void;
   selectShot: (shotId: string | null) => void;
-  addTake: (projectId: string, shotId: string, take: Omit<StoryboardTake, 'id' | 'createdAt' | 'panelRole'> & { panelRole?: StoryboardPanelRole }) => string;
+  addTake: (projectId: string, shotId: string, take: CreateTakeInput) => string;
   selectTake: (projectId: string, shotId: string, takeId: string) => void;
 }
 
@@ -88,6 +93,7 @@ function createScene(number: number): StoryboardScene {
     location: '',
     timeOfDay: '',
     referenceIds: [],
+    referenceRoleOverrides: {},
     createdAt: now,
     updatedAt: now,
   };
@@ -109,6 +115,7 @@ function createShot(number: number, sceneId: string): StoryboardShot {
     cameraMovement: 'static',
     usePreviousPanel: false,
     referenceIds: [],
+    referenceRoleOverrides: {},
     panelRoles: ['start'],
     panelDirections: {},
     takes: [],
@@ -135,7 +142,7 @@ function readLegacyState(): PersistedStoryboardState | null {
 
 function persistedSnapshot(state: Pick<StoryboardStore, 'projects' | 'activeProjectId' | 'selectedShotId'>): PersistedStoryboardState {
   return {
-    version: 5,
+    version: 6,
     projects: state.projects,
     activeProjectId: state.activeProjectId,
     selectedShotId: state.selectedShotId,
@@ -336,13 +343,14 @@ export const useStoryboardStore = create<StoryboardStore>()(
       addTake: (projectId, shotId, take) => {
         const takeId = id('take');
         const panelRole = take.panelRole ?? 'start';
+        const referenceRoleSelections: ReferenceRoleMap = take.referenceRoleSelections ?? {};
         set((state) => ({
           projects: state.projects.map((project) => project.id === projectId ? {
             ...project,
             shots: project.shots.map((shot) => shot.id === shotId ? {
               ...shot,
               panelRoles: shot.panelRoles.includes(panelRole) ? shot.panelRoles : [...shot.panelRoles, panelRole],
-              takes: [...shot.takes, { ...take, panelRole, id: takeId, createdAt: Date.now() }],
+              takes: [...shot.takes, { ...take, referenceRoleSelections, panelRole, id: takeId, createdAt: Date.now() }],
               selectedTakeId: panelRole === 'start' ? shot.selectedTakeId ?? takeId : shot.selectedTakeId,
               selectedTakeIds: {
                 ...shot.selectedTakeIds,

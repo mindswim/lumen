@@ -2,6 +2,7 @@ export type StoryboardAspect = 'landscape_16_9' | 'landscape_4_3' | 'portrait_16
 export type LegacyReferenceKind = 'character' | 'location' | 'object' | 'style' | 'research';
 export type ReferenceRole = 'character' | 'wardrobe' | 'location' | 'prop' | 'look' | 'composition';
 export type ReferenceSourceType = 'generated' | 'imported' | 'research';
+export type ReferenceRoleMap = Record<string, ReferenceRole[]>;
 export type StoryboardRenderTier = 'draft' | 'final';
 export type StoryboardPanelRole = 'start' | 'middle' | 'end';
 export type ShotSize = 'unspecified' | 'extreme-wide' | 'wide' | 'medium-wide' | 'medium' | 'medium-close-up' | 'close-up' | 'extreme-close-up';
@@ -33,6 +34,8 @@ export interface StoryboardScene {
   location: string;
   timeOfDay: string;
   referenceIds: string[];
+  /** Optional role subsets applied whenever a scene reference is inherited. */
+  referenceRoleOverrides: ReferenceRoleMap;
   createdAt: number;
   updatedAt: number;
 }
@@ -42,6 +45,8 @@ export interface StoryboardTake {
   imageId: string;
   prompt: string;
   referenceIds: string[];
+  /** The effective roles actually sent for each reference when this version was created. */
+  referenceRoleSelections: ReferenceRoleMap;
   model: string;
   seed: number | null;
   panelRole: StoryboardPanelRole;
@@ -64,6 +69,8 @@ export interface StoryboardShot {
   cameraMovement: CameraMovement;
   usePreviousPanel: boolean;
   referenceIds: string[];
+  /** Shot-specific role subsets, including overrides of inherited scene references. */
+  referenceRoleOverrides: ReferenceRoleMap;
   panelRoles: StoryboardPanelRole[];
   panelDirections: Partial<Record<StoryboardPanelRole, string>>;
   takes: StoryboardTake[];
@@ -88,7 +95,7 @@ export interface StoryboardProject {
 }
 
 export interface PersistedStoryboardState {
-  version: 5;
+  version: 6;
   projects: StoryboardProject[];
   activeProjectId: string | null;
   selectedShotId: string | null;

@@ -1,9 +1,31 @@
 import { getSelectedTake } from './domain.ts';
-import type { StoryboardPanelRole, StoryboardProject, StoryboardShot, StoryboardTake } from './types.ts';
+import type { ReferenceRole, StoryboardPanelRole, StoryboardProject, StoryboardShot, StoryboardTake } from './types.ts';
+
+export interface ResolvedReferenceAssignment {
+  referenceId: string;
+  roles: ReferenceRole[];
+  source: 'scene' | 'shot';
+}
 
 export function resolveShotReferenceIds(project: StoryboardProject, shot: StoryboardShot): string[] {
   const scene = project.scenes.find((candidate) => candidate.id === shot.sceneId);
   return Array.from(new Set([...(scene?.referenceIds ?? []), ...shot.referenceIds]));
+}
+
+export function resolveShotReferenceAssignments(project: StoryboardProject, shot: StoryboardShot): ResolvedReferenceAssignment[] {
+  const scene = project.scenes.find((candidate) => candidate.id === shot.sceneId);
+  return resolveShotReferenceIds(project, shot).map((referenceId) => {
+    const reference = project.references.find((candidate) => candidate.id === referenceId);
+    const libraryRoles = reference?.roles ?? [];
+    const requestedRoles = shot.referenceRoleOverrides[referenceId]
+      ?? scene?.referenceRoleOverrides[referenceId];
+    const validOverride = requestedRoles?.filter((role) => libraryRoles.includes(role)) ?? [];
+    return {
+      referenceId,
+      roles: validOverride.length > 0 ? validOverride : libraryRoles,
+      source: shot.referenceIds.includes(referenceId) ? 'shot' : 'scene',
+    };
+  });
 }
 
 export function resolvePriorStoryboardTake(
