@@ -8,6 +8,9 @@ import {
   selectStoryboardTake,
 } from '../src/lib/storyboard/domain.ts';
 import { compilePanelPrompt, resolvePriorStoryboardTake, resolveShotReferenceIds } from '../src/lib/storyboard/generation-plan.ts';
+import { composeStoryboardPrompt } from '../src/lib/storyboard/prompt.ts';
+import { inferReferenceRoles, inferReferenceSourceType, referenceMatchesFilter, referenceRoleSummary } from '../src/lib/storyboard/reference.ts';
+import type { StoryReference } from '../src/lib/storyboard/types.ts';
 
 const legacyState = {
   version: 3,
@@ -70,15 +73,18 @@ const legacyState = {
   }],
 };
 
-test('migrates v3 takes and selection to the Start panel without changing identity or ordering', () => {
+test('migrates legacy panels and references without changing identity or ordering', () => {
   const migrated = normalizePersistedState(legacyState as never);
   const project = migrated.projects[0];
   const shot = project.shots[0];
 
-  assert.equal(migrated.version, 4);
+  assert.equal(migrated.version, 5);
   assert.equal(migrated.activeProjectId, 'project-1');
   assert.equal(migrated.selectedShotId, 'shot-1');
   assert.deepEqual(project.references.map((reference) => reference.id), ['ref-1']);
+  assert.deepEqual(project.references[0].roles, ['character']);
+  assert.deepEqual(project.references[0].tags, []);
+  assert.equal(project.references[0].sourceType, 'imported');
   assert.deepEqual(project.scenes.map((scene) => scene.id), ['scene-1']);
   assert.deepEqual(project.shots.map((candidate) => candidate.id), ['shot-1']);
   assert.deepEqual(shot.panelRoles, ['start']);
@@ -89,6 +95,101 @@ test('migrates v3 takes and selection to the Start panel without changing identi
   assert.equal(shot.selectedTakeId, 'take-1');
   assert.equal(shot.selectedTakeIds.start, 'take-1');
   assert.equal(getSelectedTake(shot)?.id, 'take-1');
+});
+
+test('separates research provenance from semantic reference roles', () => {
+  const withResearchReference = {
+    ...legacyState,
+    projects: [{
+      ...legacyState.projects[0],
+      references: [{
+        id: 'ref-research',
+        imageId: 'image-research',
+        name: 'Mulberry Street archive plate',
+        kind: 'research',
+        description: 'Use the street materials and shopfront details.',
+        sourceTitle: 'Municipal Archives',
+        createdAt: 11,
+      }],
+    }],
+  };
+  const reference = normalizePersistedState(withResearchReference as never).projects[0].references[0];
+
+  assert.deepEqual(reference.roles, []);
+  assert.deepEqual(reference.tags, []);
+  assert.equal(reference.sourceType, 'research');
+  assert.equal(reference.sourceTitle, 'Municipal Archives');
+});
+
+test('preserves valid multi-role references and removes duplicate tags during normalization', () => {
+  const withV5Reference = {
+    ...legacyState,
+    version: 5,
+    projects: [{
+      ...legacyState.projects[0],
+      references: [{
+        id: 'ref-v5',
+        imageId: 'image-v5',
+        name: 'Mara in travel coat',
+        roles: ['character', 'wardrobe', 'character'],
+        tags: ['Mara', ' 1857 ', 'Mara', ''],
+        sourceType: 'generated',
+        description: 'Preserve identity and the brown wool coat.',
+        createdAt: 12,
+      }],
+    }],
+  };
+  const reference = normalizePersistedState(withV5Reference as never).projects[0].references[0];
+
+  assert.deepEqual(reference.roles, ['character', 'wardrobe']);
+  assert.deepEqual(reference.tags, ['Mara', '1857']);
+  assert.equal(reference.sourceType, 'generated');
+});
+
+test('infers multiple useful roles without classifying an unknown image as a character', () => {
+  assert.deepEqual(inferReferenceRoles('Mara portrait in a wool coat, low-angle framing'), ['character', 'wardrobe', 'composition']);
+  assert.deepEqual(inferReferenceRoles('IMG_4821.png'), []);
+  assert.equal(inferReferenceSourceType('Municipal archive engraving'), 'research');
+  assert.equal(inferReferenceSourceType('camera-roll-photo.jpg'), 'imported');
+});
+
+test('filters the library by role, research provenance, or missing classification', () => {
+  const wardrobeCharacter: Pick<StoryReference, 'roles' | 'sourceType'> = { roles: ['character', 'wardrobe'], sourceType: 'generated' };
+  const archivePlate: Pick<StoryReference, 'roles' | 'sourceType'> = { roles: [], sourceType: 'research' };
+  const promotedFrame: Pick<StoryReference, 'roles' | 'sourceType'> = { roles: [], sourceType: 'generated' };
+
+  assert.equal(referenceMatchesFilter(wardrobeCharacter, 'all'), true);
+  assert.equal(referenceMatchesFilter(wardrobeCharacter, 'wardrobe'), true);
+  assert.equal(referenceMatchesFilter(wardrobeCharacter, 'look'), false);
+  assert.equal(referenceMatchesFilter(wardrobeCharacter, 'unclassified'), false);
+  assert.equal(referenceMatchesFilter(archivePlate, 'research'), true);
+  assert.equal(referenceMatchesFilter(archivePlate, 'unclassified'), false);
+  assert.equal(referenceMatchesFilter(promotedFrame, 'unclassified'), true);
+  assert.equal(referenceMatchesFilter(promotedFrame, 'research'), false);
+  assert.equal(referenceMatchesFilter(undefined, 'character'), false);
+  assert.equal(referenceMatchesFilter(undefined, 'all'), true);
+  assert.equal(referenceRoleSummary(wardrobeCharacter), 'Character +1');
+  assert.equal(referenceRoleSummary(archivePlate), 'Research');
+  assert.equal(referenceRoleSummary(promotedFrame), 'Unclassified');
+});
+
+test('compiles role ownership and research provenance into the generation prompt', () => {
+  const project = normalizePersistedState(legacyState as never).projects[0];
+  const reference = {
+    ...project.references[0],
+    roles: ['character', 'wardrobe'] as const,
+    tags: ['Elias', '1857'],
+    sourceType: 'research' as const,
+    sourceTitle: 'Municipal Archives',
+  };
+  const prompt = composeStoryboardPrompt(project, project.shots[0], 0, [{ reference: reference as never, label: reference.name }]);
+
+  assert.match(prompt, /CHARACTER IDENTITY/);
+  assert.match(prompt, /WARDROBE/);
+  assert.match(prompt, /Tags: Elias, 1857/);
+  assert.match(prompt, /RESEARCH PROVENANCE \(Municipal Archives\)/);
+  assert.match(prompt, /Use each reference only for its labeled roles/);
+  assert.match(prompt, /Look and Composition references guide treatment and framing only/);
 });
 
 test('normalization is idempotent', () => {

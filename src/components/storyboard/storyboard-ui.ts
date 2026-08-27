@@ -3,7 +3,8 @@ import {
   getSelectedTake,
   type CameraAngle,
   type CameraMovement,
-  type ReferenceKind,
+  type ReferenceRole,
+  type ReferenceSourceType,
   type ShotSize,
   type StoryboardAspect,
   type StoryboardPanelRole,
@@ -19,11 +20,18 @@ export const ASPECTS: Array<{ value: StoryboardAspect; label: string }> = [
   { value: 'portrait_16_9', label: '9:16' },
 ];
 
-export const REFERENCE_KINDS: Array<{ value: ReferenceKind; label: string }> = [
+export const REFERENCE_ROLES: Array<{ value: ReferenceRole; label: string }> = [
   { value: 'character', label: 'Character' },
+  { value: 'wardrobe', label: 'Wardrobe' },
   { value: 'location', label: 'Location' },
-  { value: 'object', label: 'Object' },
-  { value: 'style', label: 'Style' },
+  { value: 'prop', label: 'Prop' },
+  { value: 'look', label: 'Look' },
+  { value: 'composition', label: 'Composition' },
+];
+
+export const REFERENCE_SOURCE_TYPES: Array<{ value: ReferenceSourceType; label: string }> = [
+  { value: 'imported', label: 'Imported' },
+  { value: 'generated', label: 'Generated' },
   { value: 'research', label: 'Research' },
 ];
 

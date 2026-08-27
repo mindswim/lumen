@@ -8,7 +8,7 @@ A visual continuity studio for creating coherent storyboard sequences, selecting
 
 ### Coherent Storyboards
 - **Visual Story Projects** - Keep a premise, visual language, aspect ratio, and ordered shot sequence together
-- **Visual Bible** - Lock character, location, object, and style references for reuse across shots
+- **Visual Bible** - Route multi-role character, wardrobe, location, prop, look, and composition references to the shots that need them
 - **Shot Direction** - Separate the story beat, camera-visible frame, and strict continuity requirements
 - **Reference-Conditioned Generation** - Generate full frames with up to ten visual inputs through Seedream 4.5
 - **Draft / Final Tiers** - Iterate with low-cost FLUX.2 Flash, then promote important shots to Seedream 4.5

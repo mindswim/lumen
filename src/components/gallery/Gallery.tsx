@@ -21,13 +21,12 @@ import { TransformPanel } from '@/components/editor/TransformPanel';
 import { AIPanel } from '@/components/editor/AIPanel';
 import { StoryboardWorkspace } from '@/components/storyboard/StoryboardWorkspace';
 import { useStoryboardStore } from '@/lib/storyboard/store';
-import { inferReferenceKind, referenceDisplayName } from '@/lib/storyboard/reference';
+import { inferReferenceRoles, referenceDisplayName, referenceMatchesFilter, type ReferenceFilter } from '@/lib/storyboard/reference';
 import {
   REFERENCE_FILTERS,
   ReferenceEmptyState,
   ReferenceInspector,
   ReferenceThumbnail,
-  type ReferenceFilter,
 } from './ReferenceLibraryUI';
 
 type WorkspaceMode = 'storyboards' | 'references';
@@ -105,11 +104,12 @@ export function Gallery() {
   const normalizedQuery = query.trim().toLowerCase();
   const filteredImages = visibleImages.filter((image) => {
     const reference = referenceByImageId.get(image.id);
-    const matchesCategory = referenceFilter === 'all' || reference?.kind === referenceFilter;
+    const matchesCategory = referenceMatchesFilter(reference, referenceFilter);
     const matchesQuery = !normalizedQuery
       || image.fileName.toLowerCase().includes(normalizedQuery)
       || reference?.name.toLowerCase().includes(normalizedQuery)
-      || reference?.description.toLowerCase().includes(normalizedQuery);
+      || reference?.description.toLowerCase().includes(normalizedQuery)
+      || reference?.tags.some((tag) => tag.toLowerCase().includes(normalizedQuery));
     return matchesCategory && matchesQuery;
   });
   const getReferenceUsageCount = (referenceId: string) => {
@@ -133,7 +133,9 @@ export function Gallery() {
         addReference(currentProjectId, {
           imageId: image.id,
           name: referenceDisplayName(image.fileName),
-          kind: inferReferenceKind(image.fileName),
+          roles: inferReferenceRoles(image.fileName),
+          tags: [],
+          sourceType: 'imported',
           description: '',
         });
       }
@@ -152,7 +154,9 @@ export function Gallery() {
         addReference(currentProjectId, {
           imageId: image.id,
           name: referenceDisplayName(image.fileName),
-          kind: inferReferenceKind(image.fileName),
+          roles: inferReferenceRoles(image.fileName),
+          tags: [],
+          sourceType: 'imported',
           description: '',
         });
       }
@@ -164,7 +168,9 @@ export function Gallery() {
     addReference(currentProjectId, {
       imageId: image.id,
       name: referenceDisplayName(image.fileName),
-      kind: inferReferenceKind(prompt),
+      roles: inferReferenceRoles(prompt),
+      tags: [],
+      sourceType: 'generated',
       description: prompt,
       sourceTitle: image.sourceProvider,
       sourceUrl: image.sourceUrl,
@@ -315,22 +321,25 @@ export function Gallery() {
                   <p className="text-[9px] font-semibold uppercase tracking-[0.15em]" style={{ color: 'var(--editor-text-muted)' }}>Library</p>
                   <p className="mt-1 text-xs font-semibold">Project references</p>
                 </div>
-                <nav className="mt-4 space-y-1" aria-label="Reference categories">
+                <nav className="mt-4 space-y-1" aria-label="Reference filters">
                   {REFERENCE_FILTERS.map((filter) => {
                     const count = filter.value === 'all'
                       ? visibleImages.length
-                      : visibleImages.filter((image) => referenceByImageId.get(image.id)?.kind === filter.value).length;
+                      : visibleImages.filter((image) => referenceMatchesFilter(referenceByImageId.get(image.id), filter.value)).length;
                     return (
-                      <button
-                        key={filter.value}
-                        type="button"
-                        onClick={() => handleReferenceFilter(filter.value)}
-                        className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-[11px] font-medium transition hover:bg-neutral-100"
-                        style={{ backgroundColor: referenceFilter === filter.value ? 'var(--editor-bg-secondary)' : undefined }}
-                      >
-                        <span>{filter.label}</span>
-                        <span className="text-[9px] tabular-nums" style={{ color: 'var(--editor-text-muted)' }}>{count}</span>
-                      </button>
+                      <div key={filter.value} className={filter.value === 'research' ? 'pt-3' : undefined}>
+                        {filter.value === 'character' && <p className="mb-1 mt-3 px-2.5 text-[8px] font-semibold uppercase tracking-[0.14em]" style={{ color: 'var(--editor-text-muted)' }}>Used for</p>}
+                        {filter.value === 'research' && <p className="mb-1 border-t px-2.5 pt-3 text-[8px] font-semibold uppercase tracking-[0.14em]" style={{ borderColor: 'var(--editor-border)', color: 'var(--editor-text-muted)' }}>Source</p>}
+                        <button
+                          type="button"
+                          onClick={() => handleReferenceFilter(filter.value)}
+                          className="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-left text-[11px] font-medium transition hover:bg-neutral-100"
+                          style={{ backgroundColor: referenceFilter === filter.value ? 'var(--editor-bg-secondary)' : undefined }}
+                        >
+                          <span>{filter.label}</span>
+                          <span className="text-[9px] tabular-nums" style={{ color: 'var(--editor-text-muted)' }}>{count}</span>
+                        </button>
+                      </div>
                     );
                   })}
                 </nav>
@@ -362,7 +371,7 @@ export function Gallery() {
                       <div>
                         <p className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: 'var(--editor-text-muted)' }}>Reference assets</p>
                         <h1 className="mt-1 text-xl font-semibold">{activeProject?.title || 'Current project'}</h1>
-                        <p className="mt-1 text-[10px] leading-4" style={{ color: 'var(--editor-text-tertiary)' }}>Reusable visual facts for characters, places, props, looks, and research.</p>
+                        <p className="mt-1 text-[10px] leading-4" style={{ color: 'var(--editor-text-tertiary)' }}>Reusable visual facts for characters, wardrobe, sets, props, looks, and framing.</p>
                       </div>
                       <span className="rounded-full border px-3 py-1.5 text-[9px] font-medium" style={{ borderColor: 'var(--editor-border)' }}>{filteredImages.length} shown</span>
                     </div>

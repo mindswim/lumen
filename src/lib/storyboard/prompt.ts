@@ -1,8 +1,30 @@
-import type { StoryboardProject, StoryboardShot, StoryReference } from './store';
+import type { ReferenceRole, StoryboardProject, StoryboardShot, StoryReference } from './store';
 
 export interface PromptReference {
   reference: StoryReference | null;
   label: string;
+}
+
+const ROLE_DIRECTIONS: Record<ReferenceRole, string> = {
+  character: 'CHARACTER IDENTITY — preserve face, age, hair, build, and distinguishing features',
+  wardrobe: 'WARDROBE — preserve garment design, materials, colors, layers, and fit',
+  location: 'LOCATION / SET — preserve architecture, spatial layout, materials, and recurring set details',
+  prop: 'PROP — preserve design, scale, materials, condition, and established ownership',
+  look: 'LOOK — borrow lighting, color, texture, and rendering treatment only; do not copy its people or objects',
+  composition: 'COMPOSITION — borrow framing, blocking, perspective, and camera geometry only; do not copy identities or story content',
+};
+
+function describeReference(reference: StoryReference, index: number): string {
+  const role = reference.roles.length > 0
+    ? reference.roles.map((value) => ROLE_DIRECTIONS[value]).join('; ')
+    : 'GENERAL VISUAL REFERENCE — use only the details explicitly named in its direction';
+  const detail = reference.description.trim();
+  const tags = reference.tags.length > 0 ? ` Tags: ${reference.tags.join(', ')}.` : '';
+  const research = reference.sourceType === 'research'
+    ? ` RESEARCH PROVENANCE${reference.sourceTitle ? ` (${reference.sourceTitle})` : ''} — treat this image as visual evidence, not as recurring identity unless Character is explicitly selected.`
+    : '';
+
+  return `Image ${index + 1}: ${role} — ${reference.name}${detail ? `. ${detail}` : ''}.${tags}${research}`;
 }
 
 export function composeStoryboardPrompt(
@@ -14,14 +36,7 @@ export function composeStoryboardPrompt(
   const references = referenceInputs.length > 0
     ? referenceInputs.map((input, index) => {
       if (!input.reference) return `Image ${index + 1}: ${input.label}`;
-      const detail = input.reference.description.trim();
-        const source = input.reference.kind === 'research' && input.reference.sourceTitle
-          ? ` Source: ${input.reference.sourceTitle}.`
-          : '';
-        const role = input.reference.kind === 'research'
-          ? 'HISTORICAL RESEARCH reference — use as evidence for period-specific architecture, clothing, equipment, street texture, and material detail; do not copy an incidental person as a recurring character'
-          : `${input.reference.kind.toUpperCase()} reference`;
-        return `Image ${index + 1}: ${role} — ${input.reference.name}${detail ? `. ${detail}` : ''}${source}`;
+      return describeReference(input.reference, index);
       }).join('\n')
     : 'No image references are attached. Establish the design cleanly so this frame can become a future continuity reference.';
   const scene = project.scenes.find((candidate) => candidate.id === shot.sceneId);
@@ -50,9 +65,11 @@ export function composeStoryboardPrompt(
     references,
     '',
     'Continuity rules:',
-    '- Preserve the identity, age, facial structure, hair, wardrobe, props, and architecture established by the relevant reference images.',
-    '- Each labeled reference owns only its named subject. Do not transfer a prop, garment, face, or feature from one reference to another character.',
-    '- Research references provide historical evidence, not recurring identity. Do not reproduce an incidental face from archival imagery as a character.',
+    '- Use each reference only for its labeled roles. A reference may own several roles, and unlabeled attributes must not leak into the frame.',
+    '- Character, Wardrobe, Location / set, and Prop references establish recurring production details. Keep those details stable whenever that subject appears.',
+    '- Look and Composition references guide treatment and framing only. They do not donate faces, costumes, locations, props, or story events.',
+    '- Research provenance marks visual evidence, not a semantic role. Do not reproduce an incidental archival face as a character unless Character is explicitly selected.',
+    '- Do not transfer a prop, garment, face, or feature from one reference to another character.',
     '- Respect explicit quantities and ownership in the frame description. If one recurring object is requested, render exactly one and give it only to the named character.',
     '- The previous-shot image is continuity context only: retain the world and identities while creating the new composition described above.',
     '- Preserve the project visual language, but allow lighting and framing to change when the story beat requires it.',

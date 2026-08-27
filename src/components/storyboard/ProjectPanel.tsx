@@ -1,16 +1,16 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { BookOpen, ChevronDown, Clock3, ImagePlus, Layers3, Link2, LockKeyhole, MapPin, Trash2, Upload, X } from 'lucide-react';
+import { BookOpen, Clock3, ImagePlus, Layers3, Link2, LockKeyhole, MapPin, Trash2, Upload, X } from 'lucide-react';
 
 import { useGalleryStore } from '@/lib/gallery/store';
-import { inferReferenceKind, referenceDisplayName } from '@/lib/storyboard/reference';
-import { useStoryboardStore, type ReferenceKind, type StoryboardProject } from '@/lib/storyboard/store';
-import { FIELD, LABEL, REFERENCE_KINDS } from '@/components/storyboard/storyboard-ui';
+import { inferReferenceRoles, legacyReferenceKindToRoles, referenceDisplayName } from '@/lib/storyboard/reference';
+import { useStoryboardStore, type LegacyReferenceKind, type StoryboardProject } from '@/lib/storyboard/store';
+import { FIELD, LABEL, REFERENCE_ROLES } from '@/components/storyboard/storyboard-ui';
 
 interface GeneratedBundleReference {
   id: string;
-  kind: ReferenceKind;
+  kind: LegacyReferenceKind;
   name: string;
   url: string;
 }
@@ -100,7 +100,9 @@ export function ProjectPanel({ project, onClose }: { project: StoryboardProject;
         addReference(project.id, {
           imageId: image.id,
           name: referenceDisplayName(image.fileName),
-          kind: inferReferenceKind(image.fileName),
+          roles: inferReferenceRoles(image.fileName),
+          tags: [],
+          sourceType: 'imported',
           description: '',
         });
       }
@@ -121,7 +123,9 @@ export function ProjectPanel({ project, onClose }: { project: StoryboardProject;
       addReference(project.id, {
         imageId: image.id,
         name: researchName.trim(),
-        kind: 'research',
+        roles: [],
+        tags: [],
+        sourceType: 'research',
         description: '',
         sourceUrl: researchSourceUrl.trim(),
         sourceTitle: researchSourceTitle.trim(),
@@ -170,7 +174,9 @@ export function ProjectPanel({ project, onClose }: { project: StoryboardProject;
         const referenceId = addReference(project.id, {
           imageId: image.id,
           name: bundledReference.name,
-          kind: bundledReference.kind,
+          roles: legacyReferenceKindToRoles(bundledReference.kind),
+          tags: [],
+          sourceType: 'generated',
           description: '',
           sourceUrl: bundledReference.url,
           sourceTitle: bundle.generator,
@@ -488,7 +494,7 @@ export function ProjectPanel({ project, onClose }: { project: StoryboardProject;
       ) : libraryOpen ? (
         <div className="mt-3 space-y-3">
           <p className="rounded-lg bg-neutral-100 px-3 py-2 text-[9px] leading-4" style={{ color: 'var(--editor-text-tertiary)' }}>
-            Keep one recurring subject per reference. Assign reusable defaults to the scene, then add only exceptional references to an individual shot.
+            Keep one recurring subject or production asset per reference, then select every role it should carry. Assign reusable defaults to the scene and exceptions to an individual shot.
           </p>
           {project.references.map((reference) => {
             const image = images.find((candidate) => candidate.id === reference.imageId);
@@ -509,17 +515,30 @@ export function ProjectPanel({ project, onClose }: { project: StoryboardProject;
                       className="w-full bg-transparent text-xs font-semibold outline-none"
                       aria-label="Reference name"
                     />
-                    <div className="relative mt-1">
-                      <select
-                        value={reference.kind}
-                        onChange={(event) => updateReference(project.id, reference.id, { kind: event.target.value as ReferenceKind })}
-                        className="w-full appearance-none rounded-md border bg-transparent px-2 py-1 pr-6 text-[10px] outline-none"
-                        style={{ borderColor: 'var(--editor-border)', color: 'var(--editor-text-tertiary)' }}
-                        aria-label="Reference type"
-                      >
-                        {REFERENCE_KINDS.map((kind) => <option key={kind.value} value={kind.value}>{kind.label}</option>)}
-                      </select>
-                      <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-3 w-3 -translate-y-1/2" />
+                    <div className="mt-2 flex flex-wrap gap-1" aria-label="Reference roles">
+                      {REFERENCE_ROLES.map((role) => {
+                        const active = reference.roles.includes(role.value);
+                        return (
+                          <button
+                            key={role.value}
+                            type="button"
+                            aria-pressed={active}
+                            onClick={() => updateReference(project.id, reference.id, {
+                              roles: active
+                                ? reference.roles.filter((value) => value !== role.value)
+                                : [...reference.roles, role.value],
+                            })}
+                            className="rounded-full border px-1.5 py-0.5 text-[8px] font-medium"
+                            style={{
+                              borderColor: active ? 'var(--editor-text-primary)' : 'var(--editor-border)',
+                              backgroundColor: active ? 'var(--editor-text-primary)' : 'transparent',
+                              color: active ? 'var(--editor-bg-primary)' : 'var(--editor-text-tertiary)',
+                            }}
+                          >
+                            {role.label}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                   {confirmRemoveReferenceId === reference.id ? (
@@ -540,12 +559,12 @@ export function ProjectPanel({ project, onClose }: { project: StoryboardProject;
                 <input
                   value={reference.description}
                   onChange={(event) => updateReference(project.id, reference.id, { description: event.target.value })}
-                  placeholder="Describe only this subject: identity, outfit, or defining features…"
+                  placeholder="Describe the visual details this reference should contribute…"
                   className="mt-2 w-full bg-transparent text-[10px] leading-4 outline-none"
                   style={{ color: 'var(--editor-text-tertiary)' }}
                   aria-label={`Notes for ${reference.name}`}
                 />
-                {reference.kind === 'research' && (
+                {reference.sourceType === 'research' && (
                   <div className="mt-2 grid gap-1.5 border-t pt-2" style={{ borderColor: 'var(--editor-border)' }}>
                     <input
                       value={reference.sourceTitle ?? ''}

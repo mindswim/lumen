@@ -5,6 +5,7 @@ import { Check, ChevronDown, Layers3, LockKeyhole, Sparkles, Trash2, Upload, X }
 
 import type { StoryboardEditorContext } from '@/lib/editor/state';
 import { useGalleryStore } from '@/lib/gallery/store';
+import { referenceRoleSummary } from '@/lib/storyboard/reference';
 import {
   getSelectedTake,
   useStoryboardStore,
@@ -342,7 +343,7 @@ export function ShotInspector({
                 </div>
                 <div className="p-2">
                   <p className="truncate text-[10px] font-semibold">{reference.name}</p>
-                  <p className="mt-0.5 text-[9px] capitalize" style={{ color: 'var(--editor-text-muted)' }}>{inherited ? 'Scene default' : active ? 'This shot' : reference.kind}</p>
+                  <p className="mt-0.5 text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>{inherited ? 'Scene default' : active ? 'This shot' : referenceRoleSummary(reference)}</p>
                 </div>
                 <span
                   className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full border text-white"
@@ -470,8 +471,13 @@ export function ShotInspector({
                               addReference(project.id, {
                                 imageId: image.id,
                                 name: `${shot.title} reference`,
-                                kind: 'style',
-                                description: `Visual reference established in ${shot.title}. Rename it and classify it as a character, location, object, or style reference.`,
+                                roles: [],
+                                tags: [],
+                                sourceType: 'generated',
+                                description: `Visual reference established in ${shot.title}. Select only the roles this frame should carry into future images.`,
+                                sourceTitle: image.sourceProvider,
+                                sourceUrl: image.sourceUrl,
+                                rightsNote: 'Generated storyboard frame promoted to the project reference library.',
                               });
                             }}
                             disabled={isBibleReference}

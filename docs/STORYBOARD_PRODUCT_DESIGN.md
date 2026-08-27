@@ -169,10 +169,11 @@ Metropolitan uniform — Wardrobe
   Badge detail
 ```
 
-Reference category and provenance are separate dimensions:
+Reference roles, project vocabulary, and provenance are separate dimensions:
 
-- **Category**: character, location, wardrobe, prop, vehicle, look, or other.
-- **Origin**: uploaded, generated, web research, or imported from another system.
+- **Roles**: zero or more of character, wardrobe, location / set, prop, look, and composition. Multiple roles are valid when one image genuinely owns several visual facts.
+- **Tags**: free-form project vocabulary for named people, places, periods, sequences, departments, or any other retrieval need.
+- **Origin**: imported, generated, or research, with optional source URL, title, and rights note.
 
 Research describes where an image came from, not what the image depicts.
 
@@ -364,11 +365,12 @@ Lumen should therefore store a provider-neutral assignment with a semantic role:
 
 | Reference role | Creative meaning | Typical use |
 | --- | --- | --- |
-| Subject identity | Keep a person, creature, vehicle, or key object recognizable. | Character or hero prop continuity. |
-| Wardrobe or prop | Carry a specific worn or handled item. | A uniform used only in selected scenes. |
-| Environment | Establish a recurring location or set. | The same office from different angles. |
-| Look or style | Guide palette, texture, medium, lighting language, or period treatment. | A storyboard-wide look profile. |
-| Composition or blocking | Guide placement, pose, eyeline, screen direction, or camera composition. | A sketch, diagram, or prior composition. |
+| Character | Keep a person or creature recognizable. | Face, age, hair, build, and distinguishing features. |
+| Wardrobe | Carry a specific worn item or costume design. | A uniform used only in selected scenes. |
+| Location / set | Establish recurring architecture and spatial facts. | The same office from different angles. |
+| Prop | Preserve a handled or hero object and its ownership. | A badge, satchel, vehicle, or weapon. |
+| Look | Guide palette, texture, medium, lighting language, or period treatment. | A storyboard-wide look profile. |
+| Composition | Guide placement, pose, eyeline, screen direction, or camera geometry. | A sketch, diagram, or prior composition. |
 | Continuity source | Preserve relevant facts from an existing panel without inheriting everything in it. | Match wardrobe and time of day across non-adjacent shots. |
 | Start or end frame | Anchor a video generation or transition. | Later image-to-video workflows. |
 
@@ -515,7 +517,7 @@ Current code seams make this feasible without replacing the application:
 | `src/components/storyboard/StoryboardWorkspace.tsx` | Keep as the state-owning shell first. Extract its existing project panel, board, shot card, review stage, and inspector into focused components; then add Shot list and Timing views against the same props. |
 | `src/lib/storyboard/store.ts` | Preserve the Zustand store and server persistence. Add a domain adapter and versioned migrations before changing persisted shapes. |
 | `src/lib/storyboard/prompt.ts` | Evolve from one compiled prompt function into provider-neutral direction compilation plus small provider adapters. Keep compiled prompts inspectable. |
-| `src/lib/storyboard/reference.ts` | Expand reference inference and display helpers into category, origin, assignment-role, and inheritance utilities. |
+| `src/lib/storyboard/reference.ts` | Holds role and provenance inference, labels, and library filter helpers as of schema v5. Extend with assignment-role and inheritance utilities. |
 | `src/lib/storage/shared-workspace.ts` | Keep as the client boundary for canonical shared data; UI components should not call workspace routes directly. |
 | `src/lib/storage/local-workspace-server.ts` | Preserve the local server-backed project and asset authority; add schema-aware reads and migrations without moving data back into a browser-only store. |
 | `src/components/editor/*` | Keep the editor independent. Open the selected panel version as an edit source and save the finished result as a new version. |
@@ -529,7 +531,7 @@ Introduce additive schema changes behind adapters:
 - create one default storyboard for existing projects;
 - create one default panel for each existing shot;
 - map existing `takes` to panel versions and `selectedTakeId` to selected version;
-- split reference `category` from `origin`, migrating the current `research` kind into the correct origin;
+- split reference `category` from `origin` — implemented in schema v5 as multi-select roles, free-form tags, and `sourceType` provenance, with the legacy `research` kind migrated to provenance;
 - allow a reference entity to hold multiple visual assets while retaining the current primary image;
 - store reference scope and semantic assignment role;
 - preserve old serialized projects and migrate on load with a schema version.

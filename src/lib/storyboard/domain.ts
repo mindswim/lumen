@@ -1,10 +1,62 @@
 import type {
+  LegacyReferenceKind,
   PersistedStoryboardState,
+  ReferenceRole,
+  ReferenceSourceType,
   StoryboardPanelRole,
   StoryboardProject,
+  StoryReference,
   StoryboardShot,
   StoryboardTake,
 } from './types.ts';
+
+const REFERENCE_ROLES = new Set<ReferenceRole>(['character', 'wardrobe', 'location', 'prop', 'look', 'composition']);
+const REFERENCE_SOURCE_TYPES = new Set<ReferenceSourceType>(['generated', 'imported', 'research']);
+
+type LegacyStoryReference = Partial<StoryReference> & Pick<StoryReference, 'id' | 'imageId' | 'name'> & {
+  kind?: LegacyReferenceKind;
+};
+
+function uniqueStrings(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  return Array.from(new Set(values
+    .filter((value): value is string => typeof value === 'string')
+    .map((value) => value.trim())
+    .filter(Boolean)));
+}
+
+function legacyReferenceRoles(kind: LegacyReferenceKind | undefined): ReferenceRole[] {
+  if (kind === 'character') return ['character'];
+  if (kind === 'location') return ['location'];
+  if (kind === 'object') return ['prop'];
+  if (kind === 'style') return ['look'];
+  return [];
+}
+
+function migrateReference(reference: LegacyStoryReference): StoryReference {
+  const suppliedRoles = uniqueStrings(reference.roles).filter((role): role is ReferenceRole => REFERENCE_ROLES.has(role as ReferenceRole));
+  const sourceType = reference.sourceType && REFERENCE_SOURCE_TYPES.has(reference.sourceType)
+    ? reference.sourceType
+    : reference.kind === 'research'
+      ? 'research'
+      : /ai[- ]generated/i.test(reference.rightsNote ?? '')
+        ? 'generated'
+        : 'imported';
+
+  return {
+    id: reference.id,
+    imageId: reference.imageId,
+    name: reference.name,
+    roles: suppliedRoles.length > 0 ? suppliedRoles : legacyReferenceRoles(reference.kind),
+    tags: uniqueStrings(reference.tags),
+    sourceType,
+    description: reference.description ?? '',
+    ...(reference.sourceUrl ? { sourceUrl: reference.sourceUrl } : {}),
+    ...(reference.sourceTitle ? { sourceTitle: reference.sourceTitle } : {}),
+    ...(reference.rightsNote ? { rightsNote: reference.rightsNote } : {}),
+    createdAt: reference.createdAt ?? Date.now(),
+  };
+}
 
 export function getSelectedTake(shot: StoryboardShot | undefined, panelRole: StoryboardPanelRole = 'start'): StoryboardTake | null {
   const selectedTakeId = panelRole === 'start'
@@ -83,7 +135,7 @@ export function migrateProject(project: Partial<StoryboardProject> & Pick<Storyb
     visualDirection: project.visualDirection ?? '',
     aspect: project.aspect ?? 'landscape_16_9',
     renderTier: project.renderTier ?? 'draft',
-    references: project.references ?? [],
+    references: ((project.references ?? []) as LegacyStoryReference[]).map(migrateReference),
     scenes: existingScenes.map((scene, index) => ({
       id: scene.id ?? `scene-${project.id}-${index + 1}`,
       title: scene.title || `Scene ${index + 1}`,
@@ -142,5 +194,5 @@ export function normalizePersistedState(value: Partial<PersistedStoryboardState>
     ? value?.selectedShotId ?? null
     : activeProject?.shots[0]?.id ?? null;
 
-  return { version: 4, projects, activeProjectId, selectedShotId };
+  return { version: 5, projects, activeProjectId, selectedShotId };
 }

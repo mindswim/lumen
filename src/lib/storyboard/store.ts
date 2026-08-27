@@ -39,6 +39,9 @@ interface CreateProjectInput {
   aspect: StoryboardAspect;
 }
 
+type CreateReferenceInput = Omit<StoryReference, 'id' | 'createdAt' | 'roles' | 'tags' | 'sourceType'>
+  & Partial<Pick<StoryReference, 'roles' | 'tags' | 'sourceType'>>;
+
 interface StoryboardStore {
   projects: StoryboardProject[];
   activeProjectId: string | null;
@@ -53,8 +56,8 @@ interface StoryboardStore {
   updateProject: (id: string, changes: Partial<Pick<StoryboardProject, 'title' | 'logline' | 'visualDirection' | 'aspect' | 'renderTier'>>) => void;
   deleteProject: (id: string) => void;
   setActiveProject: (id: string) => void;
-  addReference: (projectId: string, reference: Omit<StoryReference, 'id' | 'createdAt'>) => string;
-  updateReference: (projectId: string, referenceId: string, changes: Partial<Pick<StoryReference, 'name' | 'kind' | 'description' | 'sourceUrl' | 'sourceTitle' | 'rightsNote'>>) => void;
+  addReference: (projectId: string, reference: CreateReferenceInput) => string;
+  updateReference: (projectId: string, referenceId: string, changes: Partial<Pick<StoryReference, 'name' | 'roles' | 'tags' | 'sourceType' | 'description' | 'sourceUrl' | 'sourceTitle' | 'rightsNote'>>) => void;
   removeReference: (projectId: string, referenceId: string) => void;
   addScene: (projectId: string) => string;
   updateScene: (projectId: string, sceneId: string, changes: Partial<Pick<StoryboardScene, 'title' | 'summary' | 'location' | 'timeOfDay' | 'referenceIds'>>) => void;
@@ -132,7 +135,7 @@ function readLegacyState(): PersistedStoryboardState | null {
 
 function persistedSnapshot(state: Pick<StoryboardStore, 'projects' | 'activeProjectId' | 'selectedShotId'>): PersistedStoryboardState {
   return {
-    version: 4,
+    version: 5,
     projects: state.projects,
     activeProjectId: state.activeProjectId,
     selectedShotId: state.selectedShotId,
@@ -225,9 +228,17 @@ export const useStoryboardStore = create<StoryboardStore>()(
 
       addReference: (projectId, reference) => {
         const referenceId = id('ref');
+        const nextReference: StoryReference = {
+          ...reference,
+          roles: reference.roles ?? [],
+          tags: reference.tags ?? [],
+          sourceType: reference.sourceType ?? 'imported',
+          id: referenceId,
+          createdAt: Date.now(),
+        };
         set((state) => ({
           projects: state.projects.map((project) => project.id === projectId
-            ? { ...project, references: [...project.references, { ...reference, id: referenceId, createdAt: Date.now() }], updatedAt: Date.now() }
+            ? { ...project, references: [...project.references, nextReference], updatedAt: Date.now() }
             : project),
         }));
         return referenceId;

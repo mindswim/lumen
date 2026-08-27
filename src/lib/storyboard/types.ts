@@ -1,5 +1,7 @@
 export type StoryboardAspect = 'landscape_16_9' | 'landscape_4_3' | 'portrait_16_9';
-export type ReferenceKind = 'character' | 'location' | 'object' | 'style' | 'research';
+export type LegacyReferenceKind = 'character' | 'location' | 'object' | 'style' | 'research';
+export type ReferenceRole = 'character' | 'wardrobe' | 'location' | 'prop' | 'look' | 'composition';
+export type ReferenceSourceType = 'generated' | 'imported' | 'research';
 export type StoryboardRenderTier = 'draft' | 'final';
 export type StoryboardPanelRole = 'start' | 'middle' | 'end';
 export type ShotSize = 'unspecified' | 'extreme-wide' | 'wide' | 'medium-wide' | 'medium' | 'medium-close-up' | 'close-up' | 'extreme-close-up';
@@ -11,7 +13,12 @@ export interface StoryReference {
   id: string;
   imageId: string;
   name: string;
-  kind: ReferenceKind;
+  /** What visual information this image is allowed to contribute to a generation. */
+  roles: ReferenceRole[];
+  /** Flexible project vocabulary for people, places, periods, scenes, or any other grouping. */
+  tags: string[];
+  /** Where the asset came from. This is intentionally separate from its generation role. */
+  sourceType: ReferenceSourceType;
   description: string;
   sourceUrl?: string;
   sourceTitle?: string;
@@ -81,7 +88,7 @@ export interface StoryboardProject {
 }
 
 export interface PersistedStoryboardState {
-  version: 4;
+  version: 5;
   projects: StoryboardProject[];
   activeProjectId: string | null;
   selectedShotId: string | null;

@@ -32,8 +32,8 @@ The production transition, structural extraction, and reliability pass are imple
 - the Board keeps images primary and groups the real stored shots by scene;
 - Shot list is a structured table over those same shots, with panel, scene, action, framing, movement, duration, and selected-version state;
 - Timing is a working lightweight animatic preview with play/pause, accurate elapsed time, scrubbing, shot seeking, dialogue/voice-over display, and optional within-shot panel playback;
-- the References workspace is project-scoped, categorized, searchable, and built from production reference records rather than all gallery images;
-- selecting a reference opens a production-asset inspector with editable category/direction, provenance, and inherited/direct shot usage;
+- the References workspace is project-scoped, searchable by name/direction/tag, filterable by production role or research provenance, and built from production reference records rather than all gallery images;
+- selecting a reference opens a production-asset inspector with editable multi-role usage, free-form tags, direction, provenance, and inherited/direct shot usage;
 - reference-library presentation is extracted from the gallery shell as an image-first contact sheet: full-resolution assets, consistent uncropped frames, compact captions, valid accessible selection semantics, and descriptive metadata reserved for the inspector. Bulk removal requires an explicit checkpoint before detaching project references and cleaning up only truly orphaned image records;
 - image generation moved out of the long inspector form into an explicit generation plan. It can target the current panel, the current scene, or every shot missing a Start panel; shows the exact references and validation state for each target; displays a provider-based cost estimate; keeps successful results if another target fails; and retries only eligible failed targets;
 - a shot can optionally expose Start, Middle, and End panels. Each enabled panel has its own direction, selected version, versions, comparison action, and generation target; one-panel shots remain the default;
@@ -48,7 +48,7 @@ The production transition, structural extraction, and reliability pass are imple
 - the unified workspace toolbar now deliberately wraps its view switcher below the project and action rows at narrow breakpoints instead of depending on accidental overflow;
 - visible **Approved** language is replaced with **Selected**, decorative green approval treatment is removed, and the fake continuity score/view is gone.
 
-The refactor deliberately preserves the shared-workspace APIs, generated Police Riot assets, image editor, and generation API. The storyboard store advances from schema v3 to v4; hydration migrates every existing take and selected version to the Start panel and writes the normalized project back to shared storage. `/storyboard-prototype` remains only as a design fixture; `/` is the real implementation.
+The refactor deliberately preserves the shared-workspace APIs, generated Police Riot assets, image editor, and generation API. The storyboard store is now schema v5. Hydration first migrates legacy takes and selected versions to the Start panel, then migrates single reference kinds into multi-role references with separate provenance and tags. The normalized project is written back to shared storage. `/storyboard-prototype` remains only as a design fixture; `/` is the real implementation.
 
 ## Prototype Source
 
@@ -154,7 +154,7 @@ Implemented for the current panel, current scene, and all shots missing Start pa
 
 ### Semantic reference routing and inheritance
 
-Production assignment is interactive at scene and shot scope, inheritance is visible, and generation resolves only the active scene and shot assignments with duplicate removal. Previous-shot imagery is included only when the shot explicitly opts into continuous action and both shots are in the same scene. Middle and End panels instead use the preceding selected panel inside the same shot. Provider-capability mapping and true panel-local reference assignment remain later refinements.
+Production assignment is interactive at scene and shot scope, inheritance is visible, and generation resolves only the active scene and shot assignments with duplicate removal. Each asset can now carry any combination of **Character**, **Wardrobe**, **Location / set**, **Prop**, **Look**, and **Composition** roles. Prompt compilation tells the provider exactly which attributes each role may contribute; Look and Composition explicitly cannot donate people or story content. **Research** is provenance rather than a role and can coexist with any role. Previous-shot imagery is included only when the shot explicitly opts into continuous action and both shots are in the same scene. Middle and End panels instead use the preceding selected panel inside the same shot. Provider-capability mapping and true panel-local reference assignment remain later refinements.
 
 ### Evidence-based continuity review
 
@@ -197,29 +197,31 @@ The repository contains calibration scripts and the complete Police Riot image b
 
 The merge-blocking refactor is complete. Continue with product validation rather than another shell rewrite:
 
-1. Use one real project to generate a Start/Middle/End shot, compare alternatives, finish one version in the editor, scrub Timing, and export a handoff. Capture friction before adding hierarchy or metadata.
-2. Add arbitrary multi-shot selection from Board or Shot list only if scene/missing-start generation proves insufficient. Reuse the existing target planner and retry state.
-3. Add direct manipulation for duplicate/reorder, practical keyboard shortcuts, and denser 30–50-shot board modes before adding more form fields.
-4. Decide whether one project needs multiple storyboards and whether Scene should stay fixed terminology. Treat either decision as a product choice and a separate schema migration.
-5. Add an evidence-based continuity review that names a concrete issue and affected shots. Do not add a decorative score or generic green approval state.
-6. Add audio tracks, waveform display, and rendered animatic export only after the current timing model proves useful in a real storyboard-to-video workflow.
-7. Add cloud sync, collaboration, or the documentary-app integration only after the local project model and export contracts settle.
+1. Run a small paid reference-consistency benchmark across the current FAL models and OpenAI `gpt-image-2`: the same character + wardrobe + location inputs across wide, medium, close-up, and action shots. Record identity, role adherence, editability, latency, and cost before changing routing. Note that `gpt-image-2` processes every image input at high fidelity automatically and rejects `input_fidelity`, and that its pricing is per token rather than per image.
+2. Use one real project to generate a Start/Middle/End shot, compare alternatives, finish one version in the editor, scrub Timing, and export a handoff. Capture friction before adding hierarchy or metadata.
+3. Add arbitrary multi-shot selection from Board or Shot list only if scene/missing-start generation proves insufficient. Reuse the existing target planner and retry state.
+4. Add direct manipulation for duplicate/reorder, practical keyboard shortcuts, and denser 30–50-shot board modes before adding more form fields.
+5. Decide whether one project needs multiple storyboards and whether Scene should stay fixed terminology. Treat either decision as a product choice and a separate schema migration.
+6. Add an evidence-based continuity review that names a concrete issue and affected shots. Do not add a decorative score or generic green approval state.
+7. Add audio tracks, waveform display, and rendered animatic export only after the current timing model proves useful in a real storyboard-to-video workflow.
+8. Add cloud sync, collaboration, or the documentary-app integration only after the local project model and export contracts settle.
 
 ## Validation
 
 - `npm run lint`
-- `npm run test` — 11 passing tests covering migration/idempotence, guarded selection by panel, reference-removal cascades, scoped/deduplicated references, previous-shot opt-in, within-shot prior panels, and panel-specific prompt compilation
+- `npm run test` — 16 passing tests covering migration/idempotence, reference-role/provenance migration and inference, library filtering by role, research provenance, and unclassified state, role-aware prompt compilation, guarded selection by panel, reference-removal cascades, scoped/deduplicated references, previous-shot opt-in, within-shot prior panels, and panel-specific prompt compilation
 - `npm run build`
 - production build includes `/`, `/editor`, `/storyboard-prototype`, and `/storyboard-print`
-- browser QA used a production server pointed at an isolated copy of `.lumen/`; the real workspace was not mutated
+- earlier browser passes used a production server pointed at an isolated copy of `.lumen/`. The schema-v5 pass ran against the real workspace and migrated `storyboards.json` in place; a copy of the migrated file was kept beside it as `.lumen/storyboards.backup-2026-08-27.json`
 - Board, Shot list, Timing, animatic play/pause, project switching, project-scoped References, the shot inspector, optional Middle panel, active-panel continuity, the generation review, tier pricing, and deletion confirmation were exercised
 - a selected storyboard version was opened in `/editor`, given a preset, and saved. The result was a second selected take with `sourceTakeId`/`sourceImageId`; the original gallery image retained its zeroed edit state. The new version and project selection survived a production-server restart
 - the print route rendered the requested project, showed missing panels explicitly, respected the project aspect class, and returned **Storyboard not found** for an invalid explicit project id
 - the final browser pass recorded no application console errors
 - the finishing browser pass verified the outline settings action, project-scoped reference library, accessible selection state, explicit reference-removal checkpoint, and zero desktop page overflow without mutating the workspace
+- the schema-v5 browser pass verified migrated project data, role/source filter counts, image-first captions, multi-role controls, tags, and editable provenance in the production reference inspector
 - automated narrow-screen visual QA remains outstanding because the browser controller reported success setting a mobile viewport while the page stayed at 1280×720; responsive behavior was reviewed statically and the temporary override was reset
 
-## Schema v4 Notes
+## Schema v5 Notes
 
 - `StoryboardShot.panelRoles` stores enabled Start/Middle/End panels. Start is mandatory.
 - `StoryboardShot.panelDirections` stores optional direction specific to Middle or End while `prompt` remains shared shot direction.
@@ -228,6 +230,12 @@ The merge-blocking refactor is complete. Continue with product validation rather
 - `StoryboardTake.sourceTakeId` and `sourceImageId` record editor-derived provenance without changing the source take.
 - Existing v3 takes and selection migrate to Start. Migration is idempotent and persists through the existing shared-workspace endpoint after hydration.
 - Generation for a Middle or End panel adds the preceding selected same-shot panel as continuity context. Generation for Start uses only assigned project/scene/shot references unless the user explicitly enables the previous-panel option.
+- `StoryReference.roles` stores zero or more semantic generation roles: Character, Wardrobe, Location / set, Prop, Look, and Composition. Zero roles means a general reference whose direction must explicitly name the usable details.
+- `StoryReference.sourceType` independently records Generated, Imported, or Research provenance. Legacy `research` kinds migrate to research provenance with no assumed semantic role.
+- `StoryReference.tags` stores deduplicated free-form project vocabulary. Role filters remain stable product semantics; tags are not promoted into hardcoded global categories.
+- Legacy Character, Location, Object, and Style kinds migrate to Character, Location / set, Prop, and Look roles respectively. Generated legacy assets are recognized from their existing AI-generation rights note. IDs, assignments, images, source fields, and ordering remain unchanged.
+- Prompt compilation is role-aware: production roles preserve their owned attributes while Look and Composition are prevented from donating identity or story content.
+- Roles are inferred from file names only for uploaded images. Research imports and promoted storyboard frames start with no roles. The library's **Unclassified** filter lists non-research references with no roles so they can be classified deliberately.
 
 ## Guardrails for the Next Agent
 

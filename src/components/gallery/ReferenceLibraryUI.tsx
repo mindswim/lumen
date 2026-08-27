@@ -3,31 +3,29 @@
 import { ArrowUpRight, Images, Sparkles, Upload, X } from 'lucide-react';
 
 import type { GalleryImage } from '@/lib/gallery/store';
+import { referenceRoleSummary, type ReferenceFilter } from '@/lib/storyboard/reference';
 import {
   useStoryboardStore,
-  type ReferenceKind,
   type StoryReference,
   type StoryboardProject,
 } from '@/lib/storyboard/store';
-
-export type ReferenceFilter = 'all' | ReferenceKind;
+import { REFERENCE_ROLES, REFERENCE_SOURCE_TYPES } from '@/components/storyboard/storyboard-ui';
 
 export const REFERENCE_FILTERS: Array<{ value: ReferenceFilter; label: string }> = [
   { value: 'all', label: 'All references' },
   { value: 'character', label: 'Characters' },
+  { value: 'wardrobe', label: 'Wardrobe' },
   { value: 'location', label: 'Locations' },
-  { value: 'object', label: 'Props' },
-  { value: 'style', label: 'Looks' },
+  { value: 'prop', label: 'Props' },
+  { value: 'look', label: 'Looks' },
+  { value: 'composition', label: 'Composition' },
+  { value: 'unclassified', label: 'Unclassified' },
   { value: 'research', label: 'Research' },
 ];
 
-const REFERENCE_KIND_LABELS: Record<ReferenceKind, string> = {
-  character: 'Character',
-  location: 'Location',
-  object: 'Prop',
-  style: 'Look',
-  research: 'Research',
-};
+function parseTags(value: string): string[] {
+  return Array.from(new Set(value.split(',').map((tag) => tag.trim()).filter(Boolean)));
+}
 
 export function ReferenceThumbnail({
   image,
@@ -47,7 +45,7 @@ export function ReferenceThumbnail({
   usageCount: number;
 }) {
   const displayName = reference?.name || image.fileName;
-  const kindLabel = reference ? REFERENCE_KIND_LABELS[reference.kind] : 'Reference';
+  const roleLabel = reference ? referenceRoleSummary(reference) : 'Reference';
 
   return (
     <article className="group min-w-0">
@@ -88,7 +86,7 @@ export function ReferenceThumbnail({
       <div className="mt-2 min-w-0 px-0.5">
         <p className="truncate text-xs font-medium">{displayName}</p>
         <p className="mt-0.5 truncate text-[9px] uppercase tracking-[0.08em]" style={{ color: 'var(--editor-text-muted)' }}>
-          {kindLabel} · {usageCount === 0 ? 'Unused' : `${usageCount} shot${usageCount === 1 ? '' : 's'}`}
+          {roleLabel} · {usageCount === 0 ? 'Unused' : `${usageCount} shot${usageCount === 1 ? '' : 's'}`}
         </p>
       </div>
     </article>
@@ -147,13 +145,47 @@ export function ReferenceInspector({
             <span className="mb-1.5 block text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--editor-text-muted)' }}>Name</span>
             <input value={reference.name} onChange={(event) => updateReference(project.id, reference.id, { name: event.target.value })} className="w-full rounded-lg border bg-transparent px-3 py-2.5 text-xs font-medium outline-none focus:border-neutral-500" style={{ borderColor: 'var(--editor-border)' }} />
           </label>
+          <fieldset>
+            <legend className="mb-2 block text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--editor-text-muted)' }}>Used for</legend>
+            <div className="flex flex-wrap gap-1.5">
+              {REFERENCE_ROLES.map((role) => {
+                const active = reference.roles.includes(role.value);
+                return (
+                  <button
+                    key={role.value}
+                    type="button"
+                    aria-pressed={active}
+                    onClick={() => updateReference(project.id, reference.id, {
+                      roles: active
+                        ? reference.roles.filter((value) => value !== role.value)
+                        : [...reference.roles, role.value],
+                    })}
+                    className="rounded-full border px-2.5 py-1.5 text-[10px] font-medium transition-colors"
+                    style={{
+                      borderColor: active ? 'var(--editor-text-primary)' : 'var(--editor-border)',
+                      backgroundColor: active ? 'var(--editor-text-primary)' : 'transparent',
+                      color: active ? 'var(--editor-bg-primary)' : 'var(--editor-text-secondary)',
+                    }}
+                  >
+                    {role.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-[9px] leading-4" style={{ color: 'var(--editor-text-muted)' }}>Choose every visual job this image can perform. Leave all off for a general reference.</p>
+          </fieldset>
           <label className="block">
-            <span className="mb-1.5 block text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--editor-text-muted)' }}>Category</span>
-            <select value={reference.kind} onChange={(event) => updateReference(project.id, reference.id, { kind: event.target.value as ReferenceKind })} className="w-full rounded-lg border bg-transparent px-3 py-2.5 text-xs outline-none" style={{ borderColor: 'var(--editor-border)' }}>
-              {REFERENCE_FILTERS.filter((filter) => filter.value !== 'all').map((filter) => (
-                <option key={filter.value} value={filter.value}>{filter.label}</option>
-              ))}
-            </select>
+            <span className="mb-1.5 block text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--editor-text-muted)' }}>Tags</span>
+            <input
+              key={reference.id}
+              defaultValue={reference.tags.join(', ')}
+              onBlur={(event) => updateReference(project.id, reference.id, { tags: parseTags(event.target.value) })}
+              onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); }}
+              placeholder="Mara, 1857, precinct office"
+              className="w-full rounded-lg border bg-transparent px-3 py-2.5 text-xs outline-none focus:border-neutral-500"
+              style={{ borderColor: 'var(--editor-border)' }}
+            />
+            <span className="mt-1.5 block text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>Comma-separated and specific to this project.</span>
           </label>
           <label className="block">
             <span className="mb-1.5 block text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--editor-text-muted)' }}>Direction</span>
@@ -177,10 +209,26 @@ export function ReferenceInspector({
 
         <section className="border-t pt-5" style={{ borderColor: 'var(--editor-border)' }}>
           <p className="text-[9px] font-semibold uppercase tracking-[0.12em]" style={{ color: 'var(--editor-text-muted)' }}>Provenance</p>
-          <dl className="mt-3 space-y-2 text-[10px]">
-            <div className="flex justify-between gap-4"><dt style={{ color: 'var(--editor-text-muted)' }}>Source</dt><dd className="truncate text-right">{image.sourceProvider || reference.sourceTitle || 'Imported'}</dd></div>
-            {reference.rightsNote && <div className="flex justify-between gap-4"><dt style={{ color: 'var(--editor-text-muted)' }}>Rights</dt><dd className="max-w-[180px] text-right leading-4">{reference.rightsNote}</dd></div>}
-          </dl>
+          <div className="mt-3 space-y-3">
+            <label className="block">
+              <span className="mb-1.5 block text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>Source type</span>
+              <select value={reference.sourceType} onChange={(event) => updateReference(project.id, reference.id, { sourceType: event.target.value as StoryReference['sourceType'] })} className="w-full rounded-lg border bg-transparent px-3 py-2.5 text-xs outline-none" style={{ borderColor: 'var(--editor-border)' }}>
+                {REFERENCE_SOURCE_TYPES.map((source) => <option key={source.value} value={source.value}>{source.label}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>Source title</span>
+              <input value={reference.sourceTitle ?? ''} onChange={(event) => updateReference(project.id, reference.id, { sourceTitle: event.target.value })} placeholder={image.sourceProvider || 'Collection, model, or creator'} className="w-full rounded-lg border bg-transparent px-3 py-2.5 text-xs outline-none focus:border-neutral-500" style={{ borderColor: 'var(--editor-border)' }} />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>Source URL</span>
+              <input value={reference.sourceUrl ?? ''} onChange={(event) => updateReference(project.id, reference.id, { sourceUrl: event.target.value })} placeholder="https://…" className="w-full rounded-lg border bg-transparent px-3 py-2.5 text-xs outline-none focus:border-neutral-500" style={{ borderColor: 'var(--editor-border)' }} />
+            </label>
+            <label className="block">
+              <span className="mb-1.5 block text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>Rights / usage note</span>
+              <textarea value={reference.rightsNote ?? ''} onChange={(event) => updateReference(project.id, reference.id, { rightsNote: event.target.value })} rows={2} placeholder="License, archive credit, or internal-use note" className="w-full resize-none rounded-lg border bg-transparent px-3 py-2.5 text-xs leading-5 outline-none focus:border-neutral-500" style={{ borderColor: 'var(--editor-border)' }} />
+            </label>
+          </div>
         </section>
 
         <button type="button" onClick={() => onOpenImage(image.id)} className="flex w-full items-center justify-center gap-2 rounded-full bg-neutral-950 px-4 py-2.5 text-xs font-medium text-white">

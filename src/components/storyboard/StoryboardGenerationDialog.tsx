@@ -7,6 +7,7 @@ import { createAIImagePreview } from '@/lib/ai/image-preview';
 import { useGalleryStore, type GalleryImage } from '@/lib/gallery/store';
 import { composeStoryboardPrompt, type PromptReference } from '@/lib/storyboard/prompt';
 import { compilePanelPrompt, resolvePriorStoryboardTake, resolveShotReferenceIds } from '@/lib/storyboard/generation-plan';
+import { referenceRoleSummary } from '@/lib/storyboard/reference';
 import {
   getSelectedTake,
   useStoryboardStore,
@@ -308,7 +309,7 @@ export function StoryboardGenerationDialog({
                 {assignedReferences.map((reference) => {
                   const image = images.find((candidate) => candidate.id === reference.imageId);
                   const inherited = sceneReferenceIds.includes(reference.id);
-                  const role = reference.kind === 'character' ? 'Subject identity' : reference.kind === 'location' ? 'Environment' : reference.kind === 'object' ? 'Prop' : reference.kind === 'style' ? 'Look' : 'Research';
+                  const role = referenceRoleSummary(reference);
                   return (
                     <div key={reference.id} className="flex items-center gap-3 rounded-lg border p-2.5" style={{ borderColor: 'var(--editor-border)' }}>
                       <div className="h-12 w-16 shrink-0 overflow-hidden rounded-md bg-neutral-100">
