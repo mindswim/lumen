@@ -10,7 +10,7 @@ import {
 import { compilePanelPrompt, resolvePriorStoryboardTake, resolveShotReferenceIds } from '../src/lib/storyboard/generation-plan.ts';
 import { composeStoryboardPrompt } from '../src/lib/storyboard/prompt.ts';
 import { inferReferenceRoles, inferReferenceSourceType, referenceMatchesFilter, referenceRoleSummary } from '../src/lib/storyboard/reference.ts';
-import type { StoryReference } from '../src/lib/storyboard/types.ts';
+import type { ReferenceRole, StoryboardPanelRole, StoryReference } from '../src/lib/storyboard/types.ts';
 
 const legacyState = {
   version: 3,
@@ -177,12 +177,12 @@ test('compiles role ownership and research provenance into the generation prompt
   const project = normalizePersistedState(legacyState as never).projects[0];
   const reference = {
     ...project.references[0],
-    roles: ['character', 'wardrobe'] as const,
+    roles: ['character', 'wardrobe'] as ReferenceRole[],
     tags: ['Elias', '1857'],
     sourceType: 'research' as const,
     sourceTitle: 'Municipal Archives',
   };
-  const prompt = composeStoryboardPrompt(project, project.shots[0], 0, [{ reference: reference as never, label: reference.name }]);
+  const prompt = composeStoryboardPrompt(project, project.shots[0], 0, [{ reference, label: reference.name }]);
 
   assert.match(prompt, /CHARACTER IDENTITY/);
   assert.match(prompt, /WARDROBE/);
@@ -200,10 +200,10 @@ test('normalization is idempotent', () => {
 
 test('falls back to the first valid project and shot when persisted selection is stale', () => {
   const migrated = normalizePersistedState({
-    ...(legacyState as never),
+    ...legacyState,
     activeProjectId: 'missing-project',
     selectedShotId: 'missing-shot',
-  });
+  } as never);
   assert.equal(migrated.activeProjectId, 'project-1');
   assert.equal(migrated.selectedShotId, 'shot-1');
 });
@@ -211,7 +211,7 @@ test('falls back to the first valid project and shot when persisted selection is
 test('resolves selection independently for Start, Middle, and End panels', () => {
   const shot = {
     ...normalizePersistedState(legacyState as never).projects[0].shots[0],
-    panelRoles: ['start', 'middle', 'end'] as const,
+    panelRoles: ['start', 'middle', 'end'] as StoryboardPanelRole[],
     takes: [
       { id: 'start-take', imageId: 'start-image', prompt: '', referenceIds: [], model: 'test', seed: null, panelRole: 'start' as const, createdAt: 1 },
       { id: 'middle-take', imageId: 'middle-image', prompt: '', referenceIds: [], model: 'test', seed: null, panelRole: 'middle' as const, createdAt: 2 },
@@ -238,7 +238,7 @@ test('selects a take only for its own panel and ignores stale take IDs', () => {
   const middleTake = { ...startTake, id: 'middle-take', imageId: 'middle-image', panelRole: 'middle' as const };
   const shot = {
     ...project.shots[0],
-    panelRoles: ['start', 'middle'] as const,
+    panelRoles: ['start', 'middle'] as StoryboardPanelRole[],
     takes: [startTake, middleTake],
     selectedTakeIds: { start: startTake.id },
   };
@@ -295,7 +295,7 @@ test('uses earlier panels inside a shot without turning them into new cuts', () 
   const middleTake = { ...startTake, id: 'middle-take', imageId: 'middle-image', panelRole: 'middle' as const };
   const shot = {
     ...project.shots[0],
-    panelRoles: ['start', 'middle', 'end'] as const,
+    panelRoles: ['start', 'middle', 'end'] as StoryboardPanelRole[],
     takes: [startTake, middleTake],
     selectedTakeIds: { start: startTake.id, middle: middleTake.id },
   };
