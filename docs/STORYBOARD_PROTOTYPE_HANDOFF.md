@@ -211,6 +211,7 @@ The merge-blocking refactor is complete. Continue with product validation rather
 - `npm run lint`
 - `npm run test` — 16 passing tests covering migration/idempotence, reference-role/provenance migration and inference, library filtering by role, research provenance, and unclassified state, role-aware prompt compilation, guarded selection by panel, reference-removal cascades, scoped/deduplicated references, previous-shot opt-in, within-shot prior panels, and panel-specific prompt compilation
 - `npm run build`
+- `npx tsc --noEmit` — clean across the repository, including the domain tests
 - production build includes `/`, `/editor`, `/storyboard-prototype`, and `/storyboard-print`
 - earlier browser passes used a production server pointed at an isolated copy of `.lumen/`. The schema-v5 pass ran against the real workspace and migrated `storyboards.json` in place; a copy of the migrated file was kept beside it as `.lumen/storyboards.backup-2026-08-27.json`
 - Board, Shot list, Timing, animatic play/pause, project switching, project-scoped References, the shot inspector, optional Middle panel, active-panel continuity, the generation review, tier pricing, and deletion confirmation were exercised
@@ -219,6 +220,7 @@ The merge-blocking refactor is complete. Continue with product validation rather
 - the final browser pass recorded no application console errors
 - the finishing browser pass verified the outline settings action, project-scoped reference library, accessible selection state, explicit reference-removal checkpoint, and zero desktop page overflow without mutating the workspace
 - the schema-v5 browser pass verified migrated project data, role/source filter counts, image-first captions, multi-role controls, tags, and editable provenance in the production reference inspector
+- the bundle-removal pass rebuilt the production server on a clean `.next`, confirmed `/api/workspace/bundles` returns 404, and re-verified the References library (Used for / Source filter groups, the Unclassified empty state, the reference inspector with role toggles, tags, and editable provenance) and the project settings panel without its Imports control, with zero console errors or warnings
 - automated narrow-screen visual QA remains outstanding because the browser controller reported success setting a mobile viewport while the page stayed at 1280×720; responsive behavior was reviewed statically and the temporary override was reset
 
 ## Schema v5 Notes
