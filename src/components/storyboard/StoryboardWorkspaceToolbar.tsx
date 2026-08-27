@@ -169,6 +169,7 @@ export function StoryboardWorkspaceToolbar({
         <button
           type="button"
           onClick={onExport}
+          aria-label="Export storyboard"
           className="flex h-8 items-center gap-1.5 rounded-full border px-3 text-[10px] font-medium"
           style={{ borderColor: 'var(--editor-border)' }}
         >

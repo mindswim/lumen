@@ -89,9 +89,10 @@ interface ToolSidebarProps {
   onExport?: () => void;
   onAddPhotos?: () => void;
   onBack?: () => void;
+  backLabel?: string;
 }
 
-export function ToolSidebar({ mode, onExport, onAddPhotos, onBack }: ToolSidebarProps) {
+export function ToolSidebar({ mode, onExport, onAddPhotos, onBack, backLabel = 'Back to Library' }: ToolSidebarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [zoomMenuOpen, setZoomMenuOpen] = useState(false);
 
@@ -216,7 +217,7 @@ export function ToolSidebar({ mode, onExport, onAddPhotos, onBack }: ToolSidebar
           ) : (
             <ToolButton
               icon={<ArrowLeft className="w-5 h-5" />}
-              label="Back to Library"
+              label={backLabel}
               onClick={onBack}
             />
           )}

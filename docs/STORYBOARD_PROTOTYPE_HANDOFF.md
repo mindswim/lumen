@@ -17,7 +17,7 @@ Read [STORYBOARD_PRODUCT_DESIGN.md](./STORYBOARD_PRODUCT_DESIGN.md) for the rese
 | --- | --- | --- |
 | `/` | Working production workspace | Current gallery, storyboard, timing, references, storage, generation, and editor integration. This remains the canonical implementation. |
 | `/storyboard-prototype` | Static interactive prototype | Proposed information architecture and workspace shell. It uses representative Police Riot data and real images but does not read or write project state. |
-| `/editor` | Working production editor | Existing image-finishing surface that should remain independent and later save edits as new panel versions. |
+| `/editor` | Working production editor | Existing image-finishing surface. Storyboard-launched edits now save as a new panel version and preserve the source version. |
 | `/storyboard-print` | Working print surface | Project-specific storyboard layout used by the production Export dialog for printing or saving a PDF. |
 
 Do not mistake polished prototype interactions for production functionality. The prototype intentionally has no store, persistence, generation calls, mutations, or export behavior.
@@ -26,7 +26,7 @@ Do not mistake polished prototype interactions for production functionality. The
 
 Branch: `codex/storyboard-workspace-refactor`
 
-The production transition and the first director-workflow pass are now implemented on this branch:
+The production transition, structural extraction, and reliability pass are now implemented on this branch:
 
 - the prototype's two header rows are collapsed into one responsive workspace header;
 - Storyboards and References are project-level destinations; Board, Shot list, and Timing are views of the same storyboard data;
@@ -36,14 +36,18 @@ The production transition and the first director-workflow pass are now implement
 - Timing is a working lightweight animatic preview with play/pause, accurate elapsed time, scrubbing, shot seeking, dialogue/voice-over display, and optional within-shot panel playback;
 - the References workspace is project-scoped, categorized, searchable, and built from production reference records rather than all gallery images;
 - selecting a reference opens a production-asset inspector with editable category/direction, provenance, and inherited/direct shot usage;
-- image generation moved out of the long inspector form into an explicit generation plan. It can target the current panel, the current scene, or every shot missing a Start panel; shows the exact references and validation state for each target; and keeps successful results if another target fails;
+- image generation moved out of the long inspector form into an explicit generation plan. It can target the current panel, the current scene, or every shot missing a Start panel; shows the exact references and validation state for each target; displays a provider-based cost estimate; keeps successful results if another target fails; and retries only eligible failed targets;
 - a shot can optionally expose Start, Middle, and End panels. Each enabled panel has its own direction, selected version, versions, comparison action, and generation target; one-panel shots remain the default;
-- each generated or imported result is appended as a new take. Version comparison supports side-by-side and opacity overlay modes, with selection kept distinct from review approval; the finishing editor still needs to return edits as new takes rather than mutating a take's gallery asset;
+- each generated or imported result is appended as a new take. Version comparison supports side-by-side and opacity overlay modes, with selection kept distinct from review approval;
+- opening a storyboard version in the finishing editor carries exact project, shot, panel, and source-take context. Saving clones the gallery asset metadata, appends a provenance-linked `Lumen editor` take, selects it, and leaves the source take and source edit state unchanged;
 - the shot inspector remains the home for direction, reference assignment, timing, optional panels, imported images, and versions;
-- Export provides a printable/PDF board, high-resolution contact-sheet PNG, shot-list CSV, and portable project manifest;
+- Export provides a project-specific printable/PDF board, bounded high-resolution contact-sheet PNG, shot-list CSV, and portable project manifest. Missing panels are explicit and invalid project links do not silently fall back to another board;
+- shot and reference removal now require a deliberate inline confirmation;
+- schema normalization, selection behavior, scoped reference routing, prior-panel continuity, and panel prompt compilation have focused Node tests;
+- the former 2,466-line `StoryboardWorkspace.tsx` is now a roughly 200-line state-owning shell over focused board, toolbar, project, inspector, generation, dialog, and helper modules;
 - visible **Approved** language is replaced with **Selected**, decorative green approval treatment is removed, and the fake continuity score/view is gone.
 
-The refactor deliberately preserves the shared-workspace APIs, generated Police Riot assets, existing image editor, and generation API. The storyboard store advances from schema v3 to v4; hydration migrates every existing take and selected version to the Start panel and writes the normalized project back to shared storage. `/storyboard-prototype` remains as a design fixture; `/` is the real implementation to evaluate.
+The refactor deliberately preserves the shared-workspace APIs, generated Police Riot assets, image editor, and generation API. The storyboard store advances from schema v3 to v4; hydration migrates every existing take and selected version to the Start panel and writes the normalized project back to shared storage. `/storyboard-prototype` remains only as a design fixture; `/` is the real implementation.
 
 ## Prototype Source
 
@@ -63,7 +67,7 @@ The prototype currently demonstrates:
 - a lightweight animatic player and proportional shot strip;
 - responsive outline and inspector drawers.
 
-Validation completed at handoff:
+Prototype-era validation:
 
 - `npm run lint`
 - `npm run build`
@@ -94,21 +98,20 @@ The unified shell is now in production code. Further work should refine this imp
 
 ## Areas That Still Need Better Treatment
 
-These are thoughtful follow-ups, not all requirements for the first implementation pass.
+These are follow-up product decisions, not merge blockers for this refactor.
 
-### Header and navigation
+### Project and storyboard hierarchy
 
-- Collapse the two header rows.
-- Make the relationship among project, storyboard, current view, and References obvious without breadcrumb clutter.
-- Determine whether References is a persistent destination in the unified header or the root item in the left project outline.
-- Retain usable navigation when both sidebars are collapsed.
+- The current model intentionally remains one storyboard per project. The project selector therefore labels projects and does not pretend to be a storyboard selector.
+- Decide whether real use requires multiple boards per project before adding another hierarchy level. That decision should drive a separate schema migration, not a cosmetic dropdown.
+- References remains a project-level destination in the unified header; Board, Shot list, and Timing remain views over the active project storyboard.
 
 ### Inspector density
 
-- The production inspector is clearer but still risks becoming a vertical form.
+- The extracted production inspector is clearer but still risks becoming a vertical form.
 - Consider compact summary rows with focused edit modes rather than making every field permanently editable.
-- Versions now have a focused compare action; linked pan/zoom is not implemented yet.
-- Project, scene, shot, panel, and version selection states must never be ambiguous.
+- Versions have a focused compare action; linked pan/zoom is not implemented yet.
+- Active within-shot panel selection now survives inspector close/reopen for the session. Formal reviewer approval remains intentionally absent.
 
 ### Board density
 
@@ -118,7 +121,8 @@ These are thoughtful follow-ups, not all requirements for the first implementati
 
 ### Responsive behavior
 
-- The drawers work, but the narrow-screen header still needs deliberate prioritization.
+- The code keeps the outline and inspector in mobile sheets, but the final 2026-08-27 browser controller could not apply its requested mobile viewport. Perform one manual narrow-screen visual pass before calling mobile polished.
+- The narrow-screen header still needs deliberate prioritization on a physical small viewport.
 - Mobile should support review and light edits; dense shot-list and advanced generation planning can optimize for wider screens.
 
 ## Researched Patterns and Their Current Status
@@ -145,11 +149,11 @@ LTX Studio and AI storyboard products commonly turn an idea, outline, shot list,
 
 ### Multi-shot generation planning
 
-Implemented for the current panel, current scene, and all shots missing Start panels. Targets can be individually included or excluded; each row shows exact scoped references, provider-limit validation, run state, and isolated errors. Successful frames persist when another target fails. An arbitrary selection assembled directly from the Board or Shot list remains a later refinement. The compiled prompt remains derived output, not the core data model.
+Implemented for the current panel, current scene, and all shots missing Start panels. Targets can be individually included or excluded; each row shows exact scoped references, provider-limit validation, run state, isolated errors, and a payable-output estimate. Successful frames persist when another target fails, and **Retry failed** reruns only currently valid failed targets. An arbitrary selection assembled directly from the Board or Shot list remains a later refinement. The compiled prompt remains derived output, not the core data model.
 
 ### Semantic reference routing and inheritance
 
-The prototype displays roles such as Subject identity and Environment, but assignment is not interactive. Production needs semantic roles, project/group/shot/panel scope, visible inheritance, provider-capability mapping, and a guarantee that every project reference is not silently sent to every generation.
+Production assignment is interactive at scene and shot scope, inheritance is visible, and generation resolves only the active scene and shot assignments with duplicate removal. Previous-shot imagery is included only when the shot explicitly opts into continuous action and both shots are in the same scene. Middle and End panels instead use the preceding selected panel inside the same shot. Provider-capability mapping and true panel-local reference assignment remain later refinements.
 
 ### Evidence-based continuity review
 
@@ -177,32 +181,40 @@ Production now exports a printable/PDF storyboard, contact-sheet PNG, shot-list 
 
 ## Production Code to Preserve
 
-- `src/components/storyboard/StoryboardWorkspace.tsx` is the current state-owning storyboard implementation. It is large and should be extracted incrementally, not replaced wholesale.
-- `src/lib/storyboard/store.ts` contains the current Zustand domain and versioned persistence migration.
+- `src/components/storyboard/StoryboardWorkspace.tsx` is now the small state-owning composition shell. Keep domain work out of it and extend the focused components beside it.
+- `src/components/storyboard/StoryboardBoard.tsx`, `ShotInspector.tsx`, `ProjectPanel.tsx`, `StoryboardGenerationDialog.tsx`, `StoryboardWorkspaceToolbar.tsx`, and `StoryboardProjectDialogs.tsx` are the primary production UI seams created by the extraction.
+- `src/lib/storyboard/types.ts` is the canonical storyboard type surface; `domain.ts` contains pure normalization and selection behavior; `generation-plan.ts` contains pure reference/prior-panel/prompt planning; `store.ts` remains the Zustand mutation and persistence boundary.
 - `src/lib/storyboard/prompt.ts` composes current storyboard prompts and should evolve into provider-neutral direction compilation plus provider adapters.
 - `src/lib/storage/shared-workspace.ts` is the client boundary for shared local state.
 - `src/lib/storage/local-workspace-server.ts` owns server-backed metadata and assets under `.lumen/` by default.
-- `src/components/editor/` and the WebGL pipeline are working production surfaces. Preserve them and connect selected-panel editing through new immutable versions later.
+- `src/components/editor/` and the WebGL pipeline are working production surfaces. Storyboard edits now return through immutable versions with source provenance; preserve that contract.
 
 The repository contains calibration scripts and the complete Police Riot image bundle. They are evidence and test fixtures for continuity/reference experiments, not the long-term product data model.
 
 ## Recommended Next Sequence
 
-1. Refresh `/` so the v3-to-v4 migration runs, then evaluate a real storyboard end to end: add a Middle panel, generate or import two versions, compare and select one, scrub Timing, and export the board.
-2. Make **Open in editor** save its result as a new immutable take on the originating shot and panel. The editor must not overwrite the gallery asset backing an older storyboard version.
-3. Extract `StoryboardWorkspace.tsx` into focused production components now that Board, Shot list, Timing, inspector, generation plan, comparison, and export boundaries are stable.
-4. Add arbitrary multi-shot selection and retry-failed actions to the generation plan; do not add a global reference bucket or send every reference to every target.
-5. Add direct manipulation for reorder/duplicate, practical keyboard shortcuts, and denser 30–50-shot board modes before adding more metadata.
-6. Decide whether one project needs multiple storyboards and neutral groups before evolving the current Scene model. Treat this as a product decision and a separate schema migration.
-7. Add audio tracks, waveform display, and rendered animatic export only after the current timing model proves useful in a real storyboard-to-video workflow.
+The merge-blocking refactor is complete. Continue with product validation rather than another shell rewrite:
+
+1. Use one real project to generate a Start/Middle/End shot, compare alternatives, finish one version in the editor, scrub Timing, and export a handoff. Capture friction before adding hierarchy or metadata.
+2. Add arbitrary multi-shot selection from Board or Shot list only if scene/missing-start generation proves insufficient. Reuse the existing target planner and retry state.
+3. Add direct manipulation for duplicate/reorder, practical keyboard shortcuts, and denser 30–50-shot board modes before adding more form fields.
+4. Decide whether one project needs multiple storyboards and whether Scene should stay fixed terminology. Treat either decision as a product choice and a separate schema migration.
+5. Add an evidence-based continuity review that names a concrete issue and affected shots. Do not add a decorative score or generic green approval state.
+6. Add audio tracks, waveform display, and rendered animatic export only after the current timing model proves useful in a real storyboard-to-video workflow.
+7. Add cloud sync, collaboration, or the documentary-app integration only after the local project model and export contracts settle.
 
 ## Validation on the Refactor Branch
 
 - `npm run lint`
+- `npm run test` — 9 passing tests covering migration/idempotence, valid selection by panel, scoped/deduplicated references, previous-shot opt-in, within-shot prior panels, and panel-specific prompt compilation
 - `npm run build`
 - production build includes `/`, `/editor`, `/storyboard-prototype`, and `/storyboard-print`
-- the earlier shell transition received browser review of Board, project outline, project settings, Shot list, Timing, References, reference inspector, and generation review with no application console errors
-- the 2026-08-27 director-workflow pass was linted and production-built, but automated localhost browser verification was blocked by the in-app browser's URL security policy after the server restart; manually refresh `/` for final interaction QA and persistence migration
+- browser QA used a production server pointed at an isolated copy of `.lumen/`; the real workspace was not mutated
+- Board, Shot list, Timing, animatic play/pause, project switching, project-scoped References, the shot inspector, optional Middle panel, active-panel continuity, the generation review, tier pricing, and deletion confirmation were exercised
+- a selected storyboard version was opened in `/editor`, given a preset, and saved. The result was a second selected take with `sourceTakeId`/`sourceImageId`; the original gallery image retained its zeroed edit state. The new version and project selection survived a production-server restart
+- the print route rendered the requested project, showed missing panels explicitly, respected the project aspect class, and returned **Storyboard not found** for an invalid explicit project id
+- the final browser pass recorded no application console errors
+- automated narrow-screen visual QA remains outstanding because the browser controller reported success setting a mobile viewport while the page stayed at 1280×720; responsive behavior was reviewed statically and the temporary override was reset
 
 ## Schema v4 Notes
 
@@ -210,6 +222,7 @@ The repository contains calibration scripts and the complete Police Riot image b
 - `StoryboardShot.panelDirections` stores optional direction specific to Middle or End while `prompt` remains shared shot direction.
 - `StoryboardShot.selectedTakeIds` stores one selected take per panel role; legacy `selectedTakeId` remains mirrored for Start compatibility.
 - `StoryboardTake.panelRole` identifies which panel owns a version.
+- `StoryboardTake.sourceTakeId` and `sourceImageId` record editor-derived provenance without changing the source take.
 - Existing v3 takes and selection migrate to Start. Migration is idempotent and persists through the existing shared-workspace endpoint after hydration.
 - Generation for a Middle or End panel adds the preceding selected same-shot panel as continuity context. Generation for Start uses only assigned project/scene/shot references unless the user explicitly enables the previous-panel option.
 
@@ -221,6 +234,7 @@ The repository contains calibration scripts and the complete Police Riot image b
 - Do not send every reference to every shot.
 - Do not make scripts mandatory.
 - Do not invent film-production terminology when an established term exists.
-- Do not remove or flatten the image editor; edits should eventually create new versions.
+- Do not remove or flatten the image editor; storyboard-launched edits must create new versions.
+- Do not mutate a gallery asset that already backs a storyboard take; editor round-trips must append a version.
 - Do not expand into schedules, budgets, call sheets, or crew management.
 - Preserve unrelated user changes in the dirty worktree.

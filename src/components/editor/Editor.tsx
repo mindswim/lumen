@@ -199,7 +199,7 @@ export function Editor() {
           <button
             onClick={handleBack}
             className="md:hidden h-9 w-9 flex items-center justify-center rounded-full"
-            aria-label="Back to library"
+            aria-label={storyboardContext ? 'Back to storyboard' : 'Back to library'}
             style={{ backgroundColor: 'var(--editor-bg-secondary)' }}
           >
             <ArrowLeft className="h-4 w-4" />
@@ -236,7 +236,7 @@ export function Editor() {
       <div className="flex-1 flex overflow-hidden min-h-0">
         {/* Left tool sidebar - hidden on mobile */}
         {!isMobile && (
-          <ToolSidebar mode="editor" onBack={handleBack} onExport={() => setExportOpen(true)} />
+          <ToolSidebar mode="editor" onBack={handleBack} backLabel={storyboardContext ? 'Back to Storyboard' : 'Back to Library'} onExport={() => setExportOpen(true)} />
         )}
 
         {/* Center: canvas */}

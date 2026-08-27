@@ -13,7 +13,9 @@ A visual continuity studio for creating coherent storyboard sequences, selecting
 - **Reference-Conditioned Generation** - Generate full frames with up to ten visual inputs through Seedream 4.5
 - **Draft / Final Tiers** - Iterate with low-cost FLUX.2 Flash, then promote important shots to Seedream 4.5
 - **Continuity Carry-Forward** - Use the prior selected frame as context without copying its composition
-- **Dailies Workflow** - Keep immutable takes, circle a selected frame, and promote strong frames into the visual bible
+- **Storyboard Views** - Review the same sequence as an image-first Board, structured Shot list, or timed animatic
+- **Dailies Workflow** - Keep immutable takes, compare and select versions, finish a frame as a new version, and promote strong frames into the visual bible
+- **Production Handoff** - Export a print/PDF board, contact-sheet PNG, shot-list CSV, or portable project manifest
 - **Flexible Delivery** - Build 16:9, 4:3, or 9:16 sequences
 
 ### Photo Editing
@@ -98,9 +100,9 @@ Open [http://localhost:3000](http://localhost:3000)
 
 On the first load after upgrading, Lumen copies the current browser's legacy IndexedDB library into `.lumen/`. Open the browser profile that contains your existing work once; after that, every browser connected to the same local server reads and writes the same workspace. Generated manifests under `public/generated/<bundle>/manifest.json` appear under **Project & scene → Bundles** for provenance-aware import.
 
-### Storyboard workspace prototype
+### Storyboard workspace
 
-An isolated, non-persistent workspace prototype is available at [http://localhost:3000/storyboard-prototype](http://localhost:3000/storyboard-prototype). It demonstrates the proposed Board, Shot list, Timing, References, inspector, and generation-review information architecture without modifying production projects. Read [`docs/STORYBOARD_PRODUCT_DESIGN.md`](docs/STORYBOARD_PRODUCT_DESIGN.md) for the research and architecture, then [`docs/STORYBOARD_PROTOTYPE_HANDOFF.md`](docs/STORYBOARD_PROTOTYPE_HANDOFF.md) for current feedback and next steps.
+The production director workspace is the home route at [http://localhost:3000](http://localhost:3000). An isolated, non-persistent design fixture remains at [http://localhost:3000/storyboard-prototype](http://localhost:3000/storyboard-prototype) for historical comparison only. Read [`docs/STORYBOARD_PRODUCT_DESIGN.md`](docs/STORYBOARD_PRODUCT_DESIGN.md) for the research and architecture, then [`docs/STORYBOARD_PROTOTYPE_HANDOFF.md`](docs/STORYBOARD_PROTOTYPE_HANDOFF.md) for implementation status, validation, and next steps.
 
 ### Build for Production
 
@@ -141,6 +143,7 @@ src/
 - [x] AI image generation (Flux)
 - [x] Multi-reference storyboard generation (Seedream 4.5)
 - [x] Persistent projects, scenes, shots, versions, and selects
+- [x] Board, Shot list, lightweight animatic, immutable editor round-trips, and storyboard handoff exports
 - [x] Shared local filesystem storage for storyboard metadata and image assets
 - [x] Print-quality export
 - [x] Presets system
