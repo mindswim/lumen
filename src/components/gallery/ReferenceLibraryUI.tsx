@@ -21,6 +21,14 @@ export const REFERENCE_FILTERS: Array<{ value: ReferenceFilter; label: string }>
   { value: 'research', label: 'Research' },
 ];
 
+const REFERENCE_KIND_LABELS: Record<ReferenceKind, string> = {
+  character: 'Character',
+  location: 'Location',
+  object: 'Prop',
+  style: 'Look',
+  research: 'Research',
+};
+
 export function ReferenceThumbnail({
   image,
   isSelected,
@@ -38,53 +46,49 @@ export function ReferenceThumbnail({
   reference?: StoryReference;
   usageCount: number;
 }) {
+  const displayName = reference?.name || image.fileName;
+  const kindLabel = reference ? REFERENCE_KIND_LABELS[reference.kind] : 'Reference';
+
   return (
-    <article
-      className="group relative cursor-pointer overflow-hidden rounded-xl bg-white transition-all hover:-translate-y-0.5 hover:shadow-md"
-      style={{ boxShadow: isSelected ? '0 0 0 2px var(--editor-text-primary), 0 0 0 4px var(--editor-bg-secondary)' : '0 1px 2px rgba(0,0,0,.08)' }}
-    >
-      <button
-        type="button"
-        aria-label={`Select ${image.fileName}`}
-        aria-pressed={isSelected}
-        className="absolute inset-0 z-10 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2"
-        onClick={(event) => onSelect(event.metaKey || event.ctrlKey)}
-        onDoubleClick={() => !isMobile && onOpen()}
-      />
-      <div className="relative aspect-[4/3] overflow-hidden bg-neutral-100">
+    <article className="group min-w-0">
+      <div className={`relative aspect-[4/3] overflow-hidden rounded-md bg-neutral-100 ring-offset-2 transition-colors ${isSelected ? 'ring-2 ring-neutral-950' : 'ring-1 ring-black/10'}`}>
+        <button
+          type="button"
+          aria-label={`Select ${displayName}`}
+          aria-pressed={isSelected}
+          className="absolute inset-0 z-10 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-neutral-950 focus-visible:ring-offset-2"
+          onClick={(event) => onSelect(event.metaKey || event.ctrlKey)}
+          onDoubleClick={() => !isMobile && onOpen()}
+        />
         {/* Local workspace and legacy data URLs are rendered directly. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={image.thumbnailUrl} alt={image.fileName} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.015]" draggable={false} />
-        {reference && (
-          <span className="absolute left-2.5 top-2.5 rounded-md bg-white/95 px-2 py-1 text-[9px] font-semibold capitalize text-neutral-800 shadow-sm backdrop-blur">
-            {reference.kind === 'style' ? 'Look' : reference.kind === 'object' ? 'Prop' : reference.kind}
-          </span>
-        )}
+        <img
+          src={image.dataUrl}
+          alt={displayName}
+          className="h-full w-full object-contain"
+          decoding="async"
+          draggable={false}
+          loading="lazy"
+        />
         {isSelected && (
-          <div className="absolute right-2.5 top-2.5 flex h-6 w-6 items-center justify-center rounded-full bg-white shadow-lg">
+          <div className="pointer-events-none absolute right-2.5 top-2.5 z-20 flex h-6 w-6 items-center justify-center rounded-full border border-black/10 bg-white shadow-sm">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="3"><polyline points="20,6 9,17 4,12" /></svg>
           </div>
         )}
         <button
           type="button"
-          aria-label={`Edit ${image.fileName}`}
+          aria-label={`Edit ${displayName}`}
           onClick={(event) => { event.stopPropagation(); onOpen(); }}
-          className={`absolute bottom-2.5 right-2.5 z-20 flex h-8 w-8 items-center justify-center rounded-full bg-white text-black shadow-lg transition-all ${isMobile ? 'opacity-100' : 'translate-y-1 opacity-0 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100'}`}
+          className={`absolute bottom-2.5 right-2.5 z-20 flex h-8 w-8 items-center justify-center rounded-full border border-black/10 bg-white text-black shadow-sm transition-opacity ${isMobile ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'}`}
         >
           <ArrowUpRight className="h-4 w-4" />
         </button>
       </div>
 
-      <div className="p-3.5">
-        <div className="flex items-start justify-between gap-3">
-          <p className="min-w-0 flex-1 truncate text-xs font-semibold">{reference?.name || image.fileName}</p>
-          <span className="shrink-0 text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>{usageCount} shot{usageCount === 1 ? '' : 's'}</span>
-        </div>
-        <p className="mt-1.5 line-clamp-2 min-h-8 text-[10px] leading-4" style={{ color: 'var(--editor-text-tertiary)' }}>
-          {reference?.description || 'Add a description so this reference can be assigned intentionally.'}
-        </p>
-        <p className="mt-3 truncate text-[9px] font-medium uppercase tracking-[0.08em]" style={{ color: 'var(--editor-text-muted)' }}>
-          {image.sourceProvider || reference?.sourceTitle || 'Imported'}
+      <div className="mt-2 min-w-0 px-0.5">
+        <p className="truncate text-xs font-medium">{displayName}</p>
+        <p className="mt-0.5 truncate text-[9px] uppercase tracking-[0.08em]" style={{ color: 'var(--editor-text-muted)' }}>
+          {kindLabel} · {usageCount === 0 ? 'Unused' : `${usageCount} shot${usageCount === 1 ? '' : 's'}`}
         </p>
       </div>
     </article>

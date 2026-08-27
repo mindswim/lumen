@@ -387,7 +387,7 @@ export function Gallery() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-3">
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-6 sm:grid-cols-[repeat(auto-fit,minmax(220px,1fr))] md:gap-x-4 md:gap-y-7">
                       {filteredImages.map((image) => {
                         const reference = referenceByImageId.get(image.id);
                         return (
