@@ -43,7 +43,7 @@ export function NewProjectDialog({
         style={{ color: 'var(--editor-text-primary)' }}
       >
         <DialogHeader>
-          <DialogTitle>Start a visual story</DialogTitle>
+          <DialogTitle>Start a visual project</DialogTitle>
           <DialogDescription>
             Establish the story and camera language first. Characters, locations, and shots come next.
           </DialogDescription>
@@ -118,7 +118,7 @@ export function NewProjectDialog({
             disabled={!title.trim()}
             className="rounded-full bg-neutral-950 px-5 py-2.5 text-sm font-medium text-white disabled:opacity-40"
           >
-            Create storyboard
+            Create project
           </button>
         </DialogFooter>
       </DialogContent>
@@ -146,7 +146,7 @@ export function StoryboardEmpty({ onCreate }: { onCreate: () => void }) {
           onClick={onCreate}
           className="mt-8 inline-flex items-center gap-2 rounded-full bg-neutral-950 px-6 py-3 text-sm font-medium text-white shadow-lg"
         >
-          <Plus className="h-4 w-4" /> Start a storyboard
+          <Plus className="h-4 w-4" /> Start a project
         </button>
         <div className="mx-auto mt-10 grid max-w-xl grid-cols-3 gap-3 text-left">
           {[

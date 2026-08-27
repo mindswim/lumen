@@ -95,14 +95,18 @@ export function StoryboardExportDialog({
       const margin = 48;
       const headerHeight = 150;
       const rows = Math.max(1, Math.ceil(frames.length / columns));
+      const logicalWidth = margin * 2 + columns * cardWidth + (columns - 1) * gap;
+      const logicalHeight = margin * 2 + headerHeight + rows * (imageHeight + captionHeight) + (rows - 1) * gap;
+      const renderScale = Math.min(1, 16_000 / logicalWidth, 16_000 / logicalHeight, Math.sqrt(64_000_000 / (logicalWidth * logicalHeight)));
       const canvas = document.createElement('canvas');
-      canvas.width = margin * 2 + columns * cardWidth + (columns - 1) * gap;
-      canvas.height = margin * 2 + headerHeight + rows * (imageHeight + captionHeight) + (rows - 1) * gap;
+      canvas.width = Math.max(1, Math.floor(logicalWidth * renderScale));
+      canvas.height = Math.max(1, Math.floor(logicalHeight * renderScale));
       const context = canvas.getContext('2d');
       if (!context) throw new Error('Contact-sheet rendering is not available in this browser.');
+      context.scale(renderScale, renderScale);
 
       context.fillStyle = '#f5f5f4';
-      context.fillRect(0, 0, canvas.width, canvas.height);
+      context.fillRect(0, 0, logicalWidth, logicalHeight);
       context.fillStyle = '#0a0a0a';
       context.font = '600 38px system-ui, sans-serif';
       context.fillText(project.title, margin, margin + 42);
@@ -130,6 +134,12 @@ export function StoryboardExportDialog({
           context.clip();
           context.drawImage(source, x + (cardWidth - width) / 2, y + (imageHeight - height) / 2, width, height);
           context.restore();
+        } else {
+          context.fillStyle = '#737373';
+          context.font = '600 16px system-ui, sans-serif';
+          context.textAlign = 'center';
+          context.fillText('MISSING PANEL', x + cardWidth / 2, y + imageHeight / 2);
+          context.textAlign = 'start';
         }
         context.fillStyle = '#ffffff';
         context.fillRect(x, y + imageHeight, cardWidth, captionHeight);

@@ -30,12 +30,16 @@ export function ShotInspector({
   onOpenImage,
   onClose,
   onGenerate,
+  initialPanelRole = 'start',
+  onActivePanelRoleChange,
 }: {
   project: StoryboardProject;
   shot: StoryboardShot;
   onOpenImage: (imageId: string, context?: StoryboardEditorContext) => void;
   onClose: () => void;
   onGenerate: (panelRole: StoryboardPanelRole) => void;
+  initialPanelRole?: StoryboardPanelRole;
+  onActivePanelRoleChange?: (panelRole: StoryboardPanelRole) => void;
 }) {
   const takeInput = useRef<HTMLInputElement>(null);
   const images = useGalleryStore((state) => state.images);
@@ -47,8 +51,9 @@ export function ShotInspector({
   const removeShot = useStoryboardStore((state) => state.removeShot);
   const [isImportingTake, setIsImportingTake] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activePanelRole, setActivePanelRole] = useState<StoryboardPanelRole>('start');
+  const [activePanelRole, setActivePanelRole] = useState<StoryboardPanelRole>(shot.panelRoles.includes(initialPanelRole) ? initialPanelRole : 'start');
   const [comparisonOpen, setComparisonOpen] = useState(false);
+  const [confirmDeleteShot, setConfirmDeleteShot] = useState(false);
 
   const shotIndex = project.shots.findIndex((candidate) => candidate.id === shot.id);
   const scene = project.scenes.find((candidate) => candidate.id === shot.sceneId) ?? project.scenes[0];
@@ -59,6 +64,10 @@ export function ShotInspector({
   const previousTake = previousShot ? getSelectedTake(previousShot) : null;
   const panelTakes = shot.takes.filter((take) => (take.panelRole ?? 'start') === activePanelRole);
   const selectedPanelTake = getSelectedTake(shot, activePanelRole);
+  const selectPanelRole = (panelRole: StoryboardPanelRole) => {
+    setActivePanelRole(panelRole);
+    onActivePanelRoleChange?.(panelRole);
+  };
 
   const toggleReference = (referenceId: string) => {
     const next = shot.referenceIds.includes(referenceId)
@@ -74,7 +83,7 @@ export function ShotInspector({
       ? shot.panelRoles.filter((role) => role !== panelRole)
       : (['start', 'middle', 'end'] as StoryboardPanelRole[]).filter((role) => shot.panelRoles.includes(role) || role === panelRole);
     updateShot(project.id, shot.id, { panelRoles });
-    if (enabled && activePanelRole === panelRole) setActivePanelRole('start');
+    if (enabled && activePanelRole === panelRole) selectPanelRole('start');
   };
 
   const importTakes = async (files: File[]) => {
@@ -125,14 +134,21 @@ export function ShotInspector({
           <p className="mt-1 text-xs font-semibold">Shot details</p>
         </div>
         <div className="flex items-center gap-1">
-          <button
-            onClick={() => removeShot(project.id, shot.id)}
-            disabled={project.shots.length <= 1}
-            className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-red-50 hover:text-red-600 disabled:opacity-20"
-            aria-label="Delete shot"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
+          {confirmDeleteShot ? (
+            <>
+              <button type="button" onClick={() => setConfirmDeleteShot(false)} className="rounded-full px-2.5 py-1.5 text-[9px] font-medium">Cancel</button>
+              <button type="button" onClick={() => { removeShot(project.id, shot.id); onClose(); }} className="rounded-full bg-red-600 px-2.5 py-1.5 text-[9px] font-medium text-white">Delete shot</button>
+            </>
+          ) : (
+            <button
+              onClick={() => setConfirmDeleteShot(true)}
+              disabled={project.shots.length <= 1}
+              className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-red-50 hover:text-red-600 disabled:opacity-20"
+              aria-label="Delete shot"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
           <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-neutral-100" aria-label="Close shot details">
             <X className="h-3.5 w-3.5" />
           </button>
@@ -151,12 +167,12 @@ export function ShotInspector({
             return (
               <div key={panelRole} className="min-w-0 flex-1">
                 {enabled ? (
-                  <button type="button" onClick={() => setActivePanelRole(panelRole)} className="w-full rounded-lg border px-2 py-2 text-left" style={{ borderColor: activePanelRole === panelRole ? 'var(--editor-text-primary)' : 'var(--editor-border)', backgroundColor: activePanelRole === panelRole ? 'var(--editor-bg-primary)' : 'transparent' }}>
+                  <button type="button" onClick={() => selectPanelRole(panelRole)} className="w-full rounded-lg border px-2 py-2 text-left" style={{ borderColor: activePanelRole === panelRole ? 'var(--editor-text-primary)' : 'var(--editor-border)', backgroundColor: activePanelRole === panelRole ? 'var(--editor-bg-primary)' : 'transparent' }}>
                     <span className="block text-[9px] font-semibold capitalize">{panelRole}</span>
                     <span className="mt-0.5 block text-[8px]" style={{ color: 'var(--editor-text-muted)' }}>{versionCount} version{versionCount === 1 ? '' : 's'}</span>
                   </button>
                 ) : (
-                  <button type="button" onClick={() => { togglePanelRole(panelRole); setActivePanelRole(panelRole); }} className="w-full rounded-lg border border-dashed px-2 py-2 text-[9px] font-medium capitalize" style={{ borderColor: 'var(--editor-border)', color: 'var(--editor-text-muted)' }}>+ {panelRole}</button>
+                  <button type="button" onClick={() => { togglePanelRole(panelRole); selectPanelRole(panelRole); }} className="w-full rounded-lg border border-dashed px-2 py-2 text-[9px] font-medium capitalize" style={{ borderColor: 'var(--editor-border)', color: 'var(--editor-text-muted)' }}>+ {panelRole}</button>
                 )}
                 {enabled && panelRole !== 'start' && activePanelRole === panelRole && (
                   <button type="button" onClick={() => togglePanelRole(panelRole)} className="mt-1 w-full text-center text-[8px] text-red-600">Remove panel</button>

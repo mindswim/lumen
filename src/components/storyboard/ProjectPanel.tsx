@@ -48,6 +48,7 @@ export function ProjectPanel({ project, onClose }: { project: StoryboardProject;
   const [bundlesError, setBundlesError] = useState<string | null>(null);
   const [isLoadingBundles, setIsLoadingBundles] = useState(false);
   const [importingBundleSlug, setImportingBundleSlug] = useState<string | null>(null);
+  const [confirmRemoveReferenceId, setConfirmRemoveReferenceId] = useState<string | null>(null);
   const addImages = useGalleryStore((state) => state.addImages);
   const addImageFromUrl = useGalleryStore((state) => state.addImageFromUrl);
   const images = useGalleryStore((state) => state.images);
@@ -521,13 +522,20 @@ export function ProjectPanel({ project, onClose }: { project: StoryboardProject;
                       <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-3 w-3 -translate-y-1/2" />
                     </div>
                   </div>
-                  <button
-                    onClick={() => removeReference(project.id, reference.id)}
-                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full opacity-50 hover:bg-red-50 hover:text-red-600 hover:opacity-100"
-                    aria-label={`Remove ${reference.name}`}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
+                  {confirmRemoveReferenceId === reference.id ? (
+                    <div className="flex shrink-0 flex-col gap-1">
+                      <button type="button" onClick={() => setConfirmRemoveReferenceId(null)} className="rounded-full px-2 py-1 text-[8px] font-medium">Cancel</button>
+                      <button type="button" onClick={() => { removeReference(project.id, reference.id); setConfirmRemoveReferenceId(null); }} className="rounded-full bg-red-600 px-2 py-1 text-[8px] font-medium text-white">Remove</button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmRemoveReferenceId(reference.id)}
+                      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full opacity-50 hover:bg-red-50 hover:text-red-600 hover:opacity-100"
+                      aria-label={`Remove ${reference.name}`}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
                 <input
                   value={reference.description}

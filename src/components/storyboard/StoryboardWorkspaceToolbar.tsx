@@ -73,7 +73,7 @@ export function StoryboardWorkspaceToolbar({
             onChange={(event) => onProjectChange(event.target.value)}
             className="max-w-36 appearance-none truncate rounded-full border bg-transparent py-1.5 pl-3 pr-8 text-xs font-semibold outline-none sm:max-w-48 lg:max-w-60"
             style={{ borderColor: 'var(--editor-border)' }}
-            aria-label="Active storyboard"
+            aria-label="Active project"
           >
             {projects.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.title}</option>)}
           </select>
@@ -83,7 +83,7 @@ export function StoryboardWorkspaceToolbar({
           onClick={onNewProject}
           className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border"
           style={{ borderColor: 'var(--editor-border)' }}
-          aria-label="New storyboard"
+          aria-label="New project"
         >
           <Plus className="h-3.5 w-3.5" />
         </button>

@@ -6,6 +6,7 @@ import { ArrowLeft, CircleCheck, Sparkles, X } from 'lucide-react';
 import { createAIImagePreview } from '@/lib/ai/image-preview';
 import { useGalleryStore, type GalleryImage } from '@/lib/gallery/store';
 import { composeStoryboardPrompt, type PromptReference } from '@/lib/storyboard/prompt';
+import { compilePanelPrompt, resolvePriorStoryboardTake, resolveShotReferenceIds } from '@/lib/storyboard/generation-plan';
 import {
   getSelectedTake,
   useStoryboardStore,
@@ -59,26 +60,21 @@ export function StoryboardGenerationDialog({
       ? project.shots.filter((candidate) => candidate.sceneId === shot.sceneId)
       : project.shots.filter((candidate) => !getSelectedTake(candidate, 'start'));
   const targetShots = scopeCandidates.filter((candidate) => !excludedShotIds.has(candidate.id));
+  const draftMegapixels = project.aspect === 'landscape_4_3'
+    ? (1024 * 768) / 1_000_000
+    : (1024 * 576) / 1_000_000;
+  const estimatedUnitCost = renderTier === 'draft' ? draftMegapixels * 0.005 : 0.04;
 
   const targetPanelRole = (targetShot: StoryboardShot): StoryboardPanelRole => (
     scope === 'current' && targetShot.id === shot.id ? panelRole : 'start'
   );
 
   const referenceIdsForShot = (targetShot: StoryboardShot) => {
-    const targetScene = project.scenes.find((candidate) => candidate.id === targetShot.sceneId);
-    return Array.from(new Set([...(targetScene?.referenceIds ?? []), ...targetShot.referenceIds]));
+    return resolveShotReferenceIds(project, targetShot);
   };
 
   const priorContextForShot = (targetShot: StoryboardShot, role: StoryboardPanelRole) => {
-    const targetIndex = project.shots.findIndex((candidate) => candidate.id === targetShot.id);
-    if (role !== 'start') {
-      const priorRole: StoryboardPanelRole = role === 'end' && getSelectedTake(targetShot, 'middle') ? 'middle' : 'start';
-      const take = getSelectedTake(targetShot, priorRole);
-      return take ? { take, label: `${priorRole.toUpperCase()} PANEL IN THIS SHOT — preserve subjects and world state while advancing the action into the ${role} composition.` } : null;
-    }
-    const previousShot = targetIndex > 0 ? project.shots[targetIndex - 1] : null;
-    const previousTake = previousShot?.sceneId === targetShot.sceneId && targetShot.usePreviousPanel ? getSelectedTake(previousShot) : null;
-    return previousShot && previousTake ? { take: previousTake, label: `PREVIOUS SELECTED SHOT — ${previousShot.title}. Preserve identities, wardrobe, world state, and screen direction without copying its composition.` } : null;
+    return resolvePriorStoryboardTake(project, targetShot, role);
   };
 
   const inputCountForShot = (targetShot: StoryboardShot) => {
@@ -103,6 +99,8 @@ export function StoryboardGenerationDialog({
     if (inputCount > referenceLimit) return `${inputCount - referenceLimit} references over provider limit`;
     return null;
   };
+  const estimatedOutputCount = targetShots.filter((targetShot) => !invalidReasonForShot(targetShot)).length;
+  const estimatedTotal = estimatedUnitCost * estimatedOutputCount;
 
   const assignedReferences = referenceIdsForShot(shot)
     .map((referenceId) => project.references.find((reference) => reference.id === referenceId))
@@ -111,6 +109,7 @@ export function StoryboardGenerationDialog({
   const inputCount = inputCountForShot(shot);
 
   const closeDialog = (nextOpen: boolean) => {
+    if (!nextOpen && isGenerating) return;
     if (!nextOpen) {
       setError(null);
       setGenerated(false);
@@ -163,10 +162,7 @@ export function StoryboardGenerationDialog({
         targetIndex,
         uniqueInputs.map((input) => input.promptReference),
       );
-      const panelDirection = targetShot.panelDirections[role]?.trim();
-      const prompt = role === 'start'
-        ? basePrompt
-        : `${basePrompt}\n\nPANEL WITHIN SHOT: ${role.toUpperCase()}. This is an additional composition inside the same continuous shot. Advance the action and camera path from the earlier panel without treating it as a new cut.${panelDirection ? `\nPANEL-SPECIFIC DIRECTION: ${panelDirection}` : ''}`;
+      const prompt = compilePanelPrompt(basePrompt, targetShot, role);
       const referenceImages = await Promise.all(
         uniqueInputs.map((input) => createAIImagePreview(input.image.dataUrl)),
       );
@@ -200,40 +196,52 @@ export function StoryboardGenerationDialog({
       }
   };
 
-  const generate = async () => {
-    if (targetShots.length === 0 || isGenerating) return;
+  const runTargets = async (shotsToRun: StoryboardShot[], resetResults: boolean) => {
+    if (shotsToRun.length === 0 || isGenerating) return;
     setIsGenerating(true);
     setError(null);
-    setGenerated(false);
-    setRunResults({});
-    setRunErrors({});
-    let successes = 0;
-    let failures = 0;
-
-    for (const targetShot of targetShots) {
-      const invalidReason = invalidReasonForShot(targetShot);
-      if (invalidReason) {
-        failures += 1;
-        setRunResults((results) => ({ ...results, [targetShot.id]: 'error' }));
-        setRunErrors((errors) => ({ ...errors, [targetShot.id]: invalidReason }));
-        continue;
-      }
-      setRunResults((results) => ({ ...results, [targetShot.id]: 'running' }));
-      try {
-        await generateShot(targetShot);
-        successes += 1;
-        setRunResults((results) => ({ ...results, [targetShot.id]: 'success' }));
-      } catch (caught) {
-        failures += 1;
-        setRunResults((results) => ({ ...results, [targetShot.id]: 'error' }));
-        setRunErrors((errors) => ({ ...errors, [targetShot.id]: caught instanceof Error ? caught.message : 'Generation failed' }));
-      }
+    if (resetResults) setGenerated(false);
+    const nextResults: Record<string, 'running' | 'success' | 'error'> = resetResults ? {} : { ...runResults };
+    const nextErrors: Record<string, string> = resetResults ? {} : { ...runErrors };
+    if (resetResults) {
+      setRunResults({});
+      setRunErrors({});
     }
 
+    for (const targetShot of shotsToRun) {
+      const invalidReason = invalidReasonForShot(targetShot);
+      if (invalidReason) {
+        nextResults[targetShot.id] = 'error';
+        nextErrors[targetShot.id] = invalidReason;
+        setRunResults({ ...nextResults });
+        setRunErrors({ ...nextErrors });
+        continue;
+      }
+      nextResults[targetShot.id] = 'running';
+      delete nextErrors[targetShot.id];
+      setRunResults({ ...nextResults });
+      setRunErrors({ ...nextErrors });
+      try {
+        await generateShot(targetShot);
+        nextResults[targetShot.id] = 'success';
+      } catch (caught) {
+        nextResults[targetShot.id] = 'error';
+        nextErrors[targetShot.id] = caught instanceof Error ? caught.message : 'Generation failed';
+      }
+      setRunResults({ ...nextResults });
+      setRunErrors({ ...nextErrors });
+    }
+
+    const successes = Object.values(nextResults).filter((result) => result === 'success').length;
+    const failures = Object.values(nextResults).filter((result) => result === 'error').length;
     setGenerated(successes > 0);
-    if (failures > 0) setError(`${successes} completed · ${failures} need attention. Successful versions were kept.`);
+    setError(failures > 0 ? `${successes} completed · ${failures} need attention. Successful versions were kept.` : null);
     setIsGenerating(false);
   };
+
+  const generate = () => runTargets(targetShots, true);
+  const retryTargets = targetShots.filter((targetShot) => runResults[targetShot.id] === 'error' && !invalidReasonForShot(targetShot));
+  const retryFailed = () => runTargets(retryTargets, false);
 
   return (
     <Dialog open={open} onOpenChange={closeDialog}>
@@ -352,9 +360,10 @@ export function StoryboardGenerationDialog({
         </div>
 
         <DialogFooter className="items-center border-t px-6 py-4 sm:justify-between" style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-secondary)' }}>
-          <p className="text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>{renderTier === 'draft' ? `FLUX.2 Flash · $0.005/MP × ${targetShots.length}` : `Seedream 4.5 · $${(targetShots.length * 0.04).toFixed(2)}`} · {targetShots.length} output{targetShots.length === 1 ? '' : 's'}</p>
+          <p className="text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>{renderTier === 'draft' ? 'FLUX.2 Flash · $0.005/MP' : 'Seedream 4.5 · $0.04/image'} · estimated ${estimatedTotal.toFixed(estimatedTotal < 0.01 ? 3 : 2)} total · {estimatedOutputCount} payable output{estimatedOutputCount === 1 ? '' : 's'}</p>
           <div className="flex gap-2">
-            <button type="button" onClick={() => closeDialog(false)} className="rounded-full border px-4 py-2 text-xs font-medium" style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-primary)' }}>{generated ? 'Done' : 'Cancel'}</button>
+            <button type="button" onClick={() => closeDialog(false)} disabled={isGenerating} className="rounded-full border px-4 py-2 text-xs font-medium disabled:opacity-40" style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-primary)' }}>{generated ? 'Done' : 'Cancel'}</button>
+            {retryTargets.length > 0 && <button type="button" onClick={retryFailed} disabled={isGenerating} className="rounded-full border px-4 py-2 text-xs font-medium disabled:opacity-40" style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-primary)' }}>Retry failed ({retryTargets.length})</button>}
             <button type="button" onClick={generate} disabled={targetShots.length === 0 || isGenerating || generated} className="flex items-center gap-2 rounded-full bg-neutral-950 px-4 py-2 text-xs font-medium text-white disabled:opacity-40">
               {isGenerating ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" /> : <Sparkles className="h-3.5 w-3.5" />}
               {isGenerating ? 'Running plan…' : generated ? 'Versions added' : `Generate ${targetShots.length} ${renderTier}`}

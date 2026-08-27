@@ -5,6 +5,7 @@ import { ArrowLeft, Printer } from 'lucide-react';
 
 import { useGalleryStore } from '@/lib/gallery/store';
 import { getSelectedTake, useStoryboardStore } from '@/lib/storyboard/store';
+import { aspectClass } from '@/components/storyboard/storyboard-ui';
 
 export default function StoryboardPrintPage() {
   const requestedProjectId = typeof window !== 'undefined'
@@ -23,9 +24,9 @@ export default function StoryboardPrintPage() {
     if (!storyboardsHydrated) hydrateStoryboards();
   }, [hydrateImages, hydrateStoryboards, imagesHydrated, storyboardsHydrated]);
 
-  const project = projects.find((candidate) => candidate.id === requestedProjectId)
-    ?? projects.find((candidate) => candidate.id === activeProjectId)
-    ?? projects[0];
+  const project = requestedProjectId
+    ? projects.find((candidate) => candidate.id === requestedProjectId)
+    : projects.find((candidate) => candidate.id === activeProjectId) ?? projects[0];
 
   if (!imagesHydrated || !storyboardsHydrated) {
     return <main className="flex min-h-screen items-center justify-center text-sm text-neutral-500">Preparing storyboard…</main>;
@@ -86,11 +87,12 @@ export default function StoryboardPrintPage() {
                       : shot.panelDirections[panelRole] || shot.beat || shot.prompt;
                     return (
                       <article key={`${shot.id}-${panelRole}`} className="story-card overflow-hidden rounded-lg border border-neutral-300">
-                        <div className="aspect-video bg-neutral-950">
+                        <div className={`bg-neutral-950 ${aspectClass(project.aspect)}`}>
                           {image && (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img src={image.dataUrl} alt="" className="h-full w-full object-cover" />
                           )}
+                          {!image && <div className="flex h-full items-center justify-center text-[9px] font-semibold tracking-[0.12em] text-neutral-500">MISSING PANEL</div>}
                         </div>
                         <div className="p-3">
                           <div className="flex items-center justify-between gap-3"><p className="font-mono text-[9px] text-neutral-400">SHOT {String(shotIndex + 1).padStart(2, '0')} · {panelRole.toUpperCase()}</p><p className="text-[9px] text-neutral-400">{shot.durationSeconds}s</p></div>

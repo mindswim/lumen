@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { getSelectedTake, normalizePersistedState } from '../src/lib/storyboard/domain.ts';
+import { compilePanelPrompt, resolvePriorStoryboardTake, resolveShotReferenceIds } from '../src/lib/storyboard/generation-plan.ts';
 
 const legacyState = {
   version: 3,
@@ -123,4 +124,45 @@ test('does not resolve a selected take from the wrong panel role', () => {
   const shot = normalizePersistedState(legacyState as never).projects[0].shots[0];
   const invalid = { ...shot, selectedTakeIds: { middle: 'take-1' } };
   assert.equal(getSelectedTake(invalid, 'middle'), null);
+});
+
+test('resolves only scene and shot references and removes duplicate assignments', () => {
+  const project = normalizePersistedState(legacyState as never).projects[0];
+  const scene = { ...project.scenes[0], referenceIds: ['scene-ref', 'shared-ref'] };
+  const shot = { ...project.shots[0], referenceIds: ['shared-ref', 'shot-ref'] };
+  assert.deepEqual(resolveShotReferenceIds({ ...project, scenes: [scene], shots: [shot] }, shot), ['scene-ref', 'shared-ref', 'shot-ref']);
+});
+
+test('uses a previous shot only for opted-in continuous action in the same scene', () => {
+  const project = normalizePersistedState(legacyState as never).projects[0];
+  const previous = project.shots[0];
+  const current = { ...previous, id: 'shot-2', title: 'Follow', usePreviousPanel: true };
+  const withPrevious = { ...project, shots: [previous, current] };
+  assert.equal(resolvePriorStoryboardTake(withPrevious, current, 'start')?.take.id, 'take-1');
+  assert.equal(resolvePriorStoryboardTake(withPrevious, { ...current, usePreviousPanel: false }, 'start'), null);
+  assert.equal(resolvePriorStoryboardTake(withPrevious, { ...current, sceneId: 'another-scene' }, 'start'), null);
+});
+
+test('uses earlier panels inside a shot without turning them into new cuts', () => {
+  const project = normalizePersistedState(legacyState as never).projects[0];
+  const startTake = project.shots[0].takes[0];
+  const middleTake = { ...startTake, id: 'middle-take', imageId: 'middle-image', panelRole: 'middle' as const };
+  const shot = {
+    ...project.shots[0],
+    panelRoles: ['start', 'middle', 'end'] as const,
+    takes: [startTake, middleTake],
+    selectedTakeIds: { start: startTake.id, middle: middleTake.id },
+  };
+  const updatedProject = { ...project, shots: [shot] };
+  assert.equal(resolvePriorStoryboardTake(updatedProject, shot, 'middle')?.take.id, startTake.id);
+  assert.equal(resolvePriorStoryboardTake(updatedProject, shot, 'end')?.take.id, middleTake.id);
+});
+
+test('compiles panel-specific direction only for additional panels', () => {
+  const project = normalizePersistedState(legacyState as never).projects[0];
+  const shot = { ...project.shots[0], panelDirections: { middle: 'The courier reaches the platform edge.' } };
+  assert.equal(compilePanelPrompt('Base prompt', shot, 'start'), 'Base prompt');
+  const middlePrompt = compilePanelPrompt('Base prompt', shot, 'middle');
+  assert.match(middlePrompt, /PANEL WITHIN SHOT: MIDDLE/);
+  assert.match(middlePrompt, /PANEL-SPECIFIC DIRECTION: The courier reaches the platform edge\./);
 });

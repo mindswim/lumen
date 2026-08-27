@@ -47,6 +47,7 @@ export function StoryboardWorkspace({
   const [exportOpen, setExportOpen] = useState(false);
   const [mobileOutlineOpen, setMobileOutlineOpen] = useState(false);
   const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
+  const [activePanelByShot, setActivePanelByShot] = useState<Record<string, StoryboardPanelRole>>({});
   const [view, setView] = useState<StoryboardWorkspaceView>('board');
   const projects = useStoryboardStore((state) => state.projects);
   const activeProjectId = useStoryboardStore((state) => state.activeProjectId);
@@ -139,7 +140,7 @@ export function StoryboardWorkspace({
         />
         {inspectorOpen && shot && (
           <div className="hidden w-[360px] shrink-0 xl:block">
-            <ShotInspector key={shot.id} project={project} shot={shot} onOpenImage={onOpenImage} onClose={() => setInspectorOpen(false)} onGenerate={(panelRole) => { setGenerationPanelRole(panelRole); setGenerationOpen(true); }} />
+            <ShotInspector key={shot.id} project={project} shot={shot} initialPanelRole={activePanelByShot[shot.id]} onActivePanelRoleChange={(panelRole) => setActivePanelByShot((current) => ({ ...current, [shot.id]: panelRole }))} onOpenImage={onOpenImage} onClose={() => setInspectorOpen(false)} onGenerate={(panelRole) => { setGenerationPanelRole(panelRole); setGenerationOpen(true); }} />
           </div>
         )}
       </div>
@@ -168,7 +169,7 @@ export function StoryboardWorkspace({
             <SheetTitle>Shot details</SheetTitle>
             <SheetDescription>Edit direction, references, timing, generation, and versions for the selected shot.</SheetDescription>
           </SheetHeader>
-          {shot && <ShotInspector key={shot.id} project={project} shot={shot} onOpenImage={onOpenImage} onClose={() => setMobileInspectorOpen(false)} onGenerate={(panelRole) => { setMobileInspectorOpen(false); setGenerationPanelRole(panelRole); setGenerationOpen(true); }} />}
+          {shot && <ShotInspector key={shot.id} project={project} shot={shot} initialPanelRole={activePanelByShot[shot.id]} onActivePanelRoleChange={(panelRole) => setActivePanelByShot((current) => ({ ...current, [shot.id]: panelRole }))} onOpenImage={onOpenImage} onClose={() => setMobileInspectorOpen(false)} onGenerate={(panelRole) => { setMobileInspectorOpen(false); setGenerationPanelRole(panelRole); setGenerationOpen(true); }} />}
         </SheetContent>
       </Sheet>
 
