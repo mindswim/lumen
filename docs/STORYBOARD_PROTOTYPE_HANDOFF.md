@@ -22,11 +22,9 @@ Read [STORYBOARD_PRODUCT_DESIGN.md](./STORYBOARD_PRODUCT_DESIGN.md) for the rese
 
 Do not mistake polished prototype interactions for production functionality. The prototype intentionally has no store, persistence, generation calls, mutations, or export behavior.
 
-## Active Refactor Branch
+## Refactor Status
 
-Branch: `codex/storyboard-workspace-refactor`
-
-The production transition, structural extraction, and reliability pass are now implemented on this branch:
+The production transition, structural extraction, and reliability pass are implemented on `main`. The final hardening pass was completed on `codex/storyboard-refactor-finish` before merging back to `main`:
 
 - the prototype's two header rows are collapsed into one responsive workspace header;
 - Storyboards and References are project-level destinations; Board, Shot list, and Timing are views of the same storyboard data;
@@ -36,6 +34,7 @@ The production transition, structural extraction, and reliability pass are now i
 - Timing is a working lightweight animatic preview with play/pause, accurate elapsed time, scrubbing, shot seeking, dialogue/voice-over display, and optional within-shot panel playback;
 - the References workspace is project-scoped, categorized, searchable, and built from production reference records rather than all gallery images;
 - selecting a reference opens a production-asset inspector with editable category/direction, provenance, and inherited/direct shot usage;
+- reference-library presentation is extracted from the gallery shell, reference cards use valid accessible button semantics, and bulk removal requires an explicit checkpoint before detaching project references and cleaning up only truly orphaned image records;
 - image generation moved out of the long inspector form into an explicit generation plan. It can target the current panel, the current scene, or every shot missing a Start panel; shows the exact references and validation state for each target; displays a provider-based cost estimate; keeps successful results if another target fails; and retries only eligible failed targets;
 - a shot can optionally expose Start, Middle, and End panels. Each enabled panel has its own direction, selected version, versions, comparison action, and generation target; one-panel shots remain the default;
 - each generated or imported result is appended as a new take. Version comparison supports side-by-side and opacity overlay modes, with selection kept distinct from review approval;
@@ -43,8 +42,10 @@ The production transition, structural extraction, and reliability pass are now i
 - the shot inspector remains the home for direction, reference assignment, timing, optional panels, imported images, and versions;
 - Export provides a project-specific printable/PDF board, bounded high-resolution contact-sheet PNG, shot-list CSV, and portable project manifest. Missing panels are explicit and invalid project links do not silently fall back to another board;
 - shot and reference removal now require a deliberate inline confirmation;
-- schema normalization, selection behavior, scoped reference routing, prior-panel continuity, and panel prompt compilation have focused Node tests;
+- schema normalization, guarded take selection, reference-removal cascades, scoped reference routing, prior-panel continuity, and panel prompt compilation have focused Node tests;
+- stale take IDs can no longer corrupt Start-panel selection, and an empty or malformed image-provider result is surfaced as a failed frame rather than a successful run;
 - the former 2,466-line `StoryboardWorkspace.tsx` is now a roughly 200-line state-owning shell over focused board, toolbar, project, inspector, generation, dialog, and helper modules;
+- the unified workspace toolbar now deliberately wraps its view switcher below the project and action rows at narrow breakpoints instead of depending on accidental overflow;
 - visible **Approved** language is replaced with **Selected**, decorative green approval treatment is removed, and the fake continuity score/view is gone.
 
 The refactor deliberately preserves the shared-workspace APIs, generated Police Riot assets, image editor, and generation API. The storyboard store advances from schema v3 to v4; hydration migrates every existing take and selected version to the Start panel and writes the normalized project back to shared storage. `/storyboard-prototype` remains only as a design fixture; `/` is the real implementation.
@@ -122,7 +123,7 @@ These are follow-up product decisions, not merge blockers for this refactor.
 ### Responsive behavior
 
 - The code keeps the outline and inspector in mobile sheets, but the final 2026-08-27 browser controller could not apply its requested mobile viewport. Perform one manual narrow-screen visual pass before calling mobile polished.
-- The narrow-screen header still needs deliberate prioritization on a physical small viewport.
+- The narrow-screen header now prioritizes the project/actions row and moves Board, Shot list, and Timing to a centered second row; verify that behavior on a physical small viewport.
 - Mobile should support review and light edits; dense shot-list and advanced generation planning can optimize for wider screens.
 
 ## Researched Patterns and Their Current Status
@@ -183,7 +184,8 @@ Production now exports a printable/PDF storyboard, contact-sheet PNG, shot-list 
 
 - `src/components/storyboard/StoryboardWorkspace.tsx` is now the small state-owning composition shell. Keep domain work out of it and extend the focused components beside it.
 - `src/components/storyboard/StoryboardBoard.tsx`, `ShotInspector.tsx`, `ProjectPanel.tsx`, `StoryboardGenerationDialog.tsx`, `StoryboardWorkspaceToolbar.tsx`, and `StoryboardProjectDialogs.tsx` are the primary production UI seams created by the extraction.
-- `src/lib/storyboard/types.ts` is the canonical storyboard type surface; `domain.ts` contains pure normalization and selection behavior; `generation-plan.ts` contains pure reference/prior-panel/prompt planning; `store.ts` remains the Zustand mutation and persistence boundary.
+- `src/components/gallery/ReferenceLibraryUI.tsx` owns reusable reference cards, empty state, categories, and the production-asset inspector; `Gallery.tsx` remains the workspace composition and image-editor bridge.
+- `src/lib/storyboard/types.ts` is the canonical storyboard type surface; `domain.ts` contains pure normalization and guarded mutation behavior; `generation-plan.ts` contains pure reference/prior-panel/prompt planning; `store.ts` remains the Zustand mutation and persistence boundary.
 - `src/lib/storyboard/prompt.ts` composes current storyboard prompts and should evolve into provider-neutral direction compilation plus provider adapters.
 - `src/lib/storage/shared-workspace.ts` is the client boundary for shared local state.
 - `src/lib/storage/local-workspace-server.ts` owns server-backed metadata and assets under `.lumen/` by default.
@@ -203,10 +205,10 @@ The merge-blocking refactor is complete. Continue with product validation rather
 6. Add audio tracks, waveform display, and rendered animatic export only after the current timing model proves useful in a real storyboard-to-video workflow.
 7. Add cloud sync, collaboration, or the documentary-app integration only after the local project model and export contracts settle.
 
-## Validation on the Refactor Branch
+## Validation
 
 - `npm run lint`
-- `npm run test` — 9 passing tests covering migration/idempotence, valid selection by panel, scoped/deduplicated references, previous-shot opt-in, within-shot prior panels, and panel-specific prompt compilation
+- `npm run test` — 11 passing tests covering migration/idempotence, guarded selection by panel, reference-removal cascades, scoped/deduplicated references, previous-shot opt-in, within-shot prior panels, and panel-specific prompt compilation
 - `npm run build`
 - production build includes `/`, `/editor`, `/storyboard-prototype`, and `/storyboard-print`
 - browser QA used a production server pointed at an isolated copy of `.lumen/`; the real workspace was not mutated
@@ -214,6 +216,7 @@ The merge-blocking refactor is complete. Continue with product validation rather
 - a selected storyboard version was opened in `/editor`, given a preset, and saved. The result was a second selected take with `sourceTakeId`/`sourceImageId`; the original gallery image retained its zeroed edit state. The new version and project selection survived a production-server restart
 - the print route rendered the requested project, showed missing panels explicitly, respected the project aspect class, and returned **Storyboard not found** for an invalid explicit project id
 - the final browser pass recorded no application console errors
+- the finishing browser pass verified the outline settings action, project-scoped reference library, accessible selection state, explicit reference-removal checkpoint, and zero desktop page overflow without mutating the workspace
 - automated narrow-screen visual QA remains outstanding because the browser controller reported success setting a mobile viewport while the page stayed at 1280×720; responsive behavior was reviewed statically and the temporary override was reset
 
 ## Schema v4 Notes

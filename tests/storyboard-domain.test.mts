@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { getSelectedTake, normalizePersistedState } from '../src/lib/storyboard/domain.ts';
+import {
+  getSelectedTake,
+  normalizePersistedState,
+  removeStoryboardReference,
+  selectStoryboardTake,
+} from '../src/lib/storyboard/domain.ts';
 import { compilePanelPrompt, resolvePriorStoryboardTake, resolveShotReferenceIds } from '../src/lib/storyboard/generation-plan.ts';
 
 const legacyState = {
@@ -124,6 +129,46 @@ test('does not resolve a selected take from the wrong panel role', () => {
   const shot = normalizePersistedState(legacyState as never).projects[0].shots[0];
   const invalid = { ...shot, selectedTakeIds: { middle: 'take-1' } };
   assert.equal(getSelectedTake(invalid, 'middle'), null);
+});
+
+test('selects a take only for its own panel and ignores stale take IDs', () => {
+  const project = normalizePersistedState(legacyState as never).projects[0];
+  const startTake = project.shots[0].takes[0];
+  const middleTake = { ...startTake, id: 'middle-take', imageId: 'middle-image', panelRole: 'middle' as const };
+  const shot = {
+    ...project.shots[0],
+    panelRoles: ['start', 'middle'] as const,
+    takes: [startTake, middleTake],
+    selectedTakeIds: { start: startTake.id },
+  };
+  const withMiddle = { ...project, shots: [shot] };
+
+  const selected = selectStoryboardTake(withMiddle, shot.id, middleTake.id, 100);
+  assert.equal(selected.shots[0].selectedTakeId, startTake.id);
+  assert.deepEqual(selected.shots[0].selectedTakeIds, { start: startTake.id, middle: middleTake.id });
+  assert.equal(selected.shots[0].updatedAt, 100);
+  assert.equal(selected.updatedAt, 100);
+  assert.equal(selectStoryboardTake(selected, shot.id, 'missing-take', 200), selected);
+});
+
+test('removing a reference also removes scene and shot assignments', () => {
+  const project = normalizePersistedState(legacyState as never).projects[0];
+  const withUnrelatedAssignments = {
+    ...project,
+    references: [
+      ...project.references,
+      { ...project.references[0], id: 'ref-2', imageId: 'image-ref-2', name: 'Station' },
+    ],
+    scenes: [{ ...project.scenes[0], referenceIds: ['ref-1', 'ref-2'] }],
+    shots: [{ ...project.shots[0], referenceIds: ['ref-2', 'ref-1'] }],
+  };
+
+  const removed = removeStoryboardReference(withUnrelatedAssignments, 'ref-1', 100);
+  assert.deepEqual(removed.references.map((reference) => reference.id), ['ref-2']);
+  assert.deepEqual(removed.scenes[0].referenceIds, ['ref-2']);
+  assert.deepEqual(removed.shots[0].referenceIds, ['ref-2']);
+  assert.equal(removed.updatedAt, 100);
+  assert.equal(removeStoryboardReference(removed, 'missing-reference', 200), removed);
 });
 
 test('resolves only scene and shot references and removes duplicate assignments', () => {

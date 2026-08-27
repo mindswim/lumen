@@ -49,7 +49,8 @@ export function StoryboardOutline({
           <p className="text-[10px] font-semibold uppercase tracking-[0.14em]" style={{ color: 'var(--editor-text-muted)' }}>Outline</p>
           <button
             type="button"
-            aria-label="Storyboard actions"
+            aria-label="Project settings"
+            onClick={onOpenSettings}
             className="rounded-md p-1"
             style={{ color: 'var(--editor-text-muted)' }}
           >

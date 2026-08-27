@@ -6,7 +6,11 @@ import {
   getSharedStoryboardState,
   saveSharedStoryboardState,
 } from '@/lib/storage/shared-workspace';
-import { normalizePersistedState } from './domain';
+import {
+  normalizePersistedState,
+  removeStoryboardReference,
+  selectStoryboardTake,
+} from './domain';
 import type {
   PersistedStoryboardState,
   StoryboardAspect,
@@ -19,7 +23,13 @@ import type {
   StoryReference,
 } from './types';
 
-export { getSelectedTake, migrateProject, normalizePersistedState } from './domain';
+export {
+  getSelectedTake,
+  migrateProject,
+  normalizePersistedState,
+  removeStoryboardReference,
+  selectStoryboardTake,
+} from './domain';
 export type * from './types';
 
 interface CreateProjectInput {
@@ -232,13 +242,9 @@ export const useStoryboardStore = create<StoryboardStore>()(
       })),
 
       removeReference: (projectId, referenceId) => set((state) => ({
-        projects: state.projects.map((project) => project.id === projectId ? {
-          ...project,
-          references: project.references.filter((reference) => reference.id !== referenceId),
-          scenes: project.scenes.map((scene) => ({ ...scene, referenceIds: scene.referenceIds.filter((value) => value !== referenceId) })),
-          shots: project.shots.map((shot) => ({ ...shot, referenceIds: shot.referenceIds.filter((value) => value !== referenceId) })),
-          updatedAt: Date.now(),
-        } : project),
+        projects: state.projects.map((project) => project.id === projectId
+          ? removeStoryboardReference(project, referenceId)
+          : project),
       })),
 
       addScene: (projectId) => {
@@ -340,20 +346,9 @@ export const useStoryboardStore = create<StoryboardStore>()(
       },
 
       selectTake: (projectId, shotId, takeId) => set((state) => ({
-        projects: state.projects.map((project) => project.id === projectId ? {
-          ...project,
-          shots: project.shots.map((shot) => {
-            if (shot.id !== shotId) return shot;
-            const panelRole = shot.takes.find((take) => take.id === takeId)?.panelRole ?? 'start';
-            return {
-              ...shot,
-              selectedTakeId: panelRole === 'start' ? takeId : shot.selectedTakeId,
-              selectedTakeIds: { ...shot.selectedTakeIds, [panelRole]: takeId },
-              updatedAt: Date.now(),
-            };
-          }),
-          updatedAt: Date.now(),
-        } : project),
+        projects: state.projects.map((project) => project.id === projectId
+          ? selectStoryboardTake(project, shotId, takeId)
+          : project),
       })),
     }),
 );

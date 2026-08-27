@@ -14,6 +14,52 @@ export function getSelectedTake(shot: StoryboardShot | undefined, panelRole: Sto
   return shot.takes.find((take) => take.id === selectedTakeId && (take.panelRole ?? 'start') === panelRole) ?? null;
 }
 
+export function removeStoryboardReference(
+  project: StoryboardProject,
+  referenceId: string,
+  updatedAt = Date.now(),
+): StoryboardProject {
+  const hasReference = project.references.some((reference) => reference.id === referenceId);
+  const hasSceneAssignment = project.scenes.some((scene) => scene.referenceIds.includes(referenceId));
+  const hasShotAssignment = project.shots.some((shot) => shot.referenceIds.includes(referenceId));
+  if (!hasReference && !hasSceneAssignment && !hasShotAssignment) return project;
+
+  return {
+    ...project,
+    references: project.references.filter((reference) => reference.id !== referenceId),
+    scenes: project.scenes.map((scene) => scene.referenceIds.includes(referenceId)
+      ? { ...scene, referenceIds: scene.referenceIds.filter((value) => value !== referenceId) }
+      : scene),
+    shots: project.shots.map((shot) => shot.referenceIds.includes(referenceId)
+      ? { ...shot, referenceIds: shot.referenceIds.filter((value) => value !== referenceId) }
+      : shot),
+    updatedAt,
+  };
+}
+
+export function selectStoryboardTake(
+  project: StoryboardProject,
+  shotId: string,
+  takeId: string,
+  updatedAt = Date.now(),
+): StoryboardProject {
+  const shot = project.shots.find((candidate) => candidate.id === shotId);
+  const take = shot?.takes.find((candidate) => candidate.id === takeId);
+  if (!shot || !take) return project;
+
+  const panelRole = take.panelRole ?? 'start';
+  return {
+    ...project,
+    shots: project.shots.map((candidate) => candidate.id === shotId ? {
+      ...candidate,
+      selectedTakeId: panelRole === 'start' ? takeId : candidate.selectedTakeId,
+      selectedTakeIds: { ...candidate.selectedTakeIds, [panelRole]: takeId },
+      updatedAt,
+    } : candidate),
+    updatedAt,
+  };
+}
+
 export function migrateProject(project: Partial<StoryboardProject> & Pick<StoryboardProject, 'id' | 'title'>): StoryboardProject {
   const now = Date.now();
   const existingScenes = Array.isArray(project.scenes) && project.scenes.length > 0

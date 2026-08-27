@@ -58,11 +58,11 @@ export function StoryboardWorkspaceToolbar({
 
   return (
     <div
-      className="flex h-14 shrink-0 items-center justify-between gap-2 border-b px-3 md:px-4"
+      className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-2 border-b px-3 py-2 md:h-14 md:flex-nowrap md:py-0 md:px-4"
       style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-primary)' }}
     >
       <div className="flex min-w-0 items-center gap-2">
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-neutral-950 text-xs font-semibold text-white">L</span>
+        <span className="hidden h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-neutral-950 text-xs font-semibold text-white sm:flex">L</span>
         <div className="mr-1 hidden 2xl:block">
           <p className="text-xs font-semibold tracking-[0.2em]">LUMEN</p>
           <p className="text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>Director workspace</p>
@@ -71,7 +71,7 @@ export function StoryboardWorkspaceToolbar({
           <select
             value={project.id}
             onChange={(event) => onProjectChange(event.target.value)}
-            className="max-w-36 appearance-none truncate rounded-full border bg-transparent py-1.5 pl-3 pr-8 text-xs font-semibold outline-none sm:max-w-48 lg:max-w-60"
+            className="max-w-20 appearance-none truncate rounded-full border bg-transparent py-1.5 pl-3 pr-8 text-xs font-semibold outline-none sm:max-w-48 lg:max-w-60"
             style={{ borderColor: 'var(--editor-border)' }}
             aria-label="Active project"
           >
@@ -89,7 +89,7 @@ export function StoryboardWorkspaceToolbar({
         </button>
       </div>
 
-      <div className="flex shrink-0 items-center gap-1">
+      <div className="order-3 flex w-full shrink-0 items-center justify-center gap-1 md:order-none md:w-auto md:justify-start">
         <div className="flex rounded-full p-1" style={{ backgroundColor: 'var(--editor-bg-secondary)' }}>
           {([
             { value: 'board' as const, label: 'Board' },

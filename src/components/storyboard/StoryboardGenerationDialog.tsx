@@ -180,8 +180,18 @@ export function StoryboardGenerationDialog({
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'The frame could not be generated.');
+      const outputs = Array.isArray(result.images)
+        ? result.images.filter((output: unknown): output is { url: string } => (
+            typeof output === 'object'
+            && output !== null
+            && 'url' in output
+            && typeof output.url === 'string'
+            && output.url.length > 0
+          ))
+        : [];
+      if (outputs.length === 0) throw new Error('The provider returned no image for this frame.');
 
-      for (const [index, output] of (result.images as Array<{ url: string }>).entries()) {
+      for (const [index, output] of outputs.entries()) {
         const safeTitle = targetShot.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || `shot-${targetIndex + 1}`;
         const roleTakeCount = targetShot.takes.filter((take) => (take.panelRole ?? 'start') === role).length;
         const image = await addImageFromUrl(output.url, `${String(targetIndex + 1).padStart(2, '0')}-${safeTitle}-${role}-v${roleTakeCount + index + 1}.jpg`);
