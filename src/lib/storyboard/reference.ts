@@ -1,5 +1,4 @@
 import type {
-  LegacyReferenceKind,
   ReferenceRole,
   ReferenceSourceType,
   StoryReference,
@@ -19,14 +18,6 @@ export const REFERENCE_SOURCE_LABELS: Record<ReferenceSourceType, string> = {
   imported: 'Imported',
   research: 'Research',
 };
-
-export function legacyReferenceKindToRoles(kind: LegacyReferenceKind): ReferenceRole[] {
-  if (kind === 'character') return ['character'];
-  if (kind === 'location') return ['location'];
-  if (kind === 'object') return ['prop'];
-  if (kind === 'style') return ['look'];
-  return [];
-}
 
 export function inferReferenceRoles(value: string): ReferenceRole[] {
   const normalized = value.toLowerCase();

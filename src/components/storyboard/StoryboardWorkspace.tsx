@@ -190,7 +190,7 @@ export function StoryboardWorkspace({
         <DialogContent className="h-[88vh] max-w-[calc(100%-2rem)] gap-0 overflow-hidden p-0 sm:max-w-4xl" showCloseButton={false}>
           <DialogHeader className="sr-only">
             <DialogTitle>Project and scene settings</DialogTitle>
-            <DialogDescription>Edit project direction, scene defaults, references, and imported bundles.</DialogDescription>
+            <DialogDescription>Edit project direction, scene defaults, and references.</DialogDescription>
           </DialogHeader>
           <ProjectPanel project={project} onClose={() => setProjectSettingsOpen(false)} />
         </DialogContent>

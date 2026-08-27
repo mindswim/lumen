@@ -191,7 +191,7 @@ Production now exports a printable/PDF storyboard, contact-sheet PNG, shot-list 
 - `src/lib/storage/local-workspace-server.ts` owns server-backed metadata and assets under `.lumen/` by default.
 - `src/components/editor/` and the WebGL pipeline are working production surfaces. Storyboard edits now return through immutable versions with source provenance; preserve that contract.
 
-The repository contains calibration scripts and the complete Police Riot image bundle. They are evidence and test fixtures for continuity/reference experiments, not the long-term product data model.
+The repository contains calibration scripts and the generated Police Riot images under `public/generated/great-police-riot/`. They are evidence and design-fixture assets for continuity/reference experiments, not the long-term product data model. The earlier generated-bundle import path (manifest, `/api/workspace/bundles`, and import script) was a stop-gap from the browser-storage era and has been removed; the shared `.lumen/` workspace already holds those assets as project references and takes.
 
 ## Recommended Next Sequence
 

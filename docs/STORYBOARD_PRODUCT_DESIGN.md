@@ -43,7 +43,7 @@ The current top navigation treats Storyboard, Timing, and References as peers ev
 
 ### Overloaded left sidebar
 
-The current Project & Scene panel combines project settings, scene setup, reference assignment, reference management, research import, and generated-bundle import.
+The current Project & Scene panel combines project settings, scene setup, reference assignment, reference management, and research import.
 
 ### Overloaded shot inspector
 

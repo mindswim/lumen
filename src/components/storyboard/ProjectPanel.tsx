@@ -1,36 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { BookOpen, Clock3, ImagePlus, Layers3, Link2, LockKeyhole, MapPin, Trash2, Upload, X } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { BookOpen, Clock3, ImagePlus, Link2, LockKeyhole, MapPin, Trash2, Upload, X } from 'lucide-react';
 
 import { useGalleryStore } from '@/lib/gallery/store';
-import { inferReferenceRoles, legacyReferenceKindToRoles, referenceDisplayName } from '@/lib/storyboard/reference';
-import { useStoryboardStore, type LegacyReferenceKind, type StoryboardProject } from '@/lib/storyboard/store';
+import { inferReferenceRoles, referenceDisplayName } from '@/lib/storyboard/reference';
+import { useStoryboardStore, type StoryboardProject } from '@/lib/storyboard/store';
 import { FIELD, LABEL, REFERENCE_ROLES } from '@/components/storyboard/storyboard-ui';
-
-interface GeneratedBundleReference {
-  id: string;
-  kind: LegacyReferenceKind;
-  name: string;
-  url: string;
-}
-
-interface GeneratedBundleShot {
-  number: number;
-  title: string;
-  url: string;
-  referenceIds: string[];
-}
-
-interface GeneratedStoryboardBundle {
-  slug: string;
-  project: string;
-  generator: string;
-  status?: string;
-  historicalAccuracy?: string;
-  references: GeneratedBundleReference[];
-  shots: GeneratedBundleShot[];
-}
 
 export function ProjectPanel({ project, onClose }: { project: StoryboardProject; onClose: () => void }) {
   const fileInput = useRef<HTMLInputElement>(null);
@@ -43,11 +19,6 @@ export function ProjectPanel({ project, onClose }: { project: StoryboardProject;
   const [researchSourceUrl, setResearchSourceUrl] = useState('');
   const [researchSourceTitle, setResearchSourceTitle] = useState('');
   const [researchError, setResearchError] = useState<string | null>(null);
-  const [bundlesOpen, setBundlesOpen] = useState(false);
-  const [bundles, setBundles] = useState<GeneratedStoryboardBundle[]>([]);
-  const [bundlesError, setBundlesError] = useState<string | null>(null);
-  const [isLoadingBundles, setIsLoadingBundles] = useState(false);
-  const [importingBundleSlug, setImportingBundleSlug] = useState<string | null>(null);
   const [confirmRemoveReferenceId, setConfirmRemoveReferenceId] = useState<string | null>(null);
   const addImages = useGalleryStore((state) => state.addImages);
   const addImageFromUrl = useGalleryStore((state) => state.addImageFromUrl);
@@ -58,24 +29,9 @@ export function ProjectPanel({ project, onClose }: { project: StoryboardProject;
   const removeReference = useStoryboardStore((state) => state.removeReference);
   const updateScene = useStoryboardStore((state) => state.updateScene);
   const updateShot = useStoryboardStore((state) => state.updateShot);
-  const addTake = useStoryboardStore((state) => state.addTake);
   const selectedShotId = useStoryboardStore((state) => state.selectedShotId);
   const selectedShot = project.shots.find((shot) => shot.id === selectedShotId) ?? project.shots[0];
   const activeScene = project.scenes.find((scene) => scene.id === selectedShot?.sceneId) ?? project.scenes[0];
-
-  useEffect(() => {
-    if (!bundlesOpen || bundles.length > 0 || isLoadingBundles) return;
-    setIsLoadingBundles(true);
-    setBundlesError(null);
-    fetch('/api/workspace/bundles', { cache: 'no-store' })
-      .then(async (response) => {
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.error || 'Could not load generated bundles.');
-        setBundles(result.bundles ?? []);
-      })
-      .catch((error) => setBundlesError(error instanceof Error ? error.message : 'Could not load generated bundles.'))
-      .finally(() => setIsLoadingBundles(false));
-  }, [bundles.length, bundlesOpen, isLoadingBundles]);
 
   const toggleSceneReference = (referenceId: string) => {
     if (!activeScene) return;
@@ -141,88 +97,6 @@ export function ProjectPanel({ project, onClose }: { project: StoryboardProject;
       setResearchError('This source blocked direct import. Download the image and use Add instead.');
     } finally {
       setIsImportingResearch(false);
-    }
-  };
-
-  const importGeneratedBundle = async (bundle: GeneratedStoryboardBundle) => {
-    if (importingBundleSlug) return;
-    setImportingBundleSlug(bundle.slug);
-    setBundlesError(null);
-
-    try {
-      const referenceIds = new Map<string, string>();
-
-      for (const bundledReference of bundle.references) {
-        const latestProject = useStoryboardStore.getState().projects.find((candidate) => candidate.id === project.id);
-        const existingReference = latestProject?.references.find((reference) =>
-          reference.sourceUrl === bundledReference.url
-          || (reference.name === bundledReference.name && reference.sourceTitle === bundle.generator));
-        if (existingReference) {
-          referenceIds.set(bundledReference.id, existingReference.id);
-          continue;
-        }
-
-        let image = useGalleryStore.getState().images.find((candidate) => candidate.sourceUrl === bundledReference.url);
-        if (!image) {
-          image = await addImageFromUrl(
-            bundledReference.url,
-            bundledReference.url.split('/').pop() || `${bundledReference.id}.png`,
-            { provider: bundle.generator, sourceUrl: bundledReference.url },
-          );
-        }
-
-        const referenceId = addReference(project.id, {
-          imageId: image.id,
-          name: bundledReference.name,
-          roles: legacyReferenceKindToRoles(bundledReference.kind),
-          tags: [],
-          sourceType: 'generated',
-          description: '',
-          sourceUrl: bundledReference.url,
-          sourceTitle: bundle.generator,
-          rightsNote: 'AI-generated production reference; verify historical details before publication.',
-        });
-        referenceIds.set(bundledReference.id, referenceId);
-      }
-
-      for (const bundledShot of bundle.shots) {
-        const latestProject = useStoryboardStore.getState().projects.find((candidate) => candidate.id === project.id);
-        const targetShot = latestProject?.shots[bundledShot.number - 1]
-          ?? latestProject?.shots.find((shot) => shot.title.toLowerCase() === bundledShot.title.toLowerCase());
-        if (!targetShot) continue;
-
-        let image = useGalleryStore.getState().images.find((candidate) => candidate.sourceUrl === bundledShot.url);
-        if (!image) {
-          image = await addImageFromUrl(
-            bundledShot.url,
-            bundledShot.url.split('/').pop() || `shot-${bundledShot.number}.png`,
-            { provider: bundle.generator, sourceUrl: bundledShot.url },
-          );
-        }
-
-        if (!targetShot.takes.some((take) => take.imageId === image.id)) {
-          addTake(project.id, targetShot.id, {
-            imageId: image.id,
-            prompt: `Imported generated panel: ${bundledShot.title}`,
-            referenceIds: bundledShot.referenceIds.flatMap((id) => referenceIds.get(id) ?? []),
-            model: bundle.generator,
-            seed: null,
-          });
-        }
-
-        const mappedReferenceIds = bundledShot.referenceIds.flatMap((id) => referenceIds.get(id) ?? []);
-        if (mappedReferenceIds.length > 0) {
-          updateShot(project.id, targetShot.id, {
-            referenceIds: Array.from(new Set([...targetShot.referenceIds, ...mappedReferenceIds])),
-          });
-        }
-      }
-
-      setLibraryOpen(true);
-    } catch (error) {
-      setBundlesError(error instanceof Error ? error.message : 'Could not import the generated bundle.');
-    } finally {
-      setImportingBundleSlug(null);
     }
   };
 
@@ -397,14 +271,6 @@ export function ProjectPanel({ project, onClose }: { project: StoryboardProject;
             <Link2 className="h-3 w-3" /> Web
           </button>
           <button
-            type="button"
-            onClick={() => { setBundlesOpen((value) => !value); setBundlesError(null); }}
-            className="flex h-8 items-center gap-1.5 rounded-full border px-3 text-[10px] font-medium"
-            style={{ borderColor: 'var(--editor-border)' }}
-          >
-            <Layers3 className="h-3 w-3" /> Imports
-          </button>
-          <button
             onClick={() => fileInput.current?.click()}
             disabled={isImporting}
             className="flex h-8 items-center gap-1.5 rounded-full border px-3 text-[11px] font-medium disabled:opacity-50"
@@ -434,50 +300,6 @@ export function ProjectPanel({ project, onClose }: { project: StoryboardProject;
               {isImportingResearch ? 'Importing…' : 'Add research'}
             </button>
           </div>
-        </div>
-      )}
-
-      {bundlesOpen && (
-        <div className="mt-3 rounded-xl border p-3" style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-secondary)' }}>
-          <p className="text-[10px] font-semibold">Generation imports</p>
-          <p className="mt-1 text-[9px] leading-4" style={{ color: 'var(--editor-text-muted)' }}>
-            Bring externally generated references and numbered panels into this project. In-app generations are saved automatically.
-          </p>
-          {isLoadingBundles && <p className="mt-3 text-[10px]" style={{ color: 'var(--editor-text-muted)' }}>Looking for bundles…</p>}
-          {!isLoadingBundles && bundles.length === 0 && !bundlesError && (
-            <p className="mt-3 rounded-lg border border-dashed p-3 text-[10px]" style={{ borderColor: 'var(--editor-border)', color: 'var(--editor-text-muted)' }}>
-              No generation manifests found under public/generated.
-            </p>
-          )}
-          <div className="mt-3 space-y-2">
-            {bundles.map((bundle) => (
-              <div key={bundle.slug} className="rounded-lg border p-2.5" style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-primary)' }}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-[10px] font-semibold">{bundle.project}</p>
-                    <p className="mt-1 text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>
-                      {bundle.references.length} references · {bundle.shots.length} panels · {bundle.generator}
-                    </p>
-                    {bundle.project !== project.title && (
-                      <p className="mt-1 text-[9px] text-amber-700">This bundle was made for a different project title.</p>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => importGeneratedBundle(bundle)}
-                    disabled={Boolean(importingBundleSlug)}
-                    className="shrink-0 rounded-full bg-neutral-950 px-3 py-1.5 text-[9px] font-medium text-white disabled:opacity-40"
-                  >
-                    {importingBundleSlug === bundle.slug ? 'Importing…' : 'Import'}
-                  </button>
-                </div>
-                {bundle.historicalAccuracy && (
-                  <p className="mt-2 text-[9px] leading-4" style={{ color: 'var(--editor-text-tertiary)' }}>{bundle.historicalAccuracy}</p>
-                )}
-              </div>
-            ))}
-          </div>
-          {bundlesError && <p className="mt-2 text-[9px] leading-4 text-red-600">{bundlesError}</p>}
         </div>
       )}
 

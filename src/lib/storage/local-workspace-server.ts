@@ -1,4 +1,4 @@
-import { access, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const workspaceRoot = process.env.LUMEN_WORKSPACE_DIR
@@ -7,31 +7,6 @@ const workspaceRoot = process.env.LUMEN_WORKSPACE_DIR
 const assetsRoot = path.join(workspaceRoot, 'assets');
 const storyboardsPath = path.join(workspaceRoot, 'storyboards.json');
 const imagesPath = path.join(workspaceRoot, 'images.json');
-
-export interface GeneratedBundleReference {
-  id: string;
-  kind: 'character' | 'location' | 'object' | 'style' | 'research';
-  name: string;
-  url: string;
-}
-
-export interface GeneratedBundleShot {
-  number: number;
-  title: string;
-  url: string;
-  referenceIds: string[];
-}
-
-export interface GeneratedStoryboardBundle {
-  slug: string;
-  project: string;
-  createdAt?: string;
-  generator: string;
-  status?: string;
-  historicalAccuracy?: string;
-  references: GeneratedBundleReference[];
-  shots: GeneratedBundleShot[];
-}
 
 async function ensureWorkspace(): Promise<void> {
   await mkdir(assetsRoot, { recursive: true });
@@ -127,35 +102,4 @@ export async function readLocalAsset(fileName: string): Promise<Buffer | null> {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
     throw error;
   }
-}
-
-function isBundle(value: unknown): value is Omit<GeneratedStoryboardBundle, 'slug'> {
-  if (!value || typeof value !== 'object') return false;
-  const candidate = value as Partial<GeneratedStoryboardBundle>;
-  return typeof candidate.project === 'string'
-    && typeof candidate.generator === 'string'
-    && Array.isArray(candidate.references)
-    && Array.isArray(candidate.shots);
-}
-
-export async function listGeneratedBundles(): Promise<GeneratedStoryboardBundle[]> {
-  const generatedRoot = path.join(process.cwd(), 'public', 'generated');
-  let entries;
-  try {
-    entries = await readdir(generatedRoot, { withFileTypes: true });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
-    throw error;
-  }
-
-  const bundles = await Promise.all(entries
-    .filter((entry) => entry.isDirectory())
-    .map(async (entry) => {
-      const value = await readJson<unknown>(path.join(generatedRoot, entry.name, 'manifest.json'), null);
-      return isBundle(value) ? { ...value, slug: entry.name } : null;
-    }));
-
-  return bundles
-    .filter((bundle): bundle is GeneratedStoryboardBundle => bundle !== null)
-    .sort((a, b) => a.project.localeCompare(b.project));
 }
