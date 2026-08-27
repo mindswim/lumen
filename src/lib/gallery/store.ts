@@ -47,6 +47,7 @@ interface GalleryStore {
   // Actions
   addImages: (files: File[]) => Promise<GalleryImage[]>;
   addImageFromUrl: (url: string, fileName: string, source?: { provider?: string; sourceUrl?: string }) => Promise<GalleryImage>;
+  cloneImageVersion: (sourceImageId: string, editState: EditState, fileName?: string) => Promise<GalleryImage>;
   removeImages: (ids: string[]) => RemoveImagesResult;
   restoreLastDeleted: () => Promise<void>;
   selectImage: (id: string, multi?: boolean) => void;
@@ -283,6 +284,32 @@ export const useGalleryStore = create<GalleryStore>()(
           images: [newImage, ...state.images],
         }));
 
+        return newImage;
+      },
+
+      cloneImageVersion: async (sourceImageId, editState, requestedFileName) => {
+        const source = get().images.find((image) => image.id === sourceImageId);
+        if (!source) throw new Error('The source image is no longer available.');
+
+        const imageId = generateId();
+        const extensionIndex = source.fileName.lastIndexOf('.');
+        const baseName = extensionIndex > 0 ? source.fileName.slice(0, extensionIndex) : source.fileName;
+        const extension = extensionIndex > 0 ? source.fileName.slice(extensionIndex) : '';
+        const now = Date.now();
+        const newImage: GalleryImage = {
+          ...source,
+          id: imageId,
+          fileName: requestedFileName ?? `${baseName}-edit${extension}`,
+          thumbnailUrl: await renderGalleryThumbnail(source.dataUrl, editState),
+          editState: ensureCompleteEditState(editState),
+          createdAt: now,
+          updatedAt: now,
+          sourceUrl: source.sourceUrl ?? source.dataUrl,
+          sourceProvider: 'Lumen editor',
+        };
+
+        await saveSharedImage(newImage as StoredImage);
+        set((state) => ({ images: [newImage, ...state.images] }));
         return newImage;
       },
 

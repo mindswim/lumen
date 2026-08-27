@@ -6,86 +6,21 @@ import {
   getSharedStoryboardState,
   saveSharedStoryboardState,
 } from '@/lib/storage/shared-workspace';
+import { normalizePersistedState } from './domain';
+import type {
+  PersistedStoryboardState,
+  StoryboardAspect,
+  StoryboardPanelRole,
+  StoryboardProject,
+  StoryboardScene,
+  StoryboardShot,
+  StoryboardStorageStatus,
+  StoryboardTake,
+  StoryReference,
+} from './types';
 
-export type StoryboardAspect = 'landscape_16_9' | 'landscape_4_3' | 'portrait_16_9';
-export type ReferenceKind = 'character' | 'location' | 'object' | 'style' | 'research';
-export type StoryboardRenderTier = 'draft' | 'final';
-export type StoryboardPanelRole = 'start' | 'middle' | 'end';
-export type ShotSize = 'unspecified' | 'extreme-wide' | 'wide' | 'medium-wide' | 'medium' | 'medium-close-up' | 'close-up' | 'extreme-close-up';
-export type CameraAngle = 'unspecified' | 'eye-level' | 'high-angle' | 'low-angle' | 'overhead' | 'dutch-angle';
-export type CameraMovement = 'static' | 'pan' | 'tilt' | 'dolly' | 'tracking' | 'handheld' | 'crane' | 'zoom';
-export type StoryboardStorageStatus = 'loading' | 'saving' | 'saved' | 'error';
-
-export interface StoryReference {
-  id: string;
-  imageId: string;
-  name: string;
-  kind: ReferenceKind;
-  description: string;
-  sourceUrl?: string;
-  sourceTitle?: string;
-  rightsNote?: string;
-  createdAt: number;
-}
-
-export interface StoryboardScene {
-  id: string;
-  title: string;
-  summary: string;
-  location: string;
-  timeOfDay: string;
-  referenceIds: string[];
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface StoryboardTake {
-  id: string;
-  imageId: string;
-  prompt: string;
-  referenceIds: string[];
-  model: string;
-  seed: number | null;
-  panelRole: StoryboardPanelRole;
-  createdAt: number;
-}
-
-export interface StoryboardShot {
-  id: string;
-  sceneId: string;
-  title: string;
-  beat: string;
-  prompt: string;
-  continuityNotes: string;
-  dialogue: string;
-  durationSeconds: number;
-  shotSize: ShotSize;
-  cameraAngle: CameraAngle;
-  cameraMovement: CameraMovement;
-  usePreviousPanel: boolean;
-  referenceIds: string[];
-  panelRoles: StoryboardPanelRole[];
-  panelDirections: Partial<Record<StoryboardPanelRole, string>>;
-  takes: StoryboardTake[];
-  selectedTakeId: string | null;
-  selectedTakeIds: Partial<Record<StoryboardPanelRole, string>>;
-  createdAt: number;
-  updatedAt: number;
-}
-
-export interface StoryboardProject {
-  id: string;
-  title: string;
-  logline: string;
-  visualDirection: string;
-  aspect: StoryboardAspect;
-  renderTier: StoryboardRenderTier;
-  references: StoryReference[];
-  scenes: StoryboardScene[];
-  shots: StoryboardShot[];
-  createdAt: number;
-  updatedAt: number;
-}
+export { getSelectedTake, migrateProject, normalizePersistedState } from './domain';
+export type * from './types';
 
 interface CreateProjectInput {
   title: string;
@@ -120,13 +55,6 @@ interface StoryboardStore {
   selectShot: (shotId: string | null) => void;
   addTake: (projectId: string, shotId: string, take: Omit<StoryboardTake, 'id' | 'createdAt' | 'panelRole'> & { panelRole?: StoryboardPanelRole }) => string;
   selectTake: (projectId: string, shotId: string, takeId: string) => void;
-}
-
-interface PersistedStoryboardState {
-  version: 4;
-  projects: StoryboardProject[];
-  activeProjectId: string | null;
-  selectedShotId: string | null;
 }
 
 const LEGACY_STORAGE_KEY = 'lumen-storyboards-v1';
@@ -176,99 +104,6 @@ function createShot(number: number, sceneId: string): StoryboardShot {
     createdAt: now,
     updatedAt: now,
   };
-}
-
-export function getSelectedTake(shot: StoryboardShot | undefined, panelRole: StoryboardPanelRole = 'start'): StoryboardTake | null {
-  const selectedTakeId = panelRole === 'start'
-    ? shot?.selectedTakeIds?.start ?? shot?.selectedTakeId
-    : shot?.selectedTakeIds?.[panelRole];
-  if (!shot || !selectedTakeId) return null;
-  return shot.takes.find((take) => take.id === selectedTakeId && (take.panelRole ?? 'start') === panelRole) ?? null;
-}
-
-function migrateProject(project: Partial<StoryboardProject> & Pick<StoryboardProject, 'id' | 'title'>): StoryboardProject {
-  const now = Date.now();
-  const existingScenes = Array.isArray(project.scenes) && project.scenes.length > 0
-    ? project.scenes
-    : [{
-        id: `scene-${project.id}-1`,
-        title: 'Scene 1',
-        summary: project.logline ?? '',
-        location: '',
-        timeOfDay: '',
-        referenceIds: [],
-        createdAt: project.createdAt ?? now,
-        updatedAt: project.updatedAt ?? now,
-      }];
-  const defaultSceneId = existingScenes[0].id;
-
-  return {
-    id: project.id,
-    title: project.title,
-    logline: project.logline ?? '',
-    visualDirection: project.visualDirection ?? '',
-    aspect: project.aspect ?? 'landscape_16_9',
-    renderTier: project.renderTier ?? 'draft',
-    references: project.references ?? [],
-    scenes: existingScenes.map((scene, index) => ({
-      id: scene.id ?? `scene-${project.id}-${index + 1}`,
-      title: scene.title || `Scene ${index + 1}`,
-      summary: scene.summary ?? '',
-      location: scene.location ?? '',
-      timeOfDay: scene.timeOfDay ?? '',
-      referenceIds: scene.referenceIds ?? [],
-      createdAt: scene.createdAt ?? now,
-      updatedAt: scene.updatedAt ?? now,
-    })),
-    shots: (project.shots ?? []).map((shot, index) => {
-      const panelRoles = Array.from(new Set<StoryboardPanelRole>([
-        'start',
-        ...((shot.panelRoles ?? []) as StoryboardPanelRole[]).filter((role) => role === 'start' || role === 'middle' || role === 'end'),
-      ]));
-      const takes = (shot.takes ?? []).map((take) => ({ ...take, panelRole: take.panelRole ?? 'start' }));
-      const selectedTakeIds = {
-        ...(shot.selectedTakeIds ?? {}),
-        ...(shot.selectedTakeId ? { start: shot.selectedTakeIds?.start ?? shot.selectedTakeId } : {}),
-      };
-      return {
-        ...shot,
-        sceneId: shot.sceneId || defaultSceneId,
-        title: shot.title || `Shot ${index + 1}`,
-        beat: shot.beat ?? '',
-        prompt: shot.prompt ?? '',
-        continuityNotes: shot.continuityNotes ?? '',
-        dialogue: shot.dialogue ?? '',
-        durationSeconds: shot.durationSeconds ?? 3,
-        shotSize: shot.shotSize ?? 'unspecified',
-        cameraAngle: shot.cameraAngle ?? 'unspecified',
-        cameraMovement: shot.cameraMovement ?? 'static',
-        usePreviousPanel: shot.usePreviousPanel ?? false,
-        referenceIds: shot.referenceIds ?? [],
-        panelRoles,
-        panelDirections: shot.panelDirections ?? {},
-        takes,
-        selectedTakeId: selectedTakeIds.start ?? null,
-        selectedTakeIds,
-        createdAt: shot.createdAt ?? now,
-        updatedAt: shot.updatedAt ?? now,
-      };
-    }),
-    createdAt: project.createdAt ?? now,
-    updatedAt: project.updatedAt ?? now,
-  };
-}
-
-function normalizePersistedState(value: Partial<PersistedStoryboardState> | null | undefined): PersistedStoryboardState {
-  const projects = (value?.projects ?? []).map((project) => migrateProject(project));
-  const activeProjectId = projects.some((project) => project.id === value?.activeProjectId)
-    ? value?.activeProjectId ?? null
-    : projects[0]?.id ?? null;
-  const activeProject = projects.find((project) => project.id === activeProjectId) ?? projects[0];
-  const selectedShotId = activeProject?.shots.some((shot) => shot.id === value?.selectedShotId)
-    ? value?.selectedShotId ?? null
-    : activeProject?.shots[0]?.id ?? null;
-
-  return { version: 4, projects, activeProjectId, selectedShotId };
 }
 
 function readLegacyState(): PersistedStoryboardState | null {

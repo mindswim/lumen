@@ -11,6 +11,7 @@ import { Toast } from '@/components/ui/toast';
 import { Sheet, SheetContent, SheetTitle } from '@/components/ui/sheet';
 import { useEditorStore } from '@/lib/editor/state';
 import { useGalleryStore } from '@/lib/gallery/store';
+import { useStoryboardStore } from '@/lib/storyboard/store';
 import { useIsMobile } from '@/hooks/useIsMobile';
 import { AdjustPanel } from './AdjustPanel';
 import { CurvePanel } from './CurvePanel';
@@ -22,7 +23,7 @@ import { MaskPanel } from './MaskPanel';
 import { TransformPanel } from './TransformPanel';
 import { AIPanel } from './AIPanel';
 import { ExportProvider } from '@/contexts/export-context';
-import { ArrowLeft, Redo2, Undo2 } from 'lucide-react';
+import { ArrowLeft, Check, Redo2, Undo2 } from 'lucide-react';
 import type { MobilePanelType } from './MobileToolbar';
 
 const PANEL_TITLES: Record<MobilePanelType, string> = {
@@ -38,23 +39,85 @@ export function Editor() {
   const { undo, redo, canUndo, canRedo, resetEditState, copySettings, pasteSettings, hasCopiedSettings } = useEditorStore();
   const image = useEditorStore((state) => state.image);
   const editState = useEditorStore((state) => state.editState);
-  const { activeImageId, updateImageEditState, setActiveImage } = useGalleryStore();
+  const storyboardContext = useEditorStore((state) => state.storyboardContext);
+  const setStoryboardContext = useEditorStore((state) => state.setStoryboardContext);
+  const { activeImageId, updateImageEditState, setActiveImage, cloneImageVersion, getImage } = useGalleryStore();
   const setEditorImage = useEditorStore((state) => state.setImage);
+  const addTake = useStoryboardStore((state) => state.addTake);
+  const selectTake = useStoryboardStore((state) => state.selectTake);
+  const showToast = useEditorStore((state) => state.showToast);
 
   const [exportOpen, setExportOpen] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [isSavingVersion, setIsSavingVersion] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<MobilePanelType | null>(null);
   const [mobileTuneMode, setMobileTuneMode] = useState<'light' | 'color' | 'effects' | 'detail'>('light');
 
-  const handleBack = () => {
-    // Save current edit state to gallery before going back
-    if (activeImageId && editState) {
-      updateImageEditState(activeImageId, editState);
-    }
+  const sourceGalleryImage = activeImageId ? getImage(activeImageId) : null;
+  const hasEditorChanges = Boolean(sourceGalleryImage && JSON.stringify(sourceGalleryImage.editState) !== JSON.stringify(editState));
+
+  const closeEditor = () => {
+    setStoryboardContext(null);
     setActiveImage(null);
     setEditorImage(null);
     router.push('/');
   };
+
+  const handleBack = () => {
+    // Library edits remain non-destructive settings on the same gallery asset.
+    // Storyboard edits are only persisted through Save as new version.
+    if (!storyboardContext && activeImageId && editState) {
+      updateImageEditState(activeImageId, editState);
+    }
+    closeEditor();
+  };
+
+  const handleSaveVersion = async () => {
+    if (!storyboardContext || !activeImageId || !sourceGalleryImage || !hasEditorChanges || isSavingVersion) return;
+    setIsSavingVersion(true);
+    try {
+      const project = useStoryboardStore.getState().projects.find((candidate) => candidate.id === storyboardContext.projectId);
+      const shot = project?.shots.find((candidate) => candidate.id === storyboardContext.shotId);
+      const sourceTake = shot?.takes.find((candidate) => candidate.id === storyboardContext.sourceTakeId);
+      if (!project || !shot || !sourceTake || sourceTake.imageId !== activeImageId) {
+        throw new Error('The source storyboard version is no longer available.');
+      }
+
+      const roleVersionCount = shot.takes.filter((take) => take.panelRole === storyboardContext.panelRole).length;
+      const extensionIndex = sourceGalleryImage.fileName.lastIndexOf('.');
+      const baseName = extensionIndex > 0 ? sourceGalleryImage.fileName.slice(0, extensionIndex) : sourceGalleryImage.fileName;
+      const extension = extensionIndex > 0 ? sourceGalleryImage.fileName.slice(extensionIndex) : '';
+      const clonedImage = await cloneImageVersion(
+        activeImageId,
+        editState,
+        `${baseName}-lumen-v${roleVersionCount + 1}${extension}`,
+      );
+      const takeId = addTake(project.id, shot.id, {
+        imageId: clonedImage.id,
+        prompt: sourceTake.prompt,
+        referenceIds: sourceTake.referenceIds,
+        model: 'Lumen editor',
+        seed: null,
+        panelRole: storyboardContext.panelRole,
+        sourceTakeId: sourceTake.id,
+        sourceImageId: sourceTake.imageId,
+      });
+      selectTake(project.id, shot.id, takeId);
+      showToast(`Saved as ${storyboardContext.panelRole} panel version ${roleVersionCount + 1}`);
+      closeEditor();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not save this storyboard version.');
+    } finally {
+      setIsSavingVersion(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!storyboardContext || !hasEditorChanges) return;
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener('beforeunload', warnBeforeUnload);
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload);
+  }, [hasEditorChanges, storyboardContext]);
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -151,9 +214,22 @@ export function Editor() {
             <p className="hidden md:block text-[10px] uppercase tracking-[0.14em]" style={{ color: 'var(--editor-text-muted)' }}>Local non-destructive draft</p>
           </div>
         </div>
-        <div className="flex items-center gap-1 md:hidden">
-          <button aria-label="Undo" disabled={!canUndo()} onClick={undo} className="h-9 w-9 flex items-center justify-center rounded-full disabled:opacity-30"><Undo2 className="h-4 w-4" /></button>
-          <button aria-label="Redo" disabled={!canRedo()} onClick={redo} className="h-9 w-9 flex items-center justify-center rounded-full disabled:opacity-30"><Redo2 className="h-4 w-4" /></button>
+        <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 md:hidden">
+            <button aria-label="Undo" disabled={!canUndo()} onClick={undo} className="flex h-9 w-9 items-center justify-center rounded-full disabled:opacity-30"><Undo2 className="h-4 w-4" /></button>
+            <button aria-label="Redo" disabled={!canRedo()} onClick={redo} className="flex h-9 w-9 items-center justify-center rounded-full disabled:opacity-30"><Redo2 className="h-4 w-4" /></button>
+          </div>
+          {storyboardContext && (
+            <button
+              type="button"
+              onClick={handleSaveVersion}
+              disabled={!hasEditorChanges || isSavingVersion}
+              className="ml-1 flex h-9 items-center gap-1.5 rounded-full bg-neutral-950 px-3 text-[10px] font-semibold text-white disabled:opacity-35 md:px-4 md:text-xs"
+            >
+              {isSavingVersion ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" /> : <Check className="h-3.5 w-3.5" />}
+              {isSavingVersion ? 'Saving…' : hasEditorChanges ? 'Save new version' : 'No changes'}
+            </button>
+          )}
         </div>
       </header>
 

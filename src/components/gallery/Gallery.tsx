@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowUpRight, Images, Search, Sparkles, Trash2, Upload, X } from 'lucide-react';
 import { useGalleryStore, type GalleryImage } from '@/lib/gallery/store';
-import { useEditorStore } from '@/lib/editor/state';
+import { useEditorStore, type StoryboardEditorContext } from '@/lib/editor/state';
 import { GenerationInput } from './GenerationInput';
 import { MobileToolbar, type MobilePanelType } from '@/components/editor/MobileToolbar';
 import { Toast } from '@/components/ui/toast';
@@ -284,6 +284,7 @@ export function Gallery() {
 
   const setEditorImage = useEditorStore((state) => state.setImage);
   const setEditState = useEditorStore((state) => state.setEditState);
+  const setStoryboardContext = useEditorStore((state) => state.setStoryboardContext);
   const showToast = useEditorStore((state) => state.showToast);
   const getImage = useGalleryStore((state) => state.getImage);
   const storyboardsHydrated = useStoryboardStore((state) => state.isHydrated);
@@ -383,7 +384,7 @@ export function Gallery() {
     });
   };
 
-  const handleOpenImage = useCallback(async (imageId: string) => {
+  const handleOpenImage = useCallback(async (imageId: string, storyboardContext?: StoryboardEditorContext) => {
     const galleryImage = getImage(imageId);
     if (!galleryImage) return;
 
@@ -403,8 +404,16 @@ export function Gallery() {
     });
     setEditState(galleryImage.editState);
     setActiveImage(galleryImage.id);
-    router.push('/editor');
-  }, [getImage, router, setActiveImage, setEditState, setEditorImage]);
+    setStoryboardContext(storyboardContext ?? null);
+    const params = new URLSearchParams({ imageId: galleryImage.id });
+    if (storyboardContext) {
+      params.set('projectId', storyboardContext.projectId);
+      params.set('shotId', storyboardContext.shotId);
+      params.set('panelRole', storyboardContext.panelRole);
+      params.set('sourceTakeId', storyboardContext.sourceTakeId);
+    }
+    router.push(`/editor?${params.toString()}`);
+  }, [getImage, router, setActiveImage, setEditState, setEditorImage, setStoryboardContext]);
 
   const handleDeleteSelected = () => {
     const count = selectedReferenceIds.length;

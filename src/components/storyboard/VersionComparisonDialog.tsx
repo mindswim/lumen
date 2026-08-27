@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { ArrowUpRight, Check, Columns2, Layers2 } from 'lucide-react';
 
 import { useGalleryStore } from '@/lib/gallery/store';
+import type { StoryboardEditorContext } from '@/lib/editor/state';
 import {
   getSelectedTake,
   useStoryboardStore,
@@ -32,7 +33,7 @@ export function VersionComparisonDialog({
   project: StoryboardProject;
   shot: StoryboardShot;
   panelRole: StoryboardPanelRole;
-  onOpenImage: (imageId: string) => void;
+  onOpenImage: (imageId: string, context?: StoryboardEditorContext) => void;
 }) {
   const images = useGalleryStore((state) => state.images);
   const selectTake = useStoryboardStore((state) => state.selectTake);
@@ -56,6 +57,12 @@ export function VersionComparisonDialog({
     const index = takes.findIndex((take) => take.id === takeId);
     return `Version ${index + 1}`;
   };
+  const openTakeInEditor = (imageId: string, takeId: string) => onOpenImage(imageId, {
+    projectId: project.id,
+    shotId: shot.id,
+    panelRole,
+    sourceTakeId: takeId,
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -103,7 +110,7 @@ export function VersionComparisonDialog({
                     <div className="flex items-center justify-between gap-3 p-3">
                       <div><p className="text-xs font-semibold">{take ? takeLabel(take.id) : 'Missing'}</p><p className="mt-0.5 text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>{take?.model ?? 'No metadata'}</p></div>
                       <div className="flex gap-1.5">
-                        {image && <button type="button" onClick={() => onOpenImage(image.id)} className="flex h-8 w-8 items-center justify-center rounded-full border" style={{ borderColor: 'var(--editor-border)' }} aria-label={`Open ${take ? takeLabel(take.id) : 'version'} in editor`}><ArrowUpRight className="h-3.5 w-3.5" /></button>}
+                        {image && take && <button type="button" onClick={() => openTakeInEditor(image.id, take.id)} className="flex h-8 w-8 items-center justify-center rounded-full border" style={{ borderColor: 'var(--editor-border)' }} aria-label={`Open ${takeLabel(take.id)} in editor`}><ArrowUpRight className="h-3.5 w-3.5" /></button>}
                         {take && take.id !== selectedTake?.id && <button type="button" onClick={() => selectTake(project.id, shot.id, take.id)} className="rounded-full bg-neutral-950 px-3 py-2 text-[10px] font-medium text-white">Select</button>}
                         {take?.id === selectedTake?.id && <span className="flex items-center gap-1 rounded-full bg-neutral-100 px-3 py-2 text-[10px] font-medium"><Check className="h-3 w-3" /> Selected</span>}
                       </div>
@@ -133,7 +140,7 @@ export function VersionComparisonDialog({
                     <div key={side} className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2" style={{ borderColor: 'var(--editor-border)' }}>
                       <div><p className="text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>{side}</p><p className="text-[10px] font-semibold">{take ? takeLabel(take.id) : 'Missing'}</p></div>
                       <div className="flex gap-1.5">
-                        {image && <button type="button" onClick={() => onOpenImage(image.id)} className="flex h-8 w-8 items-center justify-center rounded-full border" style={{ borderColor: 'var(--editor-border)' }} aria-label={`Open ${side.toLowerCase()} version in editor`}><ArrowUpRight className="h-3.5 w-3.5" /></button>}
+                        {image && take && <button type="button" onClick={() => openTakeInEditor(image.id, take.id)} className="flex h-8 w-8 items-center justify-center rounded-full border" style={{ borderColor: 'var(--editor-border)' }} aria-label={`Open ${side.toLowerCase()} version in editor`}><ArrowUpRight className="h-3.5 w-3.5" /></button>}
                         {take && take.id !== selectedTake?.id && <button type="button" onClick={() => selectTake(project.id, shot.id, take.id)} className="rounded-full bg-neutral-950 px-3 py-2 text-[10px] font-medium text-white">Select</button>}
                         {take?.id === selectedTake?.id && <span className="flex items-center gap-1 rounded-full bg-neutral-100 px-3 py-2 text-[10px] font-medium"><Check className="h-3 w-3" /> Selected</span>}
                       </div>

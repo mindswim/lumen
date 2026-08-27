@@ -1,0 +1,580 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+import { BookOpen, ChevronDown, Clock3, ImagePlus, Layers3, Link2, LockKeyhole, MapPin, Trash2, Upload, X } from 'lucide-react';
+
+import { useGalleryStore } from '@/lib/gallery/store';
+import { inferReferenceKind, referenceDisplayName } from '@/lib/storyboard/reference';
+import { useStoryboardStore, type ReferenceKind, type StoryboardProject } from '@/lib/storyboard/store';
+import { FIELD, LABEL, REFERENCE_KINDS } from '@/components/storyboard/storyboard-ui';
+
+interface GeneratedBundleReference {
+  id: string;
+  kind: ReferenceKind;
+  name: string;
+  url: string;
+}
+
+interface GeneratedBundleShot {
+  number: number;
+  title: string;
+  url: string;
+  referenceIds: string[];
+}
+
+interface GeneratedStoryboardBundle {
+  slug: string;
+  project: string;
+  generator: string;
+  status?: string;
+  historicalAccuracy?: string;
+  references: GeneratedBundleReference[];
+  shots: GeneratedBundleShot[];
+}
+
+export function ProjectPanel({ project, onClose }: { project: StoryboardProject; onClose: () => void }) {
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [isImportingResearch, setIsImportingResearch] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [researchFormOpen, setResearchFormOpen] = useState(false);
+  const [researchName, setResearchName] = useState('');
+  const [researchImageUrl, setResearchImageUrl] = useState('');
+  const [researchSourceUrl, setResearchSourceUrl] = useState('');
+  const [researchSourceTitle, setResearchSourceTitle] = useState('');
+  const [researchError, setResearchError] = useState<string | null>(null);
+  const [bundlesOpen, setBundlesOpen] = useState(false);
+  const [bundles, setBundles] = useState<GeneratedStoryboardBundle[]>([]);
+  const [bundlesError, setBundlesError] = useState<string | null>(null);
+  const [isLoadingBundles, setIsLoadingBundles] = useState(false);
+  const [importingBundleSlug, setImportingBundleSlug] = useState<string | null>(null);
+  const addImages = useGalleryStore((state) => state.addImages);
+  const addImageFromUrl = useGalleryStore((state) => state.addImageFromUrl);
+  const images = useGalleryStore((state) => state.images);
+  const updateProject = useStoryboardStore((state) => state.updateProject);
+  const addReference = useStoryboardStore((state) => state.addReference);
+  const updateReference = useStoryboardStore((state) => state.updateReference);
+  const removeReference = useStoryboardStore((state) => state.removeReference);
+  const updateScene = useStoryboardStore((state) => state.updateScene);
+  const updateShot = useStoryboardStore((state) => state.updateShot);
+  const addTake = useStoryboardStore((state) => state.addTake);
+  const selectedShotId = useStoryboardStore((state) => state.selectedShotId);
+  const selectedShot = project.shots.find((shot) => shot.id === selectedShotId) ?? project.shots[0];
+  const activeScene = project.scenes.find((scene) => scene.id === selectedShot?.sceneId) ?? project.scenes[0];
+
+  useEffect(() => {
+    if (!bundlesOpen || bundles.length > 0 || isLoadingBundles) return;
+    setIsLoadingBundles(true);
+    setBundlesError(null);
+    fetch('/api/workspace/bundles', { cache: 'no-store' })
+      .then(async (response) => {
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Could not load generated bundles.');
+        setBundles(result.bundles ?? []);
+      })
+      .catch((error) => setBundlesError(error instanceof Error ? error.message : 'Could not load generated bundles.'))
+      .finally(() => setIsLoadingBundles(false));
+  }, [bundles.length, bundlesOpen, isLoadingBundles]);
+
+  const toggleSceneReference = (referenceId: string) => {
+    if (!activeScene) return;
+    const removing = activeScene.referenceIds.includes(referenceId);
+    const referenceIds = removing
+      ? activeScene.referenceIds.filter((value) => value !== referenceId)
+      : [...activeScene.referenceIds, referenceId];
+    updateScene(project.id, activeScene.id, { referenceIds });
+    if (!removing) {
+      project.shots
+        .filter((shot) => shot.sceneId === activeScene.id && shot.referenceIds.includes(referenceId))
+        .forEach((shot) => updateShot(project.id, shot.id, { referenceIds: shot.referenceIds.filter((value) => value !== referenceId) }));
+    }
+  };
+
+  const importReferences = async (files: File[]) => {
+    if (files.length === 0) return;
+    setIsImporting(true);
+    try {
+      const added = await addImages(files);
+      for (const image of added) {
+        addReference(project.id, {
+          imageId: image.id,
+          name: referenceDisplayName(image.fileName),
+          kind: inferReferenceKind(image.fileName),
+          description: '',
+        });
+      }
+    } finally {
+      setIsImporting(false);
+      if (fileInput.current) fileInput.current.value = '';
+    }
+  };
+
+  const importResearchReference = async () => {
+    if (!researchName.trim() || !researchImageUrl.trim() || isImportingResearch) return;
+    setIsImportingResearch(true);
+    setResearchError(null);
+
+    try {
+      const safeName = researchName.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'research-reference';
+      const image = await addImageFromUrl(researchImageUrl.trim(), `${safeName}-research.png`);
+      addReference(project.id, {
+        imageId: image.id,
+        name: researchName.trim(),
+        kind: 'research',
+        description: '',
+        sourceUrl: researchSourceUrl.trim(),
+        sourceTitle: researchSourceTitle.trim(),
+        rightsNote: 'Research use; verify reuse rights before publication.',
+      });
+      setResearchName('');
+      setResearchImageUrl('');
+      setResearchSourceUrl('');
+      setResearchSourceTitle('');
+      setResearchFormOpen(false);
+      setLibraryOpen(true);
+    } catch {
+      setResearchError('This source blocked direct import. Download the image and use Add instead.');
+    } finally {
+      setIsImportingResearch(false);
+    }
+  };
+
+  const importGeneratedBundle = async (bundle: GeneratedStoryboardBundle) => {
+    if (importingBundleSlug) return;
+    setImportingBundleSlug(bundle.slug);
+    setBundlesError(null);
+
+    try {
+      const referenceIds = new Map<string, string>();
+
+      for (const bundledReference of bundle.references) {
+        const latestProject = useStoryboardStore.getState().projects.find((candidate) => candidate.id === project.id);
+        const existingReference = latestProject?.references.find((reference) =>
+          reference.sourceUrl === bundledReference.url
+          || (reference.name === bundledReference.name && reference.sourceTitle === bundle.generator));
+        if (existingReference) {
+          referenceIds.set(bundledReference.id, existingReference.id);
+          continue;
+        }
+
+        let image = useGalleryStore.getState().images.find((candidate) => candidate.sourceUrl === bundledReference.url);
+        if (!image) {
+          image = await addImageFromUrl(
+            bundledReference.url,
+            bundledReference.url.split('/').pop() || `${bundledReference.id}.png`,
+            { provider: bundle.generator, sourceUrl: bundledReference.url },
+          );
+        }
+
+        const referenceId = addReference(project.id, {
+          imageId: image.id,
+          name: bundledReference.name,
+          kind: bundledReference.kind,
+          description: '',
+          sourceUrl: bundledReference.url,
+          sourceTitle: bundle.generator,
+          rightsNote: 'AI-generated production reference; verify historical details before publication.',
+        });
+        referenceIds.set(bundledReference.id, referenceId);
+      }
+
+      for (const bundledShot of bundle.shots) {
+        const latestProject = useStoryboardStore.getState().projects.find((candidate) => candidate.id === project.id);
+        const targetShot = latestProject?.shots[bundledShot.number - 1]
+          ?? latestProject?.shots.find((shot) => shot.title.toLowerCase() === bundledShot.title.toLowerCase());
+        if (!targetShot) continue;
+
+        let image = useGalleryStore.getState().images.find((candidate) => candidate.sourceUrl === bundledShot.url);
+        if (!image) {
+          image = await addImageFromUrl(
+            bundledShot.url,
+            bundledShot.url.split('/').pop() || `shot-${bundledShot.number}.png`,
+            { provider: bundle.generator, sourceUrl: bundledShot.url },
+          );
+        }
+
+        if (!targetShot.takes.some((take) => take.imageId === image.id)) {
+          addTake(project.id, targetShot.id, {
+            imageId: image.id,
+            prompt: `Imported generated panel: ${bundledShot.title}`,
+            referenceIds: bundledShot.referenceIds.flatMap((id) => referenceIds.get(id) ?? []),
+            model: bundle.generator,
+            seed: null,
+          });
+        }
+
+        const mappedReferenceIds = bundledShot.referenceIds.flatMap((id) => referenceIds.get(id) ?? []);
+        if (mappedReferenceIds.length > 0) {
+          updateShot(project.id, targetShot.id, {
+            referenceIds: Array.from(new Set([...targetShot.referenceIds, ...mappedReferenceIds])),
+          });
+        }
+      }
+
+      setLibraryOpen(true);
+    } catch (error) {
+      setBundlesError(error instanceof Error ? error.message : 'Could not import the generated bundle.');
+    } finally {
+      setImportingBundleSlug(null);
+    }
+  };
+
+  return (
+    <aside
+      className="h-full overflow-y-auto p-5 md:p-6"
+      style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-primary)' }}
+    >
+      <input
+        ref={fileInput}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={(event) => importReferences(Array.from(event.target.files ?? []))}
+      />
+
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <BookOpen className="h-4 w-4" />
+          <p className="text-xs font-semibold">Project &amp; scene</p>
+        </div>
+        <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full hover:bg-neutral-100" aria-label="Close project setup">
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <div className="mt-4 space-y-3">
+        <label>
+          <span className={LABEL} style={{ color: 'var(--editor-text-muted)' }}>Title</span>
+          <input
+            value={project.title}
+            onChange={(event) => updateProject(project.id, { title: event.target.value })}
+            className={`${FIELD} font-medium`}
+            style={{ borderColor: 'var(--editor-border)' }}
+            aria-label="Project title"
+          />
+        </label>
+        <label>
+          <span className={LABEL} style={{ color: 'var(--editor-text-muted)' }}>Premise</span>
+          <textarea
+            value={project.logline}
+            onChange={(event) => updateProject(project.id, { logline: event.target.value })}
+            rows={3}
+            className={`${FIELD} resize-none text-xs leading-5`}
+            style={{ borderColor: 'var(--editor-border)' }}
+            placeholder="What is this story about?"
+          />
+        </label>
+        <label>
+          <span className={LABEL} style={{ color: 'var(--editor-text-muted)' }}>Look &amp; tone</span>
+          <textarea
+            value={project.visualDirection}
+            onChange={(event) => updateProject(project.id, { visualDirection: event.target.value })}
+            rows={5}
+            className={`${FIELD} resize-none text-xs leading-5`}
+            style={{ borderColor: 'var(--editor-border)' }}
+            placeholder="Medium, era, camera, palette, light, texture…"
+          />
+        </label>
+      </div>
+
+      <div className="my-5 h-px" style={{ backgroundColor: 'var(--editor-border)' }} />
+
+      {activeScene && (
+        <>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold">Scene setup</p>
+              <p className="mt-1 text-[10px]" style={{ color: 'var(--editor-text-muted)' }}>Defaults inherited by shots in this scene</p>
+            </div>
+            <span className="rounded-full bg-neutral-100 px-2 py-1 text-[9px] font-medium">{project.scenes.indexOf(activeScene) + 1} / {project.scenes.length}</span>
+          </div>
+          <div className="mt-3 space-y-2.5">
+            <input
+              value={activeScene.title}
+              onChange={(event) => updateScene(project.id, activeScene.id, { title: event.target.value })}
+              className={FIELD}
+              style={{ borderColor: 'var(--editor-border)' }}
+              aria-label="Scene name"
+            />
+            <div className="grid grid-cols-2 gap-2">
+              <label className="relative">
+                <MapPin className="absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2" style={{ color: 'var(--editor-text-muted)' }} />
+                <input
+                  value={activeScene.location}
+                  onChange={(event) => updateScene(project.id, activeScene.id, { location: event.target.value })}
+                  placeholder="Location"
+                  className={`${FIELD} pl-7 text-xs`}
+                  style={{ borderColor: 'var(--editor-border)' }}
+                  aria-label="Scene location"
+                />
+              </label>
+              <label className="relative">
+                <Clock3 className="absolute left-2.5 top-1/2 h-3 w-3 -translate-y-1/2" style={{ color: 'var(--editor-text-muted)' }} />
+                <input
+                  value={activeScene.timeOfDay}
+                  onChange={(event) => updateScene(project.id, activeScene.id, { timeOfDay: event.target.value })}
+                  placeholder="Time of day"
+                  className={`${FIELD} pl-7 text-xs`}
+                  style={{ borderColor: 'var(--editor-border)' }}
+                  aria-label="Scene time of day"
+                />
+              </label>
+            </div>
+            <textarea
+              value={activeScene.summary}
+              onChange={(event) => updateScene(project.id, activeScene.id, { summary: event.target.value })}
+              rows={2}
+              placeholder="What happens in this scene?"
+              className={`${FIELD} resize-none text-xs leading-5`}
+              style={{ borderColor: 'var(--editor-border)' }}
+              aria-label="Scene action"
+            />
+          </div>
+          {project.references.length > 0 && (
+            <div className="mt-3">
+              <p className={LABEL} style={{ color: 'var(--editor-text-muted)' }}>Scene references</p>
+              <div className="flex flex-wrap gap-1.5">
+                {project.references.map((reference) => {
+                  const active = activeScene.referenceIds.includes(reference.id);
+                  return (
+                    <button
+                      key={reference.id}
+                      type="button"
+                      onClick={() => toggleSceneReference(reference.id)}
+                      className="rounded-full border px-2.5 py-1 text-[9px] font-medium"
+                      style={{
+                        borderColor: active ? 'var(--editor-text-primary)' : 'var(--editor-border)',
+                        backgroundColor: active ? 'var(--editor-text-primary)' : 'transparent',
+                        color: active ? 'var(--editor-bg-primary)' : 'var(--editor-text-tertiary)',
+                      }}
+                    >
+                      {reference.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="my-5 h-px" style={{ backgroundColor: 'var(--editor-border)' }} />
+        </>
+      )}
+
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2">
+            <LockKeyhole className="h-3.5 w-3.5" />
+            <p className="text-xs font-semibold">Reference library</p>
+          </div>
+          <p className="mt-1 text-[10px]" style={{ color: 'var(--editor-text-muted)' }}>
+            {project.references.length} project reference{project.references.length === 1 ? '' : 's'}
+          </p>
+        </div>
+        <div className="flex max-w-[13rem] flex-wrap items-center justify-end gap-1.5">
+          {project.references.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setLibraryOpen((value) => !value)}
+              className="h-8 rounded-full border px-3 text-[10px] font-medium"
+              style={{ borderColor: 'var(--editor-border)' }}
+            >
+              {libraryOpen ? 'Done' : 'Manage'}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => { setResearchFormOpen((value) => !value); setResearchError(null); }}
+            className="flex h-8 items-center gap-1.5 rounded-full border px-3 text-[10px] font-medium"
+            style={{ borderColor: 'var(--editor-border)' }}
+          >
+            <Link2 className="h-3 w-3" /> Web
+          </button>
+          <button
+            type="button"
+            onClick={() => { setBundlesOpen((value) => !value); setBundlesError(null); }}
+            className="flex h-8 items-center gap-1.5 rounded-full border px-3 text-[10px] font-medium"
+            style={{ borderColor: 'var(--editor-border)' }}
+          >
+            <Layers3 className="h-3 w-3" /> Imports
+          </button>
+          <button
+            onClick={() => fileInput.current?.click()}
+            disabled={isImporting}
+            className="flex h-8 items-center gap-1.5 rounded-full border px-3 text-[11px] font-medium disabled:opacity-50"
+            style={{ borderColor: 'var(--editor-border)' }}
+          >
+            <Upload className="h-3 w-3" /> {isImporting ? 'Adding…' : 'Add'}
+          </button>
+        </div>
+      </div>
+
+      {researchFormOpen && (
+        <div className="mt-3 rounded-xl border p-3" style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-secondary)' }}>
+          <p className="text-[10px] font-semibold">Add a research image</p>
+          <p className="mt-1 text-[9px] leading-4" style={{ color: 'var(--editor-text-muted)' }}>
+            Lumen stores a local copy and keeps the source page attached for provenance.
+          </p>
+          <div className="mt-3 grid gap-2">
+            <input value={researchName} onChange={(event) => setResearchName(event.target.value)} placeholder="Reference name" className={`${FIELD} text-xs`} style={{ borderColor: 'var(--editor-border)' }} aria-label="Research reference name" />
+            <input type="url" value={researchImageUrl} onChange={(event) => setResearchImageUrl(event.target.value)} placeholder="Direct image URL" className={`${FIELD} text-xs`} style={{ borderColor: 'var(--editor-border)' }} aria-label="Research image URL" />
+            <input value={researchSourceTitle} onChange={(event) => setResearchSourceTitle(event.target.value)} placeholder="Source or collection" className={`${FIELD} text-xs`} style={{ borderColor: 'var(--editor-border)' }} aria-label="Research source title" />
+            <input type="url" value={researchSourceUrl} onChange={(event) => setResearchSourceUrl(event.target.value)} placeholder="Source page URL" className={`${FIELD} text-xs`} style={{ borderColor: 'var(--editor-border)' }} aria-label="Research source page URL" />
+          </div>
+          {researchError && <p className="mt-2 text-[9px] leading-4 text-red-600">{researchError}</p>}
+          <div className="mt-3 flex justify-end gap-2">
+            <button type="button" onClick={() => setResearchFormOpen(false)} className="rounded-full px-3 py-1.5 text-[10px]" style={{ color: 'var(--editor-text-muted)' }}>Cancel</button>
+            <button type="button" onClick={importResearchReference} disabled={!researchName.trim() || !researchImageUrl.trim() || isImportingResearch} className="rounded-full bg-neutral-950 px-3 py-1.5 text-[10px] font-medium text-white disabled:opacity-40">
+              {isImportingResearch ? 'Importing…' : 'Add research'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {bundlesOpen && (
+        <div className="mt-3 rounded-xl border p-3" style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-secondary)' }}>
+          <p className="text-[10px] font-semibold">Generation imports</p>
+          <p className="mt-1 text-[9px] leading-4" style={{ color: 'var(--editor-text-muted)' }}>
+            Bring externally generated references and numbered panels into this project. In-app generations are saved automatically.
+          </p>
+          {isLoadingBundles && <p className="mt-3 text-[10px]" style={{ color: 'var(--editor-text-muted)' }}>Looking for bundles…</p>}
+          {!isLoadingBundles && bundles.length === 0 && !bundlesError && (
+            <p className="mt-3 rounded-lg border border-dashed p-3 text-[10px]" style={{ borderColor: 'var(--editor-border)', color: 'var(--editor-text-muted)' }}>
+              No generation manifests found under public/generated.
+            </p>
+          )}
+          <div className="mt-3 space-y-2">
+            {bundles.map((bundle) => (
+              <div key={bundle.slug} className="rounded-lg border p-2.5" style={{ borderColor: 'var(--editor-border)', backgroundColor: 'var(--editor-bg-primary)' }}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-[10px] font-semibold">{bundle.project}</p>
+                    <p className="mt-1 text-[9px]" style={{ color: 'var(--editor-text-muted)' }}>
+                      {bundle.references.length} references · {bundle.shots.length} panels · {bundle.generator}
+                    </p>
+                    {bundle.project !== project.title && (
+                      <p className="mt-1 text-[9px] text-amber-700">This bundle was made for a different project title.</p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => importGeneratedBundle(bundle)}
+                    disabled={Boolean(importingBundleSlug)}
+                    className="shrink-0 rounded-full bg-neutral-950 px-3 py-1.5 text-[9px] font-medium text-white disabled:opacity-40"
+                  >
+                    {importingBundleSlug === bundle.slug ? 'Importing…' : 'Import'}
+                  </button>
+                </div>
+                {bundle.historicalAccuracy && (
+                  <p className="mt-2 text-[9px] leading-4" style={{ color: 'var(--editor-text-tertiary)' }}>{bundle.historicalAccuracy}</p>
+                )}
+              </div>
+            ))}
+          </div>
+          {bundlesError && <p className="mt-2 text-[9px] leading-4 text-red-600">{bundlesError}</p>}
+        </div>
+      )}
+
+      {project.references.length === 0 ? (
+        <button
+          onClick={() => fileInput.current?.click()}
+          className="mt-3 flex w-full flex-col items-center rounded-xl border border-dashed px-4 py-7 text-center"
+          style={{ borderColor: 'var(--editor-border)', color: 'var(--editor-text-tertiary)' }}
+        >
+          <ImagePlus className="h-5 w-5" />
+          <span className="mt-2 text-xs font-medium">Add recurring references</span>
+          <span className="mt-1 text-[10px] leading-4">Faces, outfits, places, props, or one style anchor.</span>
+        </button>
+      ) : libraryOpen ? (
+        <div className="mt-3 space-y-3">
+          <p className="rounded-lg bg-neutral-100 px-3 py-2 text-[9px] leading-4" style={{ color: 'var(--editor-text-tertiary)' }}>
+            Keep one recurring subject per reference. Assign reusable defaults to the scene, then add only exceptional references to an individual shot.
+          </p>
+          {project.references.map((reference) => {
+            const image = images.find((candidate) => candidate.id === reference.imageId);
+            return (
+              <div key={reference.id} className="rounded-xl border p-2" style={{ borderColor: 'var(--editor-border)' }}>
+                <div className="flex gap-2">
+                  <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg bg-neutral-100">
+                    {image ? (
+                      // Local workspace images are intentionally rendered directly.
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={image.thumbnailUrl} alt="" className="h-full w-full object-cover" />
+                    ) : <div className="h-full w-full bg-neutral-200" />}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <input
+                      value={reference.name}
+                      onChange={(event) => updateReference(project.id, reference.id, { name: event.target.value })}
+                      className="w-full bg-transparent text-xs font-semibold outline-none"
+                      aria-label="Reference name"
+                    />
+                    <div className="relative mt-1">
+                      <select
+                        value={reference.kind}
+                        onChange={(event) => updateReference(project.id, reference.id, { kind: event.target.value as ReferenceKind })}
+                        className="w-full appearance-none rounded-md border bg-transparent px-2 py-1 pr-6 text-[10px] outline-none"
+                        style={{ borderColor: 'var(--editor-border)', color: 'var(--editor-text-tertiary)' }}
+                        aria-label="Reference type"
+                      >
+                        {REFERENCE_KINDS.map((kind) => <option key={kind.value} value={kind.value}>{kind.label}</option>)}
+                      </select>
+                      <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 h-3 w-3 -translate-y-1/2" />
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => removeReference(project.id, reference.id)}
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full opacity-50 hover:bg-red-50 hover:text-red-600 hover:opacity-100"
+                    aria-label={`Remove ${reference.name}`}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <input
+                  value={reference.description}
+                  onChange={(event) => updateReference(project.id, reference.id, { description: event.target.value })}
+                  placeholder="Describe only this subject: identity, outfit, or defining features…"
+                  className="mt-2 w-full bg-transparent text-[10px] leading-4 outline-none"
+                  style={{ color: 'var(--editor-text-tertiary)' }}
+                  aria-label={`Notes for ${reference.name}`}
+                />
+                {reference.kind === 'research' && (
+                  <div className="mt-2 grid gap-1.5 border-t pt-2" style={{ borderColor: 'var(--editor-border)' }}>
+                    <input
+                      value={reference.sourceTitle ?? ''}
+                      onChange={(event) => updateReference(project.id, reference.id, { sourceTitle: event.target.value })}
+                      placeholder="Source or collection"
+                      className="w-full bg-transparent text-[9px] outline-none"
+                      style={{ color: 'var(--editor-text-tertiary)' }}
+                      aria-label={`Source for ${reference.name}`}
+                    />
+                    <input
+                      type="url"
+                      value={reference.sourceUrl ?? ''}
+                      onChange={(event) => updateReference(project.id, reference.id, { sourceUrl: event.target.value })}
+                      placeholder="Source page URL"
+                      className="w-full bg-transparent text-[9px] outline-none"
+                      style={{ color: 'var(--editor-text-muted)' }}
+                      aria-label={`Source URL for ${reference.name}`}
+                    />
+                    <input
+                      value={reference.rightsNote ?? ''}
+                      onChange={(event) => updateReference(project.id, reference.id, { rightsNote: event.target.value })}
+                      placeholder="Rights or usage note"
+                      className="w-full bg-transparent text-[9px] outline-none"
+                      style={{ color: 'var(--editor-text-muted)' }}
+                      aria-label={`Rights note for ${reference.name}`}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="mt-3 rounded-lg bg-neutral-100 px-3 py-2 text-[9px] leading-4" style={{ color: 'var(--editor-text-tertiary)' }}>
+          References stay collapsed while you board. Use Manage to rename, classify, or remove them.
+        </p>
+      )}
+    </aside>
+  );
+}

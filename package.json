@@ -1,6 +1,7 @@
 {
   "name": "lumen",
   "version": "0.1.0",
+  "type": "module",
   "description": "Professional photo editor with AI-powered editing and image generation",
   "author": "Juan",
   "license": "MIT",
@@ -8,7 +9,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test": "node --experimental-strip-types --test tests/*.test.mts",
+    "check": "npm run lint && npm run test && npm run build"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.2",

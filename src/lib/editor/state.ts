@@ -16,10 +16,19 @@ interface HistoryEntry {
   timestamp: number;
 }
 
+export interface StoryboardEditorContext {
+  projectId: string;
+  shotId: string;
+  panelRole: 'start' | 'middle' | 'end';
+  sourceTakeId: string;
+}
+
 interface EditorStore {
   // Image
   image: ImageData | null;
   setImage: (image: ImageData | null) => void;
+  storyboardContext: StoryboardEditorContext | null;
+  setStoryboardContext: (context: StoryboardEditorContext | null) => void;
 
   // Edit state
   editState: EditState;
@@ -126,6 +135,8 @@ export const useEditorStore = create<EditorStore>((set, get) => ({
   // Image
   image: null,
   setImage: (image) => set({ image, history: [], redoStack: [], historyIndex: -1 }),
+  storyboardContext: null,
+  setStoryboardContext: (storyboardContext) => set({ storyboardContext }),
 
   // Edit state
   editState: createDefaultEditState(),
